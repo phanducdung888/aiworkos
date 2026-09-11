@@ -1,0 +1,79 @@
+# AI WorkOS — development and pilot stack (ADR-0020).
+#
+# The network layout is a security control, not plumbing. The `data` network is where PostgreSQL,
+# Redis and MinIO live. When the agent runtime arrives in Phase 3 it will be attached to `agent` and
+# `egress` only, so that "the AI never touches the database" is enforced by topology rather than by
+# discipline (ADR-0002). `tests/architecture/test_ai_db_separation.py` asserts this file keeps that
+# shape, including before the agent service exists.
+
+name: ai-workos
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-workos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-workos}
+      POSTGRES_DB: ${POSTGRES_DB:-workos}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./ops/db/dev-roles.sql:/docker-entrypoint-initdb.d/10-dev-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-workos}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [data]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    networks: [data]
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-workos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-workos-dev-secret}
+    volumes:
+      - minio-data:/data
+    networks: [data]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_RELATIVE_PATH: /
+    volumes:
+      - ./ops/keycloak:/opt/keycloak/data/import:ro
+    networks: [app, edge]
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      WORKOS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-workos}:${POSTGRES_PASSWORD:-workos}@postgres:5432/${POSTGRES_DB:-workos}
+      WORKOS_APP_DATABASE_URL: postgresql+psycopg://workos_app:${APP_DB_PASSWORD:-workos_app}@postgres:5432/${POSTGRES_DB:-workos}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [app, data, agent]
+
+volumes:
+  postgres-data:
+  minio-data:
+
+networks:
+  # Public-facing. Reverse proxy and anything a browser must reach.
+  edge:
+  # Application traffic.
+  app:
+  # The data tier. The agent runtime must never appear here.
+  data:
+  # Agent runtime to the internal Tool Gateway port only. Phase 3.
+  agent:
+  # Outbound model-provider access from the agent runtime only. Phase 3.
+  egress:

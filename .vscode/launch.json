@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "pytest: full suite",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q"],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend",
+        "WORKOS_DATABASE_URL": "postgresql+psycopg://workos:workos@127.0.0.1:5432/workos_test",
+        "WORKOS_APP_DATABASE_URL": "postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test"
+      },
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "alembic: upgrade head",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "alembic",
+      "args": ["upgrade", "head"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    }
+  ]
+}

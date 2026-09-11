@@ -1,0 +1,40 @@
+[importlinter]
+root_package = app
+include_external_packages = True
+
+# ---------------------------------------------------------------------------
+# ADR-0001: a modular monolith is only modular if the boundaries are enforced.
+# ---------------------------------------------------------------------------
+
+[importlinter:contract:layers]
+name = Layered architecture
+type = layers
+layers =
+    app.api
+    app.contexts
+    app.platform
+
+[importlinter:contract:context-isolation]
+name = Bounded contexts do not reach into each other
+type = independence
+modules =
+    app.contexts.identity
+    app.contexts.work
+
+[importlinter:contract:api-purity]
+name = Routers never touch the database or the policy engine directly
+type = forbidden
+source_modules =
+    app.api
+forbidden_modules =
+    app.platform.db
+    app.platform.authz.matrix
+    sqlalchemy
+
+[importlinter:contract:domain-has-no-web]
+name = Contexts never import the web framework
+type = forbidden
+source_modules =
+    app.contexts
+forbidden_modules =
+    fastapi
