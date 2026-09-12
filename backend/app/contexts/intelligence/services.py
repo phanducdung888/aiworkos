@@ -36,6 +36,7 @@ from app.contexts.intelligence.commands import (
     ReviseProposal,
 )
 from app.contexts.intelligence.domain import (
+    EXECUTION_WINDOW,
     Decision,
     ExecutionStatus,
     ProposalStatus,
@@ -44,6 +45,8 @@ from app.contexts.intelligence.domain import (
     assert_decidable,
     assert_may_decide,
     assert_not_executed,
+    assert_within_execution_window,
+    execution_deadline,
     expiry_from,
     status_for,
     validate_creation,
@@ -66,7 +69,11 @@ from app.platform.authz import (
     authorize,
 )
 from app.platform.authz.model import ResourceRef
-from app.platform.errors import DomainRuleViolation, EntityNotFound
+from app.platform.errors import (
+    DomainRuleViolation,
+    EntityNotFound,
+    TerminalJobError,
+)
 from app.platform.outbox import append_domain_event
 from app.platform.principal import resolve_principal_for
 
@@ -398,9 +405,23 @@ class ProposalService:
             approved_hash=record.approved_action_hash,
             recomputed_hash=hash_of(dict(record.approved_action)),
         )
+        # BR-AI-22, checked here so the refusal is explicable, and again inside the claim so it
+        # is atomic (ADR-0051). A worker that passes this line and is descheduled past the
+        # deadline still fails the claim, because the deadline is part of that statement.
+        assert_within_execution_window(
+            decided_at=record.decided_at, now=dt.datetime.now(dt.UTC)
+        )
         if not repository.claim_for_execution(
-            self._session, org_id=self._org_id, approval_id=record.id
+            self._session,
+            org_id=self._org_id,
+            approval_id=record.id,
+            window=EXECUTION_WINDOW,
         ):
+            # The claim failed for one of two reasons and the caller deserves to know which: the
+            # approval was spent while we were reading it, or it expired in the same window.
+            assert_within_execution_window(
+                decided_at=record.decided_at, now=dt.datetime.now(dt.UTC)
+            )
             raise DomainRuleViolation(
                 "BR-PR-01", "this approval is already being executed"
             )
@@ -632,6 +653,17 @@ def execute_queued_approval(
         # Already done, or a rejection that authorises nothing. Either way the job is complete:
         # raising here would retry forever against a state that will never change.
         return f"already {record.execution_status}"
+
+    # BR-AI-22, before anything else this handler does. Expiry is terminal rather than retryable:
+    # an approval cannot become unexpired, so the job is dead rather than pending (ADR-0051).
+    # Queued before the deadline and claimed after it, retried after it, or delivered twice with
+    # the second arriving after it — all three land here.
+    deadline = execution_deadline(record.decided_at)
+    if dt.datetime.now(dt.UTC) >= deadline:
+        raise TerminalJobError(
+            f"BR-AI-22: the execution window closed at {deadline.isoformat()}; "
+            "the action must be approved again"
+        )
 
     principal = resolve_principal_for(session, org_id=org_id, person_id=record.approver_person_id)
     service = ProposalService(

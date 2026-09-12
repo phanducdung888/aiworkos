@@ -535,3 +535,97 @@ The four questions from Checkpoint 8 stand unchanged, and Checkpoint 9 adds two 
    picking one silently would make the threshold meaningless.
 
 All six should be answered by a spike against the real runtime before an adapter is written.
+
+---
+
+## 16. Provider contract (Checkpoint 10)
+
+### 16.1 Shape
+
+```
+AgentRuntime  →  LLMProvider (protocol)  →  adapter  →  model
+```
+
+The runtime names no vendor — `test_the_runtime_names_no_vendor` walks its source to keep it that
+way. An adapter may not import `app.contexts`, `app.platform`, `sqlalchemy` or `psycopg`, so it
+structurally cannot read the database, call a service, reach the Tool Gateway or decide an
+authorization.
+
+`CompletionRequest` carries the pinned prompt, the instruction, the Event body as *data*
+(BR-AI-10), the requested model, and an optional opaque `conversation_id`. `CompletionResult`
+carries spans, the model that **actually answered**, a finish reason, token counts and the
+provider's request id. No prompt body, no raw response, no credential — none of it is persisted.
+
+### 16.2 Failures are typed
+
+`ProviderUnavailable`, `ProviderTimeout`, `ProviderRateLimited`, `ProviderAuthenticationFailure`,
+`ProviderInvalidResponse`, `ProviderContractViolation`. No transport exception reaches the runtime.
+
+**A malformed answer is a contract failure, never a low confidence.** Collapsing the two would make
+an outage indistinguishable from a day on which the model found nothing, and nobody investigates a
+quiet day. At the API this becomes 502, or 504 for a timeout — never 500, because this service did
+what it was asked and something it depends on did not.
+
+### 16.3 Confidence
+
+`ConfidenceAssessment` carries `value`, `source` (`provider_reported` | `heuristic` |
+`unavailable`) and `band` (`HIGH` | `MEDIUM` | `LOW` | `UNKNOWN`).
+
+**`UNKNOWN` is first-class and a missing confidence never becomes anything else** — not HIGH, not a
+default, not a midpoint. `ConfidencePolicy` holds the threshold in one place and refuses `UNKNOWN`
+alongside `LOW`: BR-AI-09's answer for the case where the system knows least about what it is doing.
+
+Provider-specific mapping lives in `ConfidenceNormalizer`, outside the domain, so changing how a
+vendor's score becomes a band never touches Proposal, Approval or the Tool Gateway. The band floors
+are the Checkpoint 9 numbers carried forward unchanged — this checkpoint changes what they *mean*,
+and moving them at the same time would make it impossible to tell which change moved the behaviour.
+
+There is no calibration model. Making the mapping replaceable is the work; measuring it needs
+outcome data that does not exist.
+
+### 16.4 Adapters
+
+`FakeProvider` is the default and the only one on any path. It does a real if crude extraction —
+the spans index into the text, because BR-E-05 checks the excerpt against the Event — and labels
+its scores `heuristic`. Scenarios cover every band, malformed output, timeout, and an unresolvable
+model version, with no sleeping and no network.
+
+`AnthropicProvider` exists at the boundary, written over `httpx` rather than the vendor SDK. It is
+never constructed by default. Its unit tests drive a stubbed transport; the test against the real
+endpoint is opt-in (`RUN_REAL_PROVIDER_TESTS=1`) and off, because a suite that needs a credential
+is a suite that gets skipped in the environment that should run it.
+
+## 17. Execution window (Checkpoint 10)
+
+`EXECUTION_WINDOW` is 24 hours (BR-AI-22), defined once. The deadline is **derived**:
+`decided_at + EXECUTION_WINDOW`, where `decided_at` is frozen by the immutability trigger. No
+column, no backfill, no second source of truth — the same approval has the same deadline in every
+process on every retry.
+
+Enforced **inside the claim**, not before it:
+
+```sql
+UPDATE approval_record SET version = version + 1
+WHERE id = :id AND execution_status = 'pending' AND decided_at + :window > now()
+```
+
+Check-then-execute has a gap; this has none. A worker descheduled past the deadline fails the claim
+when it resumes. Queued before and run after, retried after, delivered twice with the second
+arriving after — all reduce to this statement.
+
+Expiry is **terminal**: the job goes to `dead` immediately rather than back to `pending`. An
+approval cannot become unexpired, so retrying would burn attempts against a state that will never
+change. The ApprovalRecord itself is untouched — it remains an immutable record of what a human
+authorised; it does not become false because time passed, it stops being actionable.
+
+## 18. OpenClaw — still not integrated
+
+No adapter exists and `test_openclaw_is_not_on_any_path` fails if the word appears anywhere under
+`app/`. The API is not known well enough to write against, and a seam shaped by imagination rather
+than by the thing it has to fit would be worse than no seam.
+
+The six open questions from Checkpoints 8 and 9 stand. Checkpoint 10 answers one of them
+structurally: **multi-turn state** is accommodated by an opaque `conversation_id` on the request,
+which a provider may use for its own caching. The runtime remains the owner of context and nothing
+downstream reads a provider's memory as truth, so a provider needing session continuity does not
+force the port to change.

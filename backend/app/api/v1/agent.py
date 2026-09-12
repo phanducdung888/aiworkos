@@ -20,11 +20,12 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Query, Request, Response, status
 
 import app.contexts.intelligence.public as intelligence
 import app.contexts.signal.public as signal
 import app.contexts.work.public as work
+from app.agent.providers.errors import ProviderError
 from app.agent.providers.fake import FakeProvider
 from app.agent.runtime import AgentRuntime
 from app.api.v1.schemas import (
@@ -42,7 +43,7 @@ from app.platform.actor import Actor
 from app.platform.authz import Action, Principal, ResourceType, authorize
 from app.platform.authz.agent import AgentCapability, AgentIdentity, AgentPrincipal
 from app.platform.authz.model import ResourceRef
-from app.platform.errors import EntityNotFound
+from app.platform.errors import EntityNotFound, UpstreamProviderError
 from app.platform.http.deps import (
     ActorDep,
     IdempotencyKeyDep,
@@ -71,6 +72,19 @@ AGENTS: dict[str, AgentIdentity] = {
 #: organization shared one hard-coded set, so turning extraction off for one customer was a
 #: deployment. The policy is now rows in `agent_capability_policy`, read per request, and an
 #: organization with no rows denies everything (ADR-0047).
+
+
+def _provider_for(request: Request) -> Any:
+    """The provider this deployment uses, or whatever the app was built with.
+
+    `FakeProvider` unless something explicitly installs another — the real adapter is never on a
+    default path (ADR-0049). Tests replace it on the app rather than by patching a module global,
+    so a test that forgets to undo the replacement cannot leak into the next one.
+    """
+    override = getattr(request.app.state, "llm_provider", None)
+    if override is not None:
+        return override
+    return FakeProvider()
 
 
 class _RuntimeServices:
@@ -159,6 +173,7 @@ class _RuntimeServices:
 )
 def analyze_event(
     event_id: uuid.UUID,
+    request: Request,
     response: Response,
     session: SessionDep,
     principal: PrincipalDep,
@@ -194,12 +209,21 @@ def analyze_event(
         delegated=principal,
         policy=intelligence.load_capability_policy(session, org_id=principal.org_id),
     )
-    result = AgentRuntime(FakeProvider()).analyze_event(
-        _RuntimeServices(session, principal, store),
-        agent_principal,
-        event_id,
-        routed_to_person_id=actor.person_id,
-    )
+    try:
+        result = AgentRuntime(_provider_for(request)).analyze_event(
+            _RuntimeServices(session, principal, store),
+            agent_principal,
+            event_id,
+            routed_to_person_id=actor.person_id,
+        )
+    except ProviderError as error:
+        # Caught rather than allowed to escape, so the interaction the runtime already marked
+        # `failed` is committed with the request. Letting it raise would roll the transaction back
+        # and lose the record of a run that genuinely happened — and a provider outage would then
+        # be invisible rather than merely unsuccessful (ADR-0049).
+        raise UpstreamProviderError(
+            f"{type(error).__name__}: {error}", retryable=error.retryable
+        ) from error
     resource = AnalysisResource(
         ai_interaction_id=result.interaction_id,
         evidence_ids=list(result.evidence_ids),

@@ -29,6 +29,15 @@ from app.platform.errors import DomainRuleViolation
 #: than a neutral one, because it means something was raised that nobody thought worth deciding.
 PROPOSAL_WINDOW = dt.timedelta(days=14)
 
+#: BR-AI-22. How long an ApprovalRecord authorises its execution for.
+#:
+#: One constant, referenced everywhere the deadline is needed (ADR-0051). The deadline itself is
+#: never stored: it is `decided_at + EXECUTION_WINDOW`, and `decided_at` is frozen by the
+#: immutability trigger — so the same approval has the same deadline in every process, on every
+#: retry, forever. A stored column would be mutable state duplicating a derivable value, and would
+#: let the deadline move between a worker's attempts.
+EXECUTION_WINDOW = dt.timedelta(hours=24)
+
 
 class ProposalKind(enum.StrEnum):
     CREATE = "create"
@@ -205,3 +214,30 @@ def status_for(decision: Decision) -> ProposalStatus:
 
 def expiry_from(created_at: dt.datetime) -> dt.datetime:
     return created_at + PROPOSAL_WINDOW
+
+
+def execution_deadline(decided_at: dt.datetime) -> dt.datetime:
+    """When an approval stops authorising anything (BR-AI-22, ADR-0051).
+
+    A pure function of an immutable field and one constant. Changing `EXECUTION_WINDOW`
+    retroactively changes every already-decided approval's deadline, which is correct for a policy:
+    shortening the window should expire things, and a stored column would instead freeze the old
+    policy into rows nobody would think to look at.
+    """
+    return decided_at + EXECUTION_WINDOW
+
+
+def assert_within_execution_window(
+    *, decided_at: dt.datetime, now: dt.datetime
+) -> None:
+    """Checked at the execution boundary, and enforced again inside the claim.
+
+    This is the readable statement of the rule; `claim_for_execution` re-expresses it as a
+    predicate in the conditional UPDATE, which is what closes the gap between checking and acting.
+    Both, not either: the database makes it atomic, and this makes the refusal explicable.
+    """
+    if now >= execution_deadline(decided_at):
+        raise DomainRuleViolation(
+            "BR-AI-22",
+            "this approval's execution window has passed; the action must be approved again",
+        )

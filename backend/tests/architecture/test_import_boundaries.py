@@ -408,3 +408,88 @@ def test_policy_evaluation_cannot_reach_the_database() -> None:
             f"app/platform/authz/agent.py imports {imported}; policy evaluation is a pure "
             "function and must stay one"
         )
+
+
+def test_the_runtime_names_no_vendor() -> None:
+    """ADR-0049. `AgentRuntime` orchestrates; it does not know who answers.
+
+    A runtime that mentioned a vendor would be a runtime that has to change when the vendor does,
+    and the provider port would be decoration.
+    """
+    runtime = (APP / "agent" / "runtime.py").read_text().lower()
+    for vendor in ("anthropic", "openai", "gemini", "ollama", "openclaw", "httpx"):
+        assert vendor not in runtime, (
+            f"app/agent/runtime.py mentions {vendor}; the runtime talks to `LLMProvider` only"
+        )
+
+
+def test_provider_adapters_import_no_application_code() -> None:
+    """A provider talks to a model and returns structured output. That is the whole job.
+
+    It cannot read the database, call a service, reach the Tool Gateway or decide an
+    authorization — and those are structural facts here rather than instructions in a docstring.
+    """
+    for module in _modules(APP / "agent" / "providers"):
+        offending = {
+            i
+            for i in _imports(module)
+            if i.startswith(("app.contexts", "app.platform", "sqlalchemy", "psycopg"))
+        }
+        assert not offending, (
+            f"{module.relative_to(BACKEND_ROOT)} imports {sorted(offending)}; a provider knows "
+            "nothing about the application (ADR-0049)"
+        )
+
+
+def test_no_credential_is_committed() -> None:
+    """The configuration boundary holds no value.
+
+    A default that looked like a key — even a placeholder — is the kind of thing that gets copied
+    into an environment file and then into a repository.
+    """
+    config = (APP / "platform" / "config.py").read_text()
+    for line in config.splitlines():
+        if "api_key" in line and "=" in line:
+            assert '= ""' in line or "str" in line.split("=")[0], (
+                f"a credential appears to have a value in config.py: {line.strip()}"
+            )
+
+
+def test_openclaw_is_not_on_any_path() -> None:
+    """CP10 is not the OpenClaw integration checkpoint.
+
+    No adapter exists, because the API is not known well enough to write one against — and
+    guessing at it would produce a seam shaped by imagination rather than by the thing it has to
+    fit (ADR-0049).
+    """
+    for module in _modules(APP):
+        assert "openclaw" not in module.read_text().lower(), (
+            f"{module.relative_to(BACKEND_ROOT)} mentions OpenClaw; it is not integrated"
+        )
+
+
+def test_the_execution_deadline_is_derived_in_one_place() -> None:
+    """ADR-0051. One constant, one function, no stored column.
+
+    A second definition of the window would be a second answer to "when does this expire", and the
+    two would diverge the first time one of them was tuned.
+    """
+    domain = (APP / "contexts" / "intelligence" / "domain.py").read_text()
+    assert domain.count("EXECUTION_WINDOW = ") == 1
+
+    schema = (APP / "contexts" / "intelligence" / "models.py").read_text()
+    assert "expires_at" not in schema.split("class ApprovalRecord")[1], (
+        "ApprovalRecord holds a stored deadline; it must be derived from `decided_at` (ADR-0051)"
+    )
+
+
+def test_confidence_thresholds_live_in_one_module() -> None:
+    """ADR-0050. A band boundary repeated is a threshold nobody can retune safely."""
+    for module in _modules(APP):
+        if module.name == "confidence.py":
+            continue
+        source = module.read_text()
+        assert "MIN_CONFIDENCE" not in source, (
+            f"{module.relative_to(BACKEND_ROOT)} defines its own confidence threshold; the policy "
+            "lives in app/agent/providers/confidence.py"
+        )

@@ -35,3 +35,27 @@ class EntityNotFound(LookupError):
         super().__init__(f"{resource} {resource_id} not found")
         self.resource = resource
         self.resource_id = resource_id
+
+
+class TerminalJobError(Exception):
+    """A job failure that retrying cannot fix.
+
+    The queue's default is to retry, which is right for a transient fault and wrong for a state
+    that will never change. An approval past its execution window is the latter: it cannot become
+    unexpired, so the job goes to `dead` immediately rather than burning five attempts against it
+    (ADR-0051).
+    """
+
+
+class UpstreamProviderError(Exception):
+    """A dependency outside this system failed.
+
+    Rendered as 502 or 504 rather than 500: "the model provider is unreachable" and "this service
+    has a bug" are different facts, and a client that cannot tell them apart cannot decide whether
+    retrying is sensible. The AI interaction is still recorded — the run happened, it just did not
+    succeed.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable

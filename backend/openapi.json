@@ -515,6 +515,13 @@
             ],
             "title": "Execution Error"
           },
+          "execution_expires_at": {
+            "description": "When this approval stops authorising anything (BR-AI-22, ADR-0051).\n\nDerived from `decided_at`, which is immutable, rather than stored \u2014 so the value is the\nsame on every read and there is no second source of truth to drift. Published because a\nclient showing an approval should be able to show its deadline.",
+            "format": "date-time",
+            "readOnly": true,
+            "title": "Execution Expires At",
+            "type": "string"
+          },
           "execution_status": {
             "title": "Execution Status",
             "type": "string"
@@ -577,7 +584,8 @@
           "resulting_entity_id",
           "executed_at",
           "execution_error",
-          "version"
+          "version",
+          "execution_expires_at"
         ],
         "title": "ApprovalRecordResource",
         "type": "object"

@@ -167,6 +167,32 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ### Open
 
+**A failed provider run leaves no AIInteraction row.** The runtime marks the interaction `failed`
+before re-raising, and `scoped_session` then rolls the request back — deliberately, because a
+service that kept an audit entry for a mutation that failed would be lying. So a provider outage is
+visible as a 502/504 and in logs, not as a row. Recording it durably needs a second transaction, and
+that belongs with whatever writes operational telemetry rather than bolted into the orchestration.
+Pinned by `test_a_malformed_provider_answer_is_not_a_low_confidence`, which asserts the count does
+not move.
+
+**Band floors are still uncalibrated, and now say so.** `HIGH = 85`, `MEDIUM = 60` are the
+Checkpoint 9 numbers carried forward unchanged, so that this checkpoint changed the *semantics*
+without also changing behaviour. They are now labelled with their source, which is the part that
+makes them tunable later; tuning them needs outcome data that does not exist. A provider reporting
+log-probs or nothing at all still needs a documented mapping before it goes on a real path.
+
+**`AnthropicProvider` has never spoken to Anthropic in CI.** Its unit tests drive a stubbed
+transport and cover the mapping — statuses to typed errors, malformed bodies to contract failures,
+the credential never reaching a return value. What they cannot cover is whether the real API's
+response shape matches what the adapter parses. The opt-in test exists for exactly that and has to
+be run deliberately, with a key, before the adapter is trusted.
+
+**No batch or scheduled analysis path.** Analysis is triggered per Event over HTTP. A provider
+outage therefore fails one request rather than stalling a queue, which is convenient and is not a
+design — when analysis becomes scheduled, the retry and rate-limit semantics of `ProviderError`
+will need somewhere to be honoured.
+
+
 **`find_similar` matches titles only.** Trigram over `work.title`, so two items describing the same
 thing in different words do not match — "Send the revised quote" and "Get the updated pricing to
 Nam" are the same task and score near zero. BR-AI-05 is satisfied (the agent looks, and the search
@@ -268,6 +294,20 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 `test_an_archived_team_can_still_be_given_new_work_today` so that changing it is visible.
 
 ### Resolved
+
+**Confidence was a bare number with no provenance (closed in CP10).** `HIGH = 85` and
+`MIN_CONFIDENCE = 60` were integers chosen so the fake provider crossed the threshold. A threshold
+tuned against a mixture of calibrated probabilities, adapter heuristics and defaults means nothing.
+Confidence now carries its source and `UNKNOWN` is first-class — a missing confidence never becomes
+HIGH, a default or a midpoint (ADR-0050).
+
+**ApprovalRecords could stay pending forever (closed in CP10).** BR-AI-22's window is enforced
+inside the claim, and the deadline is derived from the immutable `decided_at` rather than stored —
+so it cannot drift between a worker's retries (ADR-0051). Expiry is terminal rather than retryable.
+
+**The provider interface could not express failure (closed in CP10).** Six typed errors, and a
+malformed answer is a contract violation rather than a low confidence — so an outage no longer looks
+like a quiet day (ADR-0049).
 
 **The job queue was readable without an organization context (closed in CP9).** The Checkpoint 8
 exemption was keyed on the *absence* of a setting, so any session that forgot to scope — including
@@ -413,6 +453,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 7 | Evidence, Commitment, Proposal + ApprovalRecord, Tool Gateway; ADR-0040/0041/0042 | ✅ complete · 748 backend + 38 frontend |
 | 8 | AgentRuntime, AIInteraction, agent authority, queued execution; ADR-0043/0044/0045 | ✅ complete · 808 backend + 38 frontend |
 | 9 | Capability policy, job isolation, single execution path, find_similar; ADR-0046/0047/0048 | ✅ complete · 843 backend + 38 frontend |
+| 10 | Provider contract, confidence semantics, execution window; ADR-0049/0050/0051 | ✅ complete · 930 backend + 38 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

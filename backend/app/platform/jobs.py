@@ -184,6 +184,30 @@ def succeed(session: Session, job_id: uuid.UUID) -> None:
     )
 
 
+def kill(session: Session, record: JobRecord, error: str) -> None:
+    """Terminal failure. The job is `dead` and will not be retried.
+
+    Distinct from `fail` because some failures cannot improve by being tried again — an approval
+    whose execution window has passed is the case this exists for (ADR-0051). Retrying would burn
+    attempts against a state that will never change, and the queue would look busy while nothing
+    could ever happen.
+
+    `attempts` is written absolutely, for the same reason as in `fail`: the handler's transaction
+    was rolled back and took the claim's increment with it.
+    """
+    session.execute(
+        update(Job)
+        .where(Job.id == record.id)
+        .values(
+            attempts=record.attempts,
+            status="dead",
+            finished_at=dt.datetime.now(dt.UTC),
+            last_error=error[:2000],
+            version=Job.version + 1,
+        )
+    )
+
+
 def fail(session: Session, record: JobRecord, error: str) -> None:
     """Record a failure, and decide whether it is worth another attempt.
 
@@ -237,6 +261,7 @@ __all__ = [
     "claim",
     "enqueue",
     "fail",
+    "kill",
     "scope_to",
     "succeed",
 ]

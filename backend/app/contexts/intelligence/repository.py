@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, Select, and_, or_, select, update
+from sqlalchemy import CursorResult, Select, and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.contexts.intelligence.models import (
@@ -237,15 +237,23 @@ def approval_for_proposal(
 
 
 def claim_for_execution(
-    session: Session, *, org_id: uuid.UUID, approval_id: uuid.UUID
+    session: Session,
+    *,
+    org_id: uuid.UUID,
+    approval_id: uuid.UUID,
+    window: dt.timedelta,
 ) -> bool:
-    """Move an approval from `pending` to executing, exactly once.
+    """Move an approval from `pending` to executing, exactly once and only in time.
 
-    The conditional UPDATE is the whole mechanism: whichever caller changes the row wins, and every
-    other caller sees zero rows touched and stops. Checking `execution_status` in Python and then
-    writing would leave a window in which two executions both read `pending`.
+    The conditional UPDATE is the whole mechanism, and it carries **both** invariants: whichever
+    caller changes the row wins, and the row only changes while the execution window is open
+    (ADR-0051). Checking either in Python and then writing would leave a gap — two executions both
+    reading `pending`, or a worker that read an unexpired approval and was descheduled past the
+    deadline. There is no arrangement of retries, duplicate deliveries or racing workers that gets
+    through this statement after the deadline, because the deadline is part of the statement.
 
-    Returns True if this caller claimed it.
+    `decided_at` is frozen by the immutability trigger, so the expression is the same on every
+    attempt. Returns True if this caller claimed it.
     """
     stmt = (
         update(ApprovalRecord)
@@ -253,6 +261,7 @@ def claim_for_execution(
             ApprovalRecord.org_id == org_id,
             ApprovalRecord.id == approval_id,
             ApprovalRecord.execution_status == "pending",
+            ApprovalRecord.decided_at + window > func.now(),
         )
         .values(version=ApprovalRecord.version + 1)
     )

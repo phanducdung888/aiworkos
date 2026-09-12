@@ -29,7 +29,18 @@ from typing import Any, Protocol
 import app.contexts.intelligence.public as intelligence
 import app.contexts.signal.public as signal
 import app.contexts.work.public as work
-from app.agent.providers.port import CompletionRequest, ExtractedSpan, LLMProvider
+from app.agent.providers.confidence import ConfidenceBand, ConfidencePolicy
+from app.agent.providers.errors import (
+    ProviderContractViolation,
+    ProviderError,
+    ProviderTimeout,
+)
+from app.agent.providers.port import (
+    CompletionRequest,
+    CompletionResult,
+    ExtractedSpan,
+    LLMProvider,
+)
 from app.platform.actor import Actor, ActorType
 from app.platform.authz.agent import (
     AgentAuthorityError,
@@ -38,14 +49,24 @@ from app.platform.authz.agent import (
 )
 from app.platform.errors import EntityNotFound
 
-#: BR-AI-09. Below this, an extraction is recorded as a low-confidence observation and produces no
-#: Proposal. Guessing quietly is worse than silence — a wrong Proposal costs somebody a review and
-#: teaches them to stop reading them carefully.
-MIN_CONFIDENCE = 60
+#: BR-AI-09's threshold, as a policy object rather than a number (ADR-0050).
+#:
+#: The runtime asks this instead of comparing integers, so "what counts as confident enough" is a
+#: decision with a name. `UNKNOWN` is refused by construction: an extraction whose confidence could
+#: not be assessed is the case where the system knows least about what it is doing, and guessing
+#: quietly is worse than silence.
+DEFAULT_CONFIDENCE_POLICY = ConfidencePolicy(minimum_band=ConfidenceBand.MEDIUM)
 
 #: BR-AI-04. A single interaction may raise at most this many Proposals. A run that wants more has
 #: misunderstood something, and the cost of finding out is a review queue nobody can face.
 MAX_PROPOSALS = 25
+
+#: The system prompt. The only source of task definition — anything inside an Event that looks
+#: like an instruction is content, and BR-AI-10 says it is ignored.
+EXTRACTION_INSTRUCTION = (
+    "Identify commitments and requested actions in the supplied text. Quote spans exactly as they "
+    "appear. Do not infer an owner, a date or a project that the text does not state."
+)
 
 #: Which extracted span kind becomes which tool call. The map is the whole vocabulary an agent has:
 #: a span kind with no entry produces no Proposal, however confident the model was about it.
@@ -100,9 +121,18 @@ class AgentRuntime:
 
     name = "in-process"
 
-    def __init__(self, provider: LLMProvider, *, prompt_version: str = "2026-09-12") -> None:
+    def __init__(
+        self,
+        provider: LLMProvider,
+        *,
+        prompt_version: str = "2026-09-12",
+        confidence_policy: ConfidencePolicy | None = None,
+        model: str = "default",
+    ) -> None:
         self._provider = provider
         self._prompt_version = prompt_version
+        self._confidence = confidence_policy or DEFAULT_CONFIDENCE_POLICY
+        self._model = model
 
     def analyze_event(
         self,
@@ -165,11 +195,14 @@ class AgentRuntime:
                 CompletionRequest(
                     prompt_id="extract.commitments",
                     prompt_version=self._prompt_version,
+                    instruction=EXTRACTION_INSTRUCTION,
                     # The body is data. Any instruction inside it is ignored (BR-AI-10).
                     text=event.body_text or "",
+                    model=self._model,
                     max_spans=MAX_PROPOSALS,
                 )
             )
+            self._assert_spans_fit(event, result)
             evidence_ids, proposal_ids, low, duplicates = self._propose_from(
                 services,
                 principal,
@@ -178,6 +211,23 @@ class AgentRuntime:
                 spans=result.spans,
                 routed_to_person_id=routed_to_person_id or principal.person_id,
             )
+        except ProviderError as error:
+            # The interaction is marked before re-raising so that a caller which *does* commit —
+            # a worker, a future batch runner — keeps the record. In the HTTP path it does not
+            # survive: `scoped_session` rolls back on any exception, deliberately, because a
+            # service that kept an audit entry for a mutation that then failed would be lying.
+            #
+            # So a provider outage is visible as a 502/504 and in logs, not as a row. That is a
+            # real gap and it is recorded as one rather than papered over with a second
+            # transaction bolted on here — the fix belongs with whatever writes operational
+            # telemetry, not with the orchestration.
+            services.finish_interaction(
+                interaction_id,
+                status="timed_out" if isinstance(error, ProviderTimeout) else "failed",
+                finished_at=dt.datetime.now(dt.UTC),
+                error=f"{type(error).__name__}: {error}"[:2000],
+            )
+            raise
         except Exception as error:
             services.finish_interaction(
                 interaction_id,
@@ -193,13 +243,24 @@ class AgentRuntime:
             status="succeeded",
             finished_at=finished,
             latency_ms=int((finished - started).total_seconds() * 1000),
-            model=result.model,
-            model_version=result.model_version,
+            # What actually answered, not what was asked for (ADR-0049).
+            model=result.model.name,
+            model_version=result.model.version,
             token_usage=result.token_usage,
             output_summary={
                 "evidence": len(evidence_ids),
                 "proposals": len(proposal_ids),
                 "low_confidence": low,
+                # ADR-0050. The source travels with the counts, so an evaluation can separate a
+                # model's own claim from an adapter's heuristic instead of averaging them.
+                "confidence_source": (
+                    result.spans[0].confidence.source.value if result.spans else None
+                ),
+                "confidence_band": (
+                    result.spans[0].confidence.band.value if result.spans else None
+                ),
+                "finish_reason": result.finish_reason.value,
+                "model_version_resolved": result.model.resolved,
                 # BR-AI-05's answer, kept as a number: how often the agent looked and found the
                 # work already there. A rising count is the signal that something upstream is
                 # re-delivering, not that the agent is being cautious.
@@ -233,7 +294,10 @@ class AgentRuntime:
         for span in spans:
             if len(proposal_ids) >= MAX_PROPOSALS:
                 break
-            if span.confidence < MIN_CONFIDENCE:
+            if not self._confidence.admits(span.confidence):
+                # BR-AI-09. Recorded rather than discarded: "the model saw something and we chose
+                # not to act" is the observation the rule wants kept, and an `UNKNOWN` band lands
+                # here too — refused for the same reason and visibly for a different one.
                 low_confidence += 1
                 continue
 
@@ -310,7 +374,7 @@ class AgentRuntime:
                     # Verbatim, sliced from the Event itself rather than from the model's summary:
                     # BR-E-05 checks it against the source and a paraphrase would be refused.
                     excerpt=(event.body_text or "")[span.char_start : span.char_end],
-                    confidence=span.confidence,
+                    confidence=span.confidence.value or 0,
                 ),
             )
             evidence_ids.append(evidence.id)
@@ -331,7 +395,7 @@ class AgentRuntime:
                         span, target_type, principal, evidence_id=evidence.id
                     ),
                     routed_to_person_id=routed_to_person_id,
-                    confidence=span.confidence,
+                    confidence=span.confidence.value or 0,
                     source_event_id=event.id,
                     evidence_ids=(evidence.id,),
                 ),
@@ -383,3 +447,17 @@ class AgentRuntime:
                 "evidence_ids": [str(evidence_id)],
             }
         return {"title": span.summary}
+
+    def _assert_spans_fit(self, event: signal.Event, result: CompletionResult) -> None:
+        """Every span must index into the text we sent (ADR-0049).
+
+        Checked here rather than trusted, and raised as a contract violation rather than silently
+        dropped. A provider returning a span outside the body is broken, and BR-E-05 would refuse
+        the resulting Evidence anyway — catching it at the boundary names the right culprit.
+        """
+        body = event.body_text or ""
+        for span in result.spans:
+            if not 0 <= span.char_start < span.char_end <= len(body):
+                raise ProviderContractViolation(
+                    f"span [{span.char_start}:{span.char_end}] does not fit the supplied text"
+                )

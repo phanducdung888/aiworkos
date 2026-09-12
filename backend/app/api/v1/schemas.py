@@ -16,7 +16,7 @@ import datetime as dt
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.contexts.commitment.public import CommitmentStatus, DuePrecision
 from app.contexts.identity.public import (
@@ -27,7 +27,7 @@ from app.contexts.identity.public import (
     UnitStatus,
 )
 from app.contexts.intelligence.public import Decision as ApprovalDecision
-from app.contexts.intelligence.public import ProposalKind
+from app.contexts.intelligence.public import ProposalKind, execution_deadline
 from app.contexts.signal.public import (
     Assertion,
     EventType,
@@ -1089,6 +1089,17 @@ class ApprovalRecordResource(BaseModel):
     executed_at: dt.datetime | None
     execution_error: str | None
     version: int
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def execution_expires_at(self) -> dt.datetime:
+        """When this approval stops authorising anything (BR-AI-22, ADR-0051).
+
+        Derived from `decided_at`, which is immutable, rather than stored — so the value is the
+        same on every read and there is no second source of truth to drift. Published because a
+        client showing an approval should be able to show its deadline.
+        """
+        return execution_deadline(self.decided_at)
 
 
 class ExecutionResult(BaseModel):

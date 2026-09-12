@@ -342,3 +342,23 @@ Checkpoint 9 removed.
 wants a mutation goes the way production goes: queue, drain, then read the outcome off the
 ApprovalRecord. The shared `execute_approval` helper is what made converting the Checkpoint 7 and 8
 tests mechanical rather than a rewrite.
+
+## Provider and expiry (Checkpoint 10)
+
+**No test calls a real model.** The Anthropic adapter's tests drive a stubbed `httpx` transport, and
+the one test against the live endpoint is opt-in and off. A suite that needs a credential gets
+skipped in CI, which is the environment that should be running it.
+
+**Failure scenarios are configured, not provoked.** `FakeScenario` says "time out" rather than
+having some magic input cause it, so a test for timeout behaviour reads as what it tests and takes
+no time at all.
+
+**Expiry is tested by ageing the approval, as the table owner, with the trigger briefly disabled.**
+That is deliberately awkward: `decided_at` is frozen against everything including a test, so making
+an approval expire requires reaching past a control no application path can. If the deadline were a
+stored column the helper would edit that column instead, and the test would stop proving anything
+about derivation.
+
+**Every route to the deadline is a separate test.** Queued before and run after, retried after,
+delivered twice with the second late. They all end at the same `UPDATE`, and testing them
+separately is how a future change that moves the check out of that statement gets caught.

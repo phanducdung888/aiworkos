@@ -63,6 +63,9 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0046 | The worker holds a dedicated database role; default-deny is restored for everyone else | accepted | ADR-0044, BR-G-01a |
 | 0047 | Agent capability policy is a tenant-scoped table, deny by default | accepted | BR-AI-30, BR-AI-03 |
 | 0048 | Approved execution has exactly one path, and it is the queue | accepted | ADR-0044, BR-PR-01 |
+| 0049 | The provider contract is typed, and a provider has no authority | accepted | ai §12, ADR-0045 |
+| 0050 | Confidence carries its source; an unmeasured confidence is UNKNOWN | accepted | BR-AI-09 |
+| 0051 | The execution deadline is derived from the approval, not stored | accepted | BR-AI-22, ADR-0041 |
 
 ---
 
@@ -1009,3 +1012,148 @@ Rejected: keeping the synchronous path behind a feature flag (a flag is a second
 steps, and the flag itself becomes a bypass); making the synchronous endpoint enqueue and wait
 (re-creates request-lifetime coupling to the worker and turns a queue backlog into request
 timeouts).
+
+### ADR-0049 — The provider contract is typed, and a provider has no authority
+
+**Context.** Checkpoint 8 defined `LLMProvider` as one method returning spans, which was enough for a
+deterministic fake and not enough for a real model. Two things were missing and both are the kind
+that get filled in badly under deadline: what a provider is allowed to *say*, and what happens when
+it says something malformed.
+
+The second matters more than it looks. A provider that returns unparseable output is not a
+low-confidence answer — it is a broken contract, and treating the two the same means a provider
+outage silently becomes "the AI found nothing today". Nobody investigates a quiet day.
+
+**Decision.** The contract is typed in both directions and the provider's responsibilities stop at
+the model.
+
+*A provider may not.* Read the database, call a repository, call a domain service, reach the Tool
+Gateway, mutate anything, enqueue a job or decide an authorization. `app.agent.providers` already
+cannot import `app.contexts` or `app.platform` (ADR-0045) and that contract is unchanged — this
+records why it is absolute rather than convenient.
+
+*A provider must say what answered.* `model` and `model_version` are the model that *replied*, not
+the one requested. Routing means those differ, and recording the request would make
+`ai_interaction.model_version` a field nobody can trust for BR-AI-32's promotion metrics. A provider
+that cannot report a resolved version records the canonical identifier it was given and says so; it
+never invents one.
+
+*Failures are typed.* `ProviderUnavailable`, `ProviderTimeout`, `ProviderRateLimited`,
+`ProviderInvalidResponse`, `ProviderAuthenticationFailure`, `ProviderContractViolation`. An SDK or
+HTTP exception never reaches the runtime, because a domain that catches `httpx.HTTPError` is a domain
+that has opinions about a transport.
+
+*A malformed response is a contract violation, never a low confidence.* `ProviderInvalidResponse` is
+raised, the interaction is recorded `failed`, and no Proposal is produced. The distinction is the
+whole point: one is the model being unsure, the other is the integration being broken.
+
+*Conversation state is a reference the runtime owns.* The request may carry an opaque
+`conversation_id`, and that is all it is — a token the provider may use for its own caching. The
+runtime remains the owner of context, the provider stores no business state, and nothing downstream
+reads a provider's memory as truth.
+
+**Consequences.** A new provider is one file implementing one protocol, and it structurally cannot
+do anything but call a model. The Anthropic adapter is written over `httpx` rather than the vendor
+SDK, so the dependency surface is unchanged and the adapter is what a provider boundary should be —
+a thin client. Its integration test is opt-in and off by default, because a test suite that needs a
+credential is a test suite that gets skipped in the environment that should run it.
+
+Rejected: returning a loosely typed dict (moves parsing into the runtime, where a provider's shape
+would leak into orchestration); treating malformed output as low confidence (makes an outage
+indistinguishable from a quiet day); letting the provider hold conversation state (makes it a source
+of truth about business context, which is the thing ADR-0002 exists to prevent).
+
+### ADR-0050 — Confidence carries its source; an unmeasured confidence is UNKNOWN
+
+**Context.** Checkpoint 9 recorded that `HIGH = 85` and `MIN_CONFIDENCE = 60` were numbers chosen so
+the fake provider's output crossed the threshold. They were bare integers with no statement of where
+they came from, and BR-AI-09 — "extraction below the per-category confidence threshold produces no
+Proposal" — was only as meaningful as that provenance.
+
+The failure this invites is specific and hard to see afterwards. A provider that reports no
+confidence gets a number assigned by whoever wrote the adapter; six months later a threshold is
+tuned against a mixture of calibrated probabilities, heuristics and defaults, and nobody can say
+which is which. The threshold then means nothing, and the rule that depends on it is decorative.
+
+**Decision.** Confidence is never a bare number. `ConfidenceAssessment` carries three things:
+
+* `value` — 0–100, or absent
+* `source` — `provider_reported`, `heuristic`, or `unavailable`
+* `band` — `HIGH`, `MEDIUM`, `LOW`, or `UNKNOWN`
+
+**`UNKNOWN` is a first-class band, and a missing confidence never becomes anything else.** Not HIGH,
+not a default, not a midpoint. An extraction whose confidence could not be assessed is one the
+system has no grounds to act on, and BR-AI-09's threshold refuses it — which is the same answer it
+gives a genuinely low-confidence span, arrived at honestly.
+
+**A heuristic is labelled a heuristic.** The fake provider's scores are `heuristic` and so is any
+adapter that derives a number from something other than the model saying one. Nothing in the system
+presents a heuristic as a calibrated probability, and `ai_interaction.output_summary` records the
+source alongside the counts so an evaluation can separate them later.
+
+**The threshold lives in one place.** `ConfidencePolicy` holds the minimum band and the minimum
+value; the runtime asks it rather than comparing integers. Provider-specific mapping happens in
+`ConfidenceNormalizer`, outside the domain, so changing how a vendor's score becomes a band never
+touches Proposal, Approval or the Tool Gateway.
+
+**No calibration model.** This is a boundary, not a solution. Making the mapping replaceable is the
+work; measuring it needs outcome data that does not exist yet, and building a calibrator against no
+data would be the speculative abstraction this decision is trying to avoid.
+
+**Consequences.** "Why did the AI not propose this" becomes answerable: the band, the source and the
+policy are all recorded. A provider that reports nothing is visibly a provider that reports nothing,
+rather than one that appears confident. The cost is that every adapter has to state its source
+explicitly, which is a sentence of work and the sentence that makes the number mean something.
+
+Rejected: keeping bare integers with a documented convention (a convention is what the last two
+checkpoints kept finding had quietly stopped holding); defaulting missing confidence to the
+threshold (indistinguishable from a real score at exactly the value that decides the outcome).
+
+### ADR-0051 — The execution deadline is derived from the approval, not stored
+
+**Context.** BR-AI-22 gives an ApprovalRecord an execution window — default 24 hours — after which it
+expires and must be re-approved. Checkpoint 9 recorded that nothing enforced it: a job that failed
+repeatedly reached `dead` and its approval stayed `pending` forever.
+
+The obvious implementation is a column. It is the wrong one here. `ApprovalRecord` is immutable
+except for the execution outcome (migration 0010), and adding a deadline as stored state invites
+exactly the bug the immutability exists to prevent — a value that can be edited between a worker's
+retries, so the same approval has a different deadline depending on when it is asked.
+
+**Decision.** The deadline is `decided_at + EXECUTION_WINDOW`, computed where it is needed.
+`decided_at` is already frozen by the trigger, so the deadline is a pure function of an immutable
+field and one constant: the same ApprovalRecord always has the same deadline, in every process, on
+every retry, forever. No migration, no backfill, no second source of truth.
+
+**Enforced inside the claim, not before it.** The expiry predicate goes into the conditional UPDATE
+that already moves an approval out of `pending`:
+
+```sql
+UPDATE approval_record SET version = version + 1
+WHERE id = :id AND execution_status = 'pending'
+  AND decided_at + :window > now()
+```
+
+Check-then-execute has a window between the two; this has none. A worker that reads an unexpired
+approval and is descheduled past the deadline fails the claim when it resumes, because the claim is
+where the decision is made. Duplicate delivery, retry and two workers racing all reduce to the same
+statement, and there is no arrangement of them that executes after the deadline.
+
+**Expiry is terminal, not retryable.** A job whose approval has expired goes to `dead` immediately
+rather than back to `pending`. Retrying would burn attempts against a state that cannot improve, and
+the queue would look busy while nothing could ever happen.
+
+**Consequences.** BR-AI-22 becomes a property of the data rather than a sweep that has to run. There
+is no expiry job to schedule, nothing to fall behind, and an approval's status is correct even if
+no worker has looked at it. `execution_expires_at` is published on the API as a derived read-only
+field, so a client can show the deadline without a second source of truth existing.
+
+The cost is that changing `EXECUTION_WINDOW` retroactively changes the deadline of every
+already-decided approval. That is the correct behaviour for a policy — shortening the window should
+expire things — and it is worth stating, because a stored column would have frozen the old policy
+into rows nobody would think to look at.
+
+Rejected: an `approval_expires_at` column (mutable state duplicating a derivable value, and the
+immutability trigger would have to be relaxed to backfill it); a periodic expiry sweep (correctness
+that depends on a job running is correctness that pages somebody at 3am); checking expiry at enqueue
+only (the gap between queueing and running is exactly where the deadline passes).

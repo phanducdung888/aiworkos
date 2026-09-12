@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 import app.contexts.intelligence.public as intelligence
 from app.platform import jobs
+from app.platform.errors import TerminalJobError
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,15 @@ def run_once(factory: sessionmaker[Session]) -> RunReport:
         jobs.scope_to(session, record.org_id)
         try:
             outcome = handler(session, record.org_id, record.payload)
+        except TerminalJobError as error:
+            # Cannot improve by being tried again — an expired execution window is the case this
+            # exists for (ADR-0051). Rolled back first, then recorded in a clean transaction, so
+            # the failure is not written inside the poisoned one.
+            session.rollback()
+            jobs.kill(session, record, f"{type(error).__name__}: {error}")
+            session.commit()
+            logger.warning("job %s (%s) is dead: %s", record.id, record.kind, error)
+            return RunReport(claimed=1, succeeded=0, failed=1)
         except Exception as error:
             # Roll the mutation back *first*, then record the failure in a clean transaction. A
             # failure written inside the poisoned transaction would be rolled back with it, and the

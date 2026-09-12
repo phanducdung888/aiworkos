@@ -1390,6 +1390,16 @@ export interface components {
             executed_at: string | null;
             /** Execution Error */
             execution_error: string | null;
+            /**
+             * Execution Expires At
+             * Format: date-time
+             * @description When this approval stops authorising anything (BR-AI-22, ADR-0051).
+             *
+             *     Derived from `decided_at`, which is immutable, rather than stored — so the value is the
+             *     same on every read and there is no second source of truth to drift. Published because a
+             *     client showing an approval should be able to show its deadline.
+             */
+            readonly execution_expires_at: string;
             /** Execution Status */
             execution_status: string;
             /**

@@ -1,0 +1,180 @@
+"""The provider contract (ADR-0049).
+
+A provider talks to a model and returns structured output. Most of this file is about the two
+things Checkpoint 8's interface could not express: what a provider is allowed to *say*, and what
+happens when it says something the contract cannot accept.
+
+The second is the one worth reading. A malformed answer is a broken integration, not a
+low-confidence result — and if the two are treated the same, a provider outage looks like a quiet
+day, and nobody investigates a quiet day.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.agent.providers.confidence import ConfidenceBand, ConfidenceSource
+from app.agent.providers.errors import (
+    ProviderAuthenticationFailure,
+    ProviderContractViolation,
+    ProviderError,
+    ProviderInvalidResponse,
+    ProviderRateLimited,
+    ProviderTimeout,
+    ProviderUnavailable,
+)
+from app.agent.providers.fake import (
+    HIGH_CONFIDENCE,
+    LOW_CONFIDENCE,
+    MALFORMED,
+    MEDIUM_CONFIDENCE,
+    TIMES_OUT,
+    UNKNOWN_CONFIDENCE_SCENARIO,
+    UNRESOLVED_VERSION,
+    FakeProvider,
+    FakeScenario,
+)
+from app.agent.providers.port import (
+    CompletionRequest,
+    FinishReason,
+    LLMProvider,
+)
+
+PROMISE = "Thanks for the call. I will send the revised quote on Friday."
+
+
+def ask(provider: FakeProvider, text: str = PROMISE, **over: object) -> object:
+    request = CompletionRequest(
+        prompt_id="extract.commitments",
+        prompt_version="2026-09-12",
+        instruction="Identify commitments.",
+        text=text,
+        model="deterministic",
+        **over,  # type: ignore[arg-type]
+    )
+    return provider.complete(request)
+
+
+class TestTheProtocol:
+    def test_the_fake_satisfies_the_protocol(self) -> None:
+        provider: LLMProvider = FakeProvider()
+        assert provider.name == "fake"
+
+    def test_it_finds_the_promise_in_the_text(self) -> None:
+        """A real, if crude, extraction — not a canned answer.
+
+        The spans have to index into the text because BR-E-05 checks the excerpt against the Event,
+        and a mock returning fixed offsets would make that rule untestable.
+        """
+        result = ask(FakeProvider(HIGH_CONFIDENCE))
+        assert result.spans  # type: ignore[attr-defined]
+        span = result.spans[0]  # type: ignore[attr-defined]
+        assert PROMISE[span.char_start : span.char_end] == span.summary
+
+    def test_it_is_deterministic(self) -> None:
+        first = ask(FakeProvider(HIGH_CONFIDENCE))
+        second = ask(FakeProvider(HIGH_CONFIDENCE))
+        assert [s.summary for s in first.spans] == [  # type: ignore[attr-defined]
+            s.summary for s in second.spans  # type: ignore[attr-defined]
+        ]
+
+    def test_a_session_identifier_is_accepted_and_opaque(self) -> None:
+        """The runtime owns conversation context; this is a token a provider may cache against.
+
+        Accepted so that a provider needing one does not force the port to change, and carried
+        nowhere — nothing downstream reads a provider's memory as truth (ADR-0049).
+        """
+        result = ask(FakeProvider(HIGH_CONFIDENCE), conversation_id="session-abc")
+        assert result.spans  # type: ignore[attr-defined]
+
+
+class TestModelIdentity:
+    def test_it_reports_which_model_answered(self) -> None:
+        result = ask(FakeProvider(HIGH_CONFIDENCE, model="deterministic", version="v3"))
+        assert result.model.provider == "fake"  # type: ignore[attr-defined]
+        assert result.model.name == "deterministic"  # type: ignore[attr-defined]
+        assert result.model.version == "v3"  # type: ignore[attr-defined]
+        assert result.model.resolved is True  # type: ignore[attr-defined]
+
+    def test_an_unresolvable_version_says_so_rather_than_inventing_one(self) -> None:
+        """"We do not know precisely" is visible rather than hidden behind a plausible string.
+
+        A version nobody can trust is worse than an absent one, because BR-AI-32's promotion
+        metrics would be computed over it.
+        """
+        result = ask(FakeProvider(UNRESOLVED_VERSION, model="routed"))
+        assert result.model.resolved is False  # type: ignore[attr-defined]
+        assert result.model.version == "routed"  # type: ignore[attr-defined]
+
+    def test_the_finish_reason_is_reported(self) -> None:
+        result = ask(FakeProvider(FakeScenario(finish_reason=FinishReason.LENGTH)))
+        assert result.finish_reason is FinishReason.LENGTH  # type: ignore[attr-defined]
+
+
+class TestConfidenceReporting:
+    def test_high_medium_and_low_are_distinguishable(self) -> None:
+        for scenario, expected in (
+            (HIGH_CONFIDENCE, ConfidenceBand.HIGH),
+            (MEDIUM_CONFIDENCE, ConfidenceBand.MEDIUM),
+            (LOW_CONFIDENCE, ConfidenceBand.LOW),
+        ):
+            result = ask(FakeProvider(scenario))
+            assert result.spans[0].confidence.band is expected  # type: ignore[attr-defined]
+
+    def test_a_provider_reporting_nothing_produces_unknown(self) -> None:
+        result = ask(FakeProvider(UNKNOWN_CONFIDENCE_SCENARIO))
+        assessment = result.spans[0].confidence  # type: ignore[attr-defined]
+        assert assessment.band is ConfidenceBand.UNKNOWN
+        assert assessment.value is None
+
+    def test_the_fake_labels_its_scores_as_heuristic(self) -> None:
+        """A pattern match is an honest guess about whether a sentence is a promise.
+
+        It is not a probability, and putting it in the same field as a model's own number without
+        saying which is which is how a threshold stops meaning anything (ADR-0050).
+        """
+        result = ask(FakeProvider(HIGH_CONFIDENCE))
+        assert (
+            result.spans[0].confidence.source  # type: ignore[attr-defined]
+            is ConfidenceSource.HEURISTIC
+        )
+
+
+class TestFailures:
+    @pytest.mark.parametrize(
+        ("error", "retryable"),
+        [
+            (ProviderUnavailable("down"), True),
+            (ProviderTimeout("slow"), True),
+            (ProviderRateLimited("too many"), True),
+            (ProviderAuthenticationFailure("bad key"), False),
+            (ProviderInvalidResponse("gibberish"), False),
+            (ProviderContractViolation("out of range"), False),
+        ],
+    )
+    def test_each_failure_is_typed_and_says_whether_retrying_helps(
+        self, error: ProviderError, retryable: bool
+    ) -> None:
+        assert isinstance(error, ProviderError)
+        assert error.retryable is retryable
+
+    def test_a_configured_failure_is_raised_without_sleeping(self) -> None:
+        """A test for timeout behaviour should not take as long as a timeout."""
+        with pytest.raises(ProviderTimeout):
+            ask(FakeProvider(TIMES_OUT))
+
+    def test_a_malformed_answer_is_a_contract_failure_not_a_low_confidence(self) -> None:
+        """The distinction the whole error hierarchy exists for.
+
+        If a broken integration produced a low-confidence result, an outage would be
+        indistinguishable from a day on which the model simply found nothing.
+        """
+        with pytest.raises(ProviderInvalidResponse):
+            ask(FakeProvider(MALFORMED))
+
+    def test_an_authentication_failure_is_not_retryable(self) -> None:
+        """Asking again with the same rejected credential is the same request.
+
+        It is an operational problem and should look like one rather than like a flaky model.
+        """
+        assert ProviderAuthenticationFailure("nope").retryable is False

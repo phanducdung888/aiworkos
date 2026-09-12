@@ -492,3 +492,21 @@ def execute_approval(
         execution_status=body.get("execution_status", "unknown"),
         body=body,
     )
+
+
+@pytest.fixture
+def provider_scenario(api: TestClient):  # type: ignore[no-untyped-def]
+    """Swap the provider the API builds its runtime with, for one test.
+
+    Installed on the app the same way the token verifier and the object store are, so a test that
+    forgets to undo it cannot leak into the next one. What this makes testable is the confidence
+    *policy* end to end: the band a provider reports decides whether a Proposal is raised, and that
+    is only observable if the band can be varied.
+    """
+    from app.agent.providers.fake import FakeProvider, FakeScenario
+
+    def install(scenario: FakeScenario) -> None:
+        api.app.state.llm_provider = FakeProvider(scenario)  # type: ignore[attr-defined]
+
+    yield install
+    api.app.state.llm_provider = None  # type: ignore[attr-defined]

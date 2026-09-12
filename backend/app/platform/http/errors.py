@@ -28,7 +28,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.platform.authz import AuthorizationError
 from app.platform.authz.agent import AgentAuthorityError
 from app.platform.concurrency import StaleVersionError
-from app.platform.errors import DomainRuleViolation, EntityNotFound
+from app.platform.errors import DomainRuleViolation, EntityNotFound, UpstreamProviderError
 from app.platform.http.idempotency import ConcurrentRequest, IdempotencyKeyReused
 from app.platform.http.pagination import InvalidCursor
 from app.platform.principal import (
@@ -109,6 +109,18 @@ def install(app: FastAPI) -> None:
         with `authorization_result = denied`, which is the row an auditor reads.
         """
         return problem(403, "forbidden", "Forbidden", str(exc))
+
+    @app.exception_handler(UpstreamProviderError)
+    async def _upstream(_: Request, exc: UpstreamProviderError) -> JSONResponse:
+        """504 when waiting for it failed, 502 otherwise.
+
+        Not 500. This service did what it was asked; something it depends on did not, and the
+        distinction is what tells a client whether to try again.
+        """
+        status = 504 if "Timeout" in str(exc) else 502
+        return problem(
+            status, "upstream-unavailable", "Upstream provider unavailable", str(exc)
+        )
 
     @app.exception_handler(NoRolesHeld)
     async def _no_roles(_: Request, exc: NoRolesHeld) -> JSONResponse:

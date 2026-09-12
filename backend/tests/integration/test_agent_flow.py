@@ -368,3 +368,171 @@ def test_another_organizations_interaction_is_invisible(
     assert api.get(
         f"/api/v1/ai-interactions/{uuid.uuid4()}", headers=as_admin
     ).status_code == 404
+
+
+# --------------------------------------------------------------------------- confidence (CP10)
+
+
+def test_a_high_confidence_span_becomes_a_proposal(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    provider_scenario,
+) -> None:
+    from app.agent.providers.fake import HIGH_CONFIDENCE
+
+    provider_scenario(HIGH_CONFIDENCE)
+    result = analyze(api, as_admin, an_event(api, as_admin))
+    assert result["proposal_ids"]
+
+
+def test_a_low_confidence_span_produces_nothing(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    provider_scenario,
+    work_org: WorkOrg,
+    scoped_session: Session,
+) -> None:
+    """BR-AI-09. Guessing quietly is worse than silence.
+
+    The run succeeds having proposed nothing, which is a normal outcome rather than a failure —
+    and the count is recorded so "the model saw something and we chose not to act" stays visible.
+    """
+    from app.agent.providers.fake import LOW_CONFIDENCE
+
+    provider_scenario(LOW_CONFIDENCE)
+    result = analyze(api, as_admin, an_event(api, as_admin))
+    assert result["proposal_ids"] == []
+    assert result["low_confidence"] >= 1
+
+    interaction = api.get(
+        f"/api/v1/ai-interactions/{result['ai_interaction_id']}", headers=as_admin
+    ).json()
+    assert interaction["status"] == "succeeded"
+
+
+def test_an_unknown_confidence_never_becomes_a_proposal(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    provider_scenario,
+) -> None:
+    """The case where the system knows least about what it is doing (ADR-0050).
+
+    A provider that reports no confidence must not be treated as a confident one. `UNKNOWN` is
+    refused by the same policy that refuses `LOW`, arrived at honestly rather than by picking a
+    number on the provider's behalf.
+    """
+    from app.agent.providers.fake import UNKNOWN_CONFIDENCE_SCENARIO
+
+    provider_scenario(UNKNOWN_CONFIDENCE_SCENARIO)
+    result = analyze(api, as_admin, an_event(api, as_admin))
+    assert result["proposal_ids"] == []
+
+
+def test_the_interaction_records_the_confidence_source(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    provider_scenario,
+) -> None:
+    """So an evaluation can separate a model's own claim from an adapter's heuristic."""
+    from app.agent.providers.fake import HIGH_CONFIDENCE
+
+    provider_scenario(HIGH_CONFIDENCE)
+    result = analyze(api, as_admin, an_event(api, as_admin))
+    interaction = api.get(
+        f"/api/v1/ai-interactions/{result['ai_interaction_id']}", headers=as_admin
+    ).json()
+    assert interaction["output_summary"]["confidence_source"] == "heuristic"
+    assert interaction["output_summary"]["confidence_band"] == "high"
+
+
+def test_a_provider_timeout_fails_the_request_honestly(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    provider_scenario,
+    work_org: WorkOrg,
+    scoped_session: Session,
+) -> None:
+    """504, not 500 (ADR-0049).
+
+    "The model provider is unreachable" and "this service has a bug" are different facts, and a
+    client that cannot tell them apart cannot decide whether retrying is sensible.
+
+    Nothing is left behind: the request's transaction rolls back, so there is no half-written
+    interaction claiming a run that produced nothing. The provider failure is visible as the status
+    code and in logs rather than as a row — a known gap, recorded in progress.md.
+    """
+    from app.agent.providers.fake import TIMES_OUT
+
+    before = counts(scoped_session, work_org.org_id)
+    provider_scenario(TIMES_OUT)
+    response = api.post(
+        f"/api/v1/events/{an_event(api, as_admin)['id']}/analyze", headers=as_admin
+    )
+    assert response.status_code == 504
+
+    after = counts(scoped_session, work_org.org_id)
+    assert after["proposal"] == before["proposal"]
+    assert after["evidence"] == before["evidence"]
+
+
+def test_a_malformed_provider_answer_is_not_a_low_confidence(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    provider_scenario,
+    work_org: WorkOrg,
+    scoped_session: Session,
+) -> None:
+    """The distinction the error hierarchy exists for (ADR-0049).
+
+    A broken integration returns 502. If it instead produced a successful run with no proposals,
+    an outage would be indistinguishable from a day on which the model found nothing — and nobody
+    investigates a quiet day.
+    """
+    from app.agent.providers.fake import MALFORMED
+
+    before = counts(scoped_session, work_org.org_id)
+    provider_scenario(MALFORMED)
+    response = api.post(
+        f"/api/v1/events/{an_event(api, as_admin)['id']}/analyze", headers=as_admin
+    )
+    assert response.status_code == 502
+    assert "ProviderInvalidResponse" in response.text
+
+    after = counts(scoped_session, work_org.org_id)
+    assert after["ai_interaction"] == before["ai_interaction"], (
+        "a rolled-back run must not leave an interaction claiming it happened"
+    )
+
+
+def test_the_interaction_records_which_model_answered(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    provider_scenario,
+) -> None:
+    """ADR-0049. What replied, not what was asked for."""
+    from app.agent.providers.fake import FakeProvider, FakeScenario
+
+    api.app.state.llm_provider = FakeProvider(  # type: ignore[attr-defined]
+        FakeScenario(confidence_value=90), model="deterministic", version="v7"
+    )
+    result = analyze(api, as_admin, an_event(api, as_admin))
+    interaction = api.get(
+        f"/api/v1/ai-interactions/{result['ai_interaction_id']}", headers=as_admin
+    ).json()
+    assert interaction["model"] == "deterministic"
+    assert interaction["model_version"] == "v7"
+    assert interaction["output_summary"]["model_version_resolved"] is True

@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     s3_bucket: str = "workos-attachments"
     s3_region: str = "us-east-1"
 
+    # --- LLM provider (ADR-0049) ---
+    # A configuration boundary, not a credential store. The key is read from the environment and
+    # never appears in a domain type, an AIInteraction or a log line; there is no default and no
+    # value in the repository. An empty key means no real provider is configured, which is the
+    # state every environment is in until somebody sets one.
+    llm_provider: str = "fake"
+    llm_api_key: str = ""
+    llm_model: str = "claude-sonnet-5"
+    llm_timeout_seconds: float = 30.0
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -17,10 +17,12 @@ from app.contexts.intelligence.commands import (
     ReviseProposal,
 )
 from app.contexts.intelligence.domain import (
+    EXECUTION_WINDOW,
     Decision,
     ExecutionStatus,
     ProposalKind,
     ProposalStatus,
+    execution_deadline,
 )
 from app.contexts.intelligence.gateway import REGISTRY, REGISTRY_VERSION, Tool
 from app.contexts.intelligence.interactions import (
@@ -75,6 +77,8 @@ from app.contexts.intelligence.services import (
 )
 
 __all__ = [
+    "execution_deadline",
+    "EXECUTION_WINDOW",
     "set_capability_mode",
     "load_capability_policy",
     "capability_policy_rows",
