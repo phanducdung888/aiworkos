@@ -36,6 +36,7 @@ export type Evidence = Schemas['EvidenceResource']
 export type Commitment = Schemas['CommitmentResource']
 export type CommitmentStatus = Schemas['CommitmentStatus']
 export type AIInteraction = Schemas['AIInteractionDetail']
+export type CapabilityPolicy = Schemas['CapabilityPolicyResource']
 /**
  * The enums, taken from the request schemas rather than the response ones.
  *
@@ -67,6 +68,7 @@ export const keys = {
   overdue: ['commitments', 'overdue'] as const,
   producedBy: (entityId: string) => ['proposals', 'produced', entityId] as const,
   interaction: (id: string) => ['ai-interactions', id] as const,
+  agentPolicy: ['agent-policy'] as const,
 }
 
 export interface WorkFilters {
@@ -568,5 +570,20 @@ export function useAiInteraction(id: string | null | undefined): UseQueryResult<
         }),
       ),
     enabled: Boolean(id),
+  })
+}
+
+/**
+ * What this organization has decided its agents may do (ADR-0047).
+ *
+ * Worth reading on the capture screen, because absence is denial: an organization that has decided
+ * nothing denies everything, and an analysis that proposes nothing then looks like a model that
+ * found nothing. Those are different facts and a person has to be able to tell them apart.
+ */
+export function useAgentPolicy(): UseQueryResult<CapabilityPolicy[]> {
+  return useQuery({
+    queryKey: keys.agentPolicy,
+    queryFn: async () => unwrap(await api.GET('/api/v1/agent-policy', {})).items,
+    staleTime: 5 * 60 * 1000,
   })
 }

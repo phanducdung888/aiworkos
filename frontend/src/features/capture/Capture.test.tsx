@@ -16,6 +16,11 @@ const EVENT_ID = '33333333-3333-4333-8333-333333333333'
 const MEMBER = '44444444-4444-4444-8444-444444444444'
 const PROPOSAL = '55555555-5555-4555-8555-555555555555'
 
+const policy = (items: unknown[] = [{ id: 'p', capability: 'extract', entity_type: 'work', action: 'create', mode: 'level_1_propose', decided_by_person_id: null, decided_at: '2026-09-12T09:00:00Z', version: 1, org_id: '11111111-1111-4111-8111-111111111111' }]) => ({
+  match: 'GET /api/v1/agent-policy',
+  body: { items },
+})
+
 const people = {
   match: 'GET /api/v1/people',
   body: { items: [{ id: MEMBER, display_name: 'Mai Tran', status: 'active' }], next_cursor: null },
@@ -83,6 +88,7 @@ describe('Capture', () => {
     let sent: { participants: { person_id: string | null; external_handle: string }[] } | undefined
     stubApi([
       people,
+      policy(),
       { ...anEvent([unresolved]), onRequest: ({ body }) => void (sent = JSON.parse(body)) },
     ])
     renderSurface(<Capture />)
@@ -98,7 +104,7 @@ describe('Capture', () => {
   })
 
   it('shows who a confirmed handle resolved to', async () => {
-    stubApi([people, anEvent([resolved])])
+    stubApi([people, policy(), anEvent([resolved])])
     renderSurface(<Capture />)
 
     await captureMessage()
@@ -111,7 +117,7 @@ describe('Capture', () => {
   it('says plainly when a handle resolved to nobody', async () => {
     // BR-I-06. An unvouched mapping resolves to nobody, and the reader has to be able to see that
     // rather than wonder why no commitment was proposed.
-    stubApi([people, anEvent([unresolved])])
+    stubApi([people, policy(), anEvent([unresolved])])
     renderSurface(<Capture />)
 
     await captureMessage()
@@ -120,7 +126,7 @@ describe('Capture', () => {
   })
 
   it('analyses only when asked, and says nothing was created', async () => {
-    const { calls } = stubApi([people, anEvent([resolved]), analysis([PROPOSAL])])
+    const { calls } = stubApi([people, policy(), anEvent([resolved]), analysis([PROPOSAL])])
     renderSurface(<Capture />)
 
     await captureMessage()
@@ -138,7 +144,7 @@ describe('Capture', () => {
   })
 
   it('explains an analysis that proposed nothing rather than showing an empty list', async () => {
-    stubApi([people, anEvent([unresolved]), analysis([], 1)])
+    stubApi([people, policy(), anEvent([unresolved]), analysis([], 1)])
     renderSurface(<Capture />)
 
     await captureMessage()
@@ -151,6 +157,7 @@ describe('Capture', () => {
   it('shows the rule id when capture is refused', async () => {
     stubApi([
       people,
+      policy(),
       { match: 'POST /api/v1/events', status: 422, body: problem(422, { rule: 'BR-E-12' }) },
     ])
     renderSurface(<Capture />)
@@ -161,9 +168,25 @@ describe('Capture', () => {
   })
 
   it('has no accessibility violations', async () => {
-    stubApi([people])
+    stubApi([people, policy()])
     const { container } = renderSurface(<Capture />)
     await screen.findByLabelText(/^message$/i)
     expect(await axe(container)).toHaveNoViolations()
+  })
+})
+describe('Capture when the agent is switched off (CP18)', () => {
+  it('says the organization denied it rather than blaming the model', async () => {
+    // ADR-0047: absence is denial. An org that has decided nothing denies everything, and the
+    // result looks identical to a model that found nothing unless somebody says which it was.
+    stubApi([people, policy([]), anEvent([resolved]), analysis([], 0)])
+    renderSurface(<Capture />)
+
+    await captureMessage()
+    await screen.findByTestId('resolution')
+    await userEvent.click(screen.getByRole('button', { name: /analyse/i }))
+
+    expect(await screen.findByTestId('policy-empty')).toHaveTextContent(
+      /has not granted its agents any capability/i,
+    )
   })
 })

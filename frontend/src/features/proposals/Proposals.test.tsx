@@ -428,3 +428,61 @@ describe('ProposalDetail for work', () => {
     expect(action).not.toHaveTextContent('due_date')
   })
 })
+describe('ProposalList history (CP18)', () => {
+  it('can look at what was already decided, not only at what is waiting', async () => {
+    // "What did the AI propose, and what did a person do about it" is a question about history. A
+    // screen that only ever showed the outstanding ones could not answer it.
+    const { calls } = stubApi([
+      { match: 'GET /api/v1/proposals', body: { items: [aProposal()], next_cursor: null } },
+    ])
+    renderSurface(<ProposalList />)
+    await screen.findByRole('link', { name: EXCERPT })
+
+    await userEvent.click(screen.getByRole('button', { name: /approved/i }))
+
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes('status=accepted'))).toBe(true),
+    )
+  })
+
+  it('says which kind of nothing it found', async () => {
+    stubApi([{ match: 'GET /api/v1/proposals', body: { items: [], next_cursor: null } }])
+    renderSurface(<ProposalList />)
+    expect(await screen.findByText(/nothing is waiting/i)).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: /rejected/i }))
+    expect(await screen.findByText(/no rejected proposals/i)).toBeVisible()
+  })
+})
+
+describe('ProposalDetail revisited (CP18)', () => {
+  it('shows what happened when an approved proposal is opened later', async () => {
+    // The defect this fixes: coming back to an approved proposal showed a status and nothing else,
+    // losing the answer to "what did a human approve, and what came of it" at the moment somebody
+    // asked it.
+    stubApi([
+      { match: `GET /api/v1/proposals/${PROPOSAL}`, body: aProposal({ status: 'accepted' }) },
+      evidence,
+      sourceEvent,
+      approvalFor(),
+      commitment,
+    ])
+    renderDetail()
+
+    expect(await screen.findByTestId('execution-status')).toHaveTextContent('executed')
+    expect(await screen.findByTestId('created-commitment')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /approve/i })).toBeNull()
+  })
+
+  it('says a rejected proposal created nothing, rather than failing to load an approval', async () => {
+    stubApi([
+      { match: `GET /api/v1/proposals/${PROPOSAL}`, body: aProposal({ status: 'rejected' }) },
+      evidence,
+      sourceEvent,
+      // No approval exists for a rejection; the 404 is the answer.
+    ])
+    renderDetail()
+
+    expect(await screen.findByTestId('no-approval')).toHaveTextContent(/nothing was created/i)
+  })
+})

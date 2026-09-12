@@ -15,7 +15,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Analysis, EventDetail, ParticipantRole } from '@/api/hooks'
-import { useAnalyzeEvent, useCaptureEvent, usePeople } from '@/api/hooks'
+import { useAgentPolicy, useAnalyzeEvent, useCaptureEvent, usePeople } from '@/api/hooks'
 import { ErrorState } from '@/components/States'
 import { Field } from '@/components/Field'
 
@@ -36,6 +36,7 @@ export function Capture() {
   const [event, setEvent] = useState<EventDetail | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const people = usePeople()
+  const policy = useAgentPolicy()
   const capture = useCaptureEvent()
   const analyze = useAnalyzeEvent()
 
@@ -212,10 +213,20 @@ export function Capture() {
             ))}
           </ul>
           {(analysis.proposal_ids?.length ?? 0) === 0 ? (
-            <p>
-              Nothing was proposed. An unresolved speaker or a low-confidence reading both end
-              here, which is the system declining to guess rather than finding nothing.
-            </p>
+            // Absence is denial (ADR-0047), and "the AI is switched off" looks exactly like "the
+            // AI found nothing" unless somebody says which it was.
+            policy.data?.length === 0 ? (
+              <p data-testid="policy-empty">
+                Nothing was proposed, and this organization has not granted its agents any
+                capability yet. Until an administrator does, every proposal is denied — the model
+                was not the thing that declined.
+              </p>
+            ) : (
+              <p>
+                Nothing was proposed. An unresolved speaker or a low-confidence reading both end
+                here, which is the system declining to guess rather than finding nothing.
+              </p>
+            )
           ) : null}
         </section>
       ) : null}

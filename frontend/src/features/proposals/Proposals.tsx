@@ -14,7 +14,10 @@
  */
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import type { ProposalDetail as ProposalDetailResource } from '@/api/hooks'
+import type {
+  ProposalDetail as ProposalDetailResource,
+  ProposalStatus,
+} from '@/api/hooks'
 import {
   useApprovalFor,
   useCommitment,
@@ -45,27 +48,56 @@ export function band(confidence: number): string {
 
 const formatted = (iso: string): string => new Date(iso).toLocaleString()
 
+/**
+ * Which proposals a reader is looking at.
+ *
+ * Pending first, because that is the one that asks something of them. The decided states are
+ * reachable on purpose: "what did the AI propose, and what did a person do about it" is a question
+ * about history, and a screen that only ever showed the outstanding ones could not answer it.
+ */
+const VIEWS: { status: ProposalStatus; label: string }[] = [
+  { status: 'pending', label: 'Waiting' },
+  { status: 'accepted', label: 'Approved' },
+  { status: 'rejected', label: 'Rejected' },
+  { status: 'expired', label: 'Expired' },
+]
+
 export function ProposalList() {
-  const proposals = useProposals('pending')
+  const [view, setView] = useState<ProposalStatus>('pending')
+  const proposals = useProposals(view)
 
   if (proposals.isPending) return <Loading label="proposals" />
   if (proposals.isError) {
     return <ErrorState error={proposals.error} retry={() => void proposals.refetch()} />
   }
-  if (proposals.data.length === 0) {
-    return (
-      <section aria-labelledby="proposals-heading">
-        <h1 id="proposals-heading">Proposals</h1>
-        <Empty>Nothing is waiting for a decision.</Empty>
-      </section>
-    )
-  }
-
   return (
     <section aria-labelledby="proposals-heading">
       <h1 id="proposals-heading">Proposals</h1>
+      <p>
+        {VIEWS.map((candidate) => (
+          <button
+            key={candidate.status}
+            type="button"
+            aria-pressed={view === candidate.status}
+            onClick={() => setView(candidate.status)}
+          >
+            {candidate.label}
+          </button>
+        ))}
+      </p>
+      {proposals.data.length === 0 ? (
+        <Empty>
+          {view === 'pending'
+            ? 'Nothing is waiting for a decision.'
+            : `No ${view} proposals.`}
+        </Empty>
+      ) : (
       <table>
-        <caption>Waiting for a decision. Nothing here has been created.</caption>
+        <caption>
+          {view === 'pending'
+            ? 'Waiting for a decision. Nothing here has been created.'
+            : `Proposals that were ${view}.`}
+        </caption>
         <thead>
           <tr>
             <th scope="col">Summary</th>
@@ -89,6 +121,7 @@ export function ProposalList() {
           ))}
         </tbody>
       </table>
+      )}
     </section>
   )
 }
@@ -214,7 +247,10 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
       {queue.isError ? (
         <ErrorState error={queue.error} retry={() => queue.reset()} />
       ) : null}
-      {decided ? <Outcome proposalId={proposal.id} /> : null}
+      {/* Whenever it has been decided — not only in the session that decided it. Coming back to
+          an approved proposal used to show a status and nothing else, which loses the answer to
+          "what did a human approve, and what happened?" at exactly the moment somebody asks it. */}
+      {decided || !pending ? <Outcome proposalId={proposal.id} /> : null}
     </section>
   )
 }
@@ -229,8 +265,19 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
 function Outcome({ proposalId }: { proposalId: string }) {
   const approval = useApprovalFor(proposalId, true)
 
-  if (approval.isPending) return <Loading label="the approval" />
-  if (approval.isError) return <ErrorState error={approval.error} />
+  if (approval.isPending) return <Loading label="the outcome" />
+  if (approval.isError) {
+    // A rejected proposal has no ApprovalRecord, and that is the answer rather than a failure:
+    // somebody looked and said no, and nothing was created.
+    return (
+      <section aria-labelledby="outcome-heading">
+        <h2 id="outcome-heading">Outcome</h2>
+        <p data-testid="no-approval">
+          No approval was recorded. Nothing was created from this proposal.
+        </p>
+      </section>
+    )
+  }
   const record = approval.data
 
   return (

@@ -17,9 +17,9 @@ it in the same change as the work it describes.
 | Phase | Name | Status | Exit gate |
 |---|---|---|---|
 | 0 | Architecture & product definition | ✅ complete; packs v1.0 and v1.1 applied | **met** |
-| 1 | Work Core (no AI) | 🟡 in progress — checkpoints 1 and 2 complete | A team can manage real work in it with AI off |
-| 2 | Signal capture & evidence | ⬜ not started | Events ingested, evidence attachable by hand, corpus collecting |
-| 3 | Tool Gateway & extraction | ⬜ not started | Proposals from real activity, accepted by real users |
+| 1 | Work Core (no AI) | ✅ complete — checkpoints 1–5.1 | A team can manage real work in it with AI off |
+| 2 | Signal capture & evidence | ✅ complete — checkpoints 6–7 | Events ingested, evidence attachable by hand, corpus collecting |
+| 3 | Tool Gateway & extraction | 🟡 in progress — checkpoints 8–18; pilot use not yet attempted | Proposals from real activity, accepted by real users |
 | 4 | Monitoring, risks, commitments | ⬜ not started | System raises a risk a human had not noticed |
 | 5 | Executive intelligence | ⬜ not started | A lead stops writing status reports by hand |
 | 6 | Connectors & autonomy tuning | ⬜ not started | Capture is passive; autonomy promoted on evidence |
@@ -522,6 +522,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 15 | Deadline reading (quote, never compute), canonical provenance walk, commitment list/detail and lifecycle UI; ADR-0055/0056 | ✅ complete · 1103 backend + 74 frontend |
 | 16 | Work brought to the same standard: provenance panel on Work, created-entity links, the four blanks the AI may not fill asserted | ✅ complete · 1109 backend + 81 frontend |
 | 17 | Attention view: six deterministic sections over existing endpoints, each stating the rule that produced it; no new API, no AI scores | ✅ complete · 1115 backend + 92 frontend |
+| 18 | Product integration: lands on Attention, decided proposals readable again, proposal history, "the agent is switched off" distinguished from "the agent found nothing", shell coherence tests | ✅ complete · 1115 backend + 101 frontend + 5 journeys |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

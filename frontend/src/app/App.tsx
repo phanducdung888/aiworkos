@@ -73,7 +73,8 @@ export function App() {
       </header>
       <main>
         <Routes>
-          <Route path="/" element={<WorkList />} />
+          {/* A management product opens on what needs a person, not on a backlog. */}
+          <Route path="/" element={<Attention />} />
           <Route path="/work" element={<WorkList />} />
           <Route path="/work/new" element={<CreateWork />} />
           <Route path="/work/:workId" element={<WorkDetail />} />
