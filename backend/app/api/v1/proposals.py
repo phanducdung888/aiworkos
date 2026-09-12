@@ -62,6 +62,7 @@ from app.platform.http.deps import (
 from app.platform.http.etag import etag_for, require_if_match
 from app.platform.http.idempotency import Idempotency, replay_response
 from app.platform.http.pagination import clamp_limit, decode_cursor
+from app.platform.http.validation import CleanText
 
 router = APIRouter(prefix="/api/v1", tags=["proposal"], responses=PROBLEM_RESPONSES)
 
@@ -145,7 +146,7 @@ def list_all_proposals(
     principal: PrincipalDep,
     proposal_status: Annotated[ProposalStatus | None, Query(alias="status")] = None,
     kind: ProposalKind | None = None,
-    target_type: Annotated[str | None, Query()] = None,
+    target_type: Annotated[CleanText | None, Query()] = None,
     target_id: uuid.UUID | None = None,
     routed_to_person_id: uuid.UUID | None = None,
     source_event_id: uuid.UUID | None = None,

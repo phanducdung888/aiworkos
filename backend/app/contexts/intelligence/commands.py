@@ -33,9 +33,12 @@ class RaiseProposal:
     source_event_id: uuid.UUID | None = None
     evidence_ids: tuple[uuid.UUID, ...] = ()
     changes: tuple[ProposedFieldChange, ...] = ()
-    #: BR-AI-02. Set by whatever raises on an AI's behalf; a person proposing their own change
-    #: leaves it false and is not required to cite Evidence.
-    raised_by_ai: bool = False
+    #: BR-AI-02, set by the runtime that created the interaction — never by a caller.
+    #:
+    #: There is no `raised_by_ai` field here and there is none in the request schema either
+    #: (ADR-0043). Whether a Proposal is AI-originated is read from the acting `Actor`, because an
+    #: obligation a caller can decline by omitting a field is not an obligation.
+    ai_interaction_id: uuid.UUID | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

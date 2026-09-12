@@ -298,3 +298,25 @@ lost the approval, which is a different bug wearing the same clean database.
 an approved Proposal can ever do is enumerable; a test that only checked the entries present would
 pass just as happily against a registry that had grown a `delete_work` nobody noticed. There is also
 a size assertion, because a registry too large to read on one screen is one nobody audits.
+
+## The agent layer (Checkpoint 8)
+
+**The most important assertion is a negative one.** `test_a_run_executes_nothing` counts Work and
+Commitment rows before and after an analysis and requires them unchanged. A suite that only checked
+what the agent *produced* would pass just as happily against a runtime that had also quietly created
+the entities — and Level 1 means it must not have.
+
+**No external provider, ever, in tests.** `FakeProvider` is deterministic and does a real
+extraction, so the whole path runs in CI with no credentials. It returns spans that genuinely index
+into the text, because BR-E-05 checks the excerpt against the Event; canned offsets would make the
+verbatim rule untestable, which is the rule most worth testing on this path.
+
+**Queue tests drain rather than assume order.** `run_once` claims the oldest pending job, which in a
+shared database is often one another test left behind, so each test asserts on the queue's final
+state. That is also what a real worker does — nothing here depends on a scheduling detail the
+production loop does not guarantee either.
+
+**The authority tests are mostly about widening.** Each checks that some input which *could* enlarge
+an agent's reach does not: a policy naming an unavailable tool, a capability outside policy, an
+admin delegate against a forbidden action. Testing that the allowed case works is one test; testing
+that the forbidden cases stay forbidden is the rest of the file.

@@ -22,17 +22,31 @@ from app.contexts.intelligence.domain import (
     ProposalKind,
     ProposalStatus,
 )
-from app.contexts.intelligence.gateway import REGISTRY, Tool
+from app.contexts.intelligence.gateway import REGISTRY, REGISTRY_VERSION, Tool
+from app.contexts.intelligence.interactions import (
+    FORBIDDEN_KEYS,
+    StartInteraction,
+    assert_no_secrets,
+    calls_for,
+    finish_interaction,
+    get_interaction,
+    list_interactions,
+    record_tool_call,
+    start_interaction,
+)
 from app.contexts.intelligence.models import (
+    AIInteraction,
     ApprovalRecord,
     Proposal,
     ProposalEvidence,
     ProposedChange,
+    ToolCall,
 )
 from app.contexts.intelligence.queries import (
     ProposalFilter,
     ProposalPage,
     approval_for,
+    approval_for_id,
     changes_for_proposal,
     evidence_for_proposal,
     get_proposal,
@@ -40,13 +54,32 @@ from app.contexts.intelligence.queries import (
     proposals_citing_evidence,
 )
 from app.contexts.intelligence.services import (
+    EXECUTE_APPROVAL,
     ExecutionOutcome,
     ProposalService,
     ServiceContext,
+    enqueue_execution,
+    execute_queued_approval,
 )
 
 __all__ = [
+    "approval_for_id",
+    "execute_queued_approval",
+    "enqueue_execution",
+    "EXECUTE_APPROVAL",
+    "start_interaction",
+    "record_tool_call",
+    "list_interactions",
+    "get_interaction",
+    "finish_interaction",
+    "calls_for",
+    "assert_no_secrets",
+    "ToolCall",
+    "StartInteraction",
+    "FORBIDDEN_KEYS",
+    "AIInteraction",
     "REGISTRY",
+    "REGISTRY_VERSION",
     "Action",
     "ApprovalRecord",
     "Decision",

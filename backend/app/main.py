@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from app.api.v1.agent import router as agent_router
 from app.api.v1.commitments import router as commitments_router
 from app.api.v1.dependencies import router as dependency_router
 from app.api.v1.dependencies import work_scoped as work_dependency_router
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(evidence_router)
     app.include_router(commitments_router)
     app.include_router(proposals_router)
+    app.include_router(agent_router)
 
     @app.get("/health", tags=["operations"])
     def health() -> dict[str, str]:

@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.platform.authz import AuthorizationError
+from app.platform.authz.agent import AgentAuthorityError
 from app.platform.concurrency import StaleVersionError
 from app.platform.errors import DomainRuleViolation, EntityNotFound
 from app.platform.http.idempotency import ConcurrentRequest, IdempotencyKeyReused
@@ -97,6 +98,16 @@ def install(app: FastAPI) -> None:
 
     @app.exception_handler(AuthorizationError)
     async def _forbidden(_: Request, exc: AuthorizationError) -> JSONResponse:
+        return problem(403, "forbidden", "Forbidden", str(exc))
+
+    @app.exception_handler(AgentAuthorityError)
+    async def _agent_refused(_: Request, exc: AgentAuthorityError) -> JSONResponse:
+        """An agent tried something outside its authority (BR-AI-03).
+
+        403 rather than 422: this is not a malformed request but a refused one, and the caller
+        cannot fix it by sending different values. The refusal is also recorded as a `tool_call`
+        with `authorization_result = denied`, which is the row an auditor reads.
+        """
         return problem(403, "forbidden", "Forbidden", str(exc))
 
     @app.exception_handler(NoRolesHeld)

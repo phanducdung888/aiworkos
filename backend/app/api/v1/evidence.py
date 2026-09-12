@@ -26,6 +26,7 @@ from app.contexts.signal.public import (
     AttachmentLocator,
     CreateEvidence,
     EvidenceService,
+    EvidenceTarget,
     ServiceContext,
     SupersedeEvidence,
     TextLocator,
@@ -117,7 +118,10 @@ def read_evidence(
 
 @router.get("", response_model=EvidenceList)
 def list_evidence_for_target(
-    target_type: str, target_id: uuid.UUID, session: SessionDep, principal: PrincipalDep
+    target_type: EvidenceTarget,
+    target_id: uuid.UUID,
+    session: SessionDep,
+    principal: PrincipalDep,
 ) -> EvidenceList:
     """Every citation for one entity, superseded rows included.
 
@@ -128,7 +132,10 @@ def list_evidence_for_target(
         items=[
             EvidenceResource.model_validate(row)
             for row in evidence_for_target(
-                session, org_id=principal.org_id, target_type=target_type, target_id=target_id
+                session,
+                org_id=principal.org_id,
+                target_type=target_type.value,
+                target_id=target_id,
             )
         ]
     )

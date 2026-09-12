@@ -75,6 +75,9 @@ def test_every_published_path_is_one_of_the_five_work_core_aggregates(
         "/api/v1/commitments",
         "/api/v1/proposals",
         "/api/v1/approvals",
+        # The agent layer (CP8). `analyze` is Level 1 — it proposes and executes nothing — and
+        # `queue` hands an already-approved action to the worker rather than running it here.
+        "/api/v1/ai-interactions",
         "/health",
     )
     unexpected = [p for p in paths if not p.startswith(allowed_prefixes)]

@@ -52,7 +52,7 @@ from app.contexts.signal.evidence import (
     validate_text_evidence,
 )
 from app.contexts.signal.models import Event, EventAttachment, EventParticipant, Evidence
-from app.platform.actor import Actor
+from app.platform.actor import Actor, ActorType
 from app.platform.audit import record_audit
 from app.platform.authz import Action, Decision, Principal, Relation, ResourceType, authorize
 from app.platform.errors import DomainRuleViolation, EntityNotFound
@@ -617,10 +617,20 @@ class EvidenceService(_SignalService):
             target_id=command.target_id,
             assertion=command.assertion,
             confidence=command.confidence,
-            produced_by_type=command.produced_by_type,
+            # ADR-0043: an AI citation says so because the actor is an AI, not because the
+            # caller set a field. `produced_by_id` then names the interaction rather than a person.
+            produced_by_type=(
+                ProducedBy.AI_INTERACTION.value
+                if self._ctx.actor.type is ActorType.AI
+                else command.produced_by_type
+            ),
             # Defaults to the acting person. An AI-produced citation names its interaction instead,
             # which is a field the extraction checkpoint fills rather than this one.
-            produced_by_id=command.produced_by_id or self._actor_person_id,
+            produced_by_id=(
+                self._ctx.actor.ai_interaction_id
+                if self._ctx.actor.type is ActorType.AI
+                else command.produced_by_id or self._actor_person_id
+            ),
         )
         self._audit(
             action=Action.CREATE,

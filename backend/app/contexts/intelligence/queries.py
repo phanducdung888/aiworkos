@@ -135,3 +135,11 @@ def expired_as_of(
             and_(Proposal.status == "pending", Proposal.expires_at <= now)
         )
     ).all()
+
+
+def approval_for_id(
+    session: Session, principal: Principal, approval_id: uuid.UUID
+) -> ApprovalRecord | None:
+    return repository.get_approval(
+        session, org_id=principal.org_id, approval_id=approval_id
+    )

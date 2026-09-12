@@ -1093,3 +1093,77 @@ class ExecutionResult(BaseModel):
     approval: ApprovalRecordResource
     entity_type: str
     entity_id: uuid.UUID
+
+
+# --------------------------------------------------------------------------- agent
+
+
+class AIInteractionResource(BaseModel):
+    """One AI run.
+
+    No prompt body, no model response and no credential — the columns do not exist. What is here is
+    enough to answer which run this was, under whose authority, with which model and pinned prompt,
+    and what came out (BR-PR-08).
+    """
+
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    kind: str
+    trigger_type: str
+    trigger_ref: uuid.UUID | None
+    #: BR-AI-03. The human whose authority the run borrowed.
+    principal_person_id: uuid.UUID | None
+    agent_identity: str
+    runtime: str
+    provider: str
+    model: str
+    model_version: str
+    prompt_id: str
+    prompt_version: str
+    tool_manifest_version: str
+    input_refs: dict[str, Any]
+    status: str
+    started_at: dt.datetime
+    finished_at: dt.datetime | None
+    latency_ms: int | None
+    token_usage: dict[str, Any] | None
+    output_summary: dict[str, Any] | None
+    error: str | None
+    version: int
+
+
+class ToolCallResource(BaseModel):
+    """One call the runtime made. Denials are recorded and returned like any other."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    sequence: int
+    tool_name: str
+    tool_version: str
+    arguments_redacted: dict[str, Any]
+    authorization_result: str
+    outcome: str
+    target_entity_type: str | None
+    target_entity_id: uuid.UUID | None
+    error: str | None
+    created_at: dt.datetime
+
+
+class AIInteractionDetail(AIInteractionResource):
+    tool_calls: list[ToolCallResource] = Field(default_factory=list)
+
+
+class AIInteractionList(BaseModel):
+    items: list[AIInteractionResource]
+
+
+class AnalysisResource(BaseModel):
+    """What one Level 1 run produced. Identifiers, so a reviewer can go and look."""
+
+    ai_interaction_id: uuid.UUID
+    evidence_ids: list[uuid.UUID] = Field(default_factory=list)
+    proposal_ids: list[uuid.UUID] = Field(default_factory=list)
+    #: BR-AI-09. Spans the model produced that were below threshold and became nothing.
+    low_confidence: int = 0

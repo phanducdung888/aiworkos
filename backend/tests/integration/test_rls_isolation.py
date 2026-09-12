@@ -84,6 +84,22 @@ SCOPED_QUERIES = {
         "JOIN evidence v ON v.id = pe.evidence_id "
         "JOIN event e ON e.id = v.event_id"
     ),
+    # The AI layer (CP8). `ai_interaction` names which human's authority a run borrowed, and
+    # `tool_call` records what it tried — including what it was refused. Both are audit surfaces,
+    # so a cross-tenant read here is a read of another organization's oversight.
+    "ai interaction": "SELECT count(*) FROM ai_interaction",
+    "ai interaction by principal": (
+        "SELECT count(*) FROM ai_interaction WHERE principal_person_id IS NOT NULL"
+    ),
+    "tool call": "SELECT count(*) FROM tool_call",
+    "denied tool calls": (
+        "SELECT count(*) FROM tool_call WHERE authorization_result = 'denied'"
+    ),
+    "ai provenance traversal": (
+        "SELECT count(*) FROM proposal p "
+        "JOIN ai_interaction i ON i.id = p.ai_interaction_id "
+        "JOIN person pe ON pe.id = i.principal_person_id"
+    ),
     # A join is where a forgotten policy hides: every table in the chain must carry its own.
     "identity join traversal": (
         "SELECT count(*) FROM external_identity e "
@@ -254,3 +270,54 @@ def test_every_registered_table_has_rls_enabled_and_forced(owner_engine: Engine)
     for name, enabled, forced in rows:
         assert enabled, f"{name} does not have row-level security enabled"
         assert forced, f"{name} does not force row-level security, so the owner bypasses it"
+
+
+def test_the_job_queue_is_the_only_unscoped_readable_table(owner_engine: Engine) -> None:
+    """ADR-0044's one deliberate exception, held to exactly one table.
+
+    A worker serves every tenant and cannot know which organization has work before it looks, and
+    no role here holds BYPASSRLS. So `job` — and only `job` — permits a SELECT with no organization
+    context. Writing is not exempt: `job_enqueue_is_scoped` still requires one, so a worker cannot
+    manufacture work for a tenant it was never asked to act for.
+
+    This test exists because the exception is the kind that spreads. A second table with the same
+    policy would be a second place default-deny quietly stopped applying.
+    """
+    with owner_engine.connect() as conn:
+        unscoped = set(
+            conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT tablename FROM pg_policies
+                    WHERE schemaname = 'public'
+                      AND qual LIKE '%app_current_org() IS NULL%'
+                    """
+                )
+            ).scalars()
+        )
+    assert unscoped == {"job"}, (
+        f"tables readable without an organization context: {sorted(unscoped)}; only the job "
+        "queue may be, and only so a worker can claim (ADR-0044)"
+    )
+
+
+def test_enqueueing_still_requires_an_organization(
+    role_factory: sessionmaker[Session], two_orgs: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """The half of the exception that is not relaxed.
+
+    A worker may *read* the queue unscoped. Nothing may write to it unscoped, or a compromised
+    worker could queue mutations against any tenant it named.
+    """
+    session = role_factory()
+    _scoped(session, None)
+    with pytest.raises(DBAPIError):
+        session.execute(
+            text(
+                "INSERT INTO job (id, org_id, kind, payload) "
+                "VALUES (gen_random_uuid(), :org, 'execute_approval', '{}'::jsonb)"
+            ),
+            {"org": two_orgs[0]},
+        )
+    session.rollback()
+    session.close()

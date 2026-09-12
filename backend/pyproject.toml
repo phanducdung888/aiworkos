@@ -52,7 +52,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["app/contexts", "app/platform"]
+# `app/agent` is included from Checkpoint 8: it is the layer with no database access
+# (ADR-0045), so a type error there is the kind that would otherwise be found by a
+# provider adapter failing in production rather than by a repository test.
+files = ["app/agent", "app/api", "app/contexts", "app/platform", "app/workers"]
 plugins = []
 
 # Without this, setuptools auto-discovery refuses to build: the backend has three top-level

@@ -49,6 +49,7 @@ def insert_proposal(
     raised_by_person_id: uuid.UUID | None,
     routed_to_person_id: uuid.UUID,
     expires_at: dt.datetime,
+    ai_interaction_id: uuid.UUID | None = None,
 ) -> Proposal:
     proposal = Proposal(
         id=uuid7(),
@@ -66,6 +67,7 @@ def insert_proposal(
         raised_by_person_id=raised_by_person_id,
         routed_to_person_id=routed_to_person_id,
         expires_at=expires_at,
+        ai_interaction_id=ai_interaction_id,
     )
     session.add(proposal)
     session.flush()

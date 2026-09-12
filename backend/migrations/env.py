@@ -19,6 +19,7 @@ import app.contexts.identity.models  # noqa: F401
 import app.contexts.intelligence.models  # noqa: F401
 import app.contexts.signal.models  # noqa: F401
 import app.contexts.work.models  # noqa: F401
+import app.platform.jobs  # noqa: F401
 from app.platform.config import get_settings
 from app.platform.db import Base
 

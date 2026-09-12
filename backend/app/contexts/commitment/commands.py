@@ -21,9 +21,6 @@ class CreateCommitment:
     project_id: uuid.UUID | None = None
     origin_event_id: uuid.UUID | None = None
     confidence: int = 0
-    #: BR-C-03. Set by the Tool Gateway when executing an AI-originated Proposal; a person entering
-    #: their own promise leaves it false and needs no Evidence.
-    produced_by_ai: bool = False
     evidence_ids: tuple[uuid.UUID, ...] = ()
 
 
@@ -47,4 +44,3 @@ class ChangeCommitmentStatus:
     new_due_date: dt.date | None = None
     #: BR-C-10. The Tool Gateway sets this when an approved Proposal is what authorised fulfilment.
     approval_record_id: uuid.UUID | None = None
-    produced_by_ai: bool = False

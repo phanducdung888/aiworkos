@@ -57,6 +57,9 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0040 | Context dependency order is a DAG; Intelligence is the only context that reaches across | accepted | arch §4, ADR-0001 |
 | 0041 | Approval binds to a canonical action hash; execution recomputes it | accepted | BR-AI-18, BR-PR-01 |
 | 0042 | The Tool Gateway is a registry of named application-service calls, not a SQL surface | accepted | ai §1, BR-AI-16 |
+| 0043 | AI origin is derived from the authenticated principal, never from a request field | accepted | BR-AI-03, CP7 risk |
+| 0044 | The job queue is a PostgreSQL table claimed with SKIP LOCKED, not Redis | accepted | arch §3, BR-PR-01 |
+| 0045 | The agent layer is a package above the contexts and may import only published interfaces | accepted | ADR-0002, ADR-0040 |
 
 ---
 
@@ -776,3 +779,117 @@ boundary exists to be narrow, and a boundary that can express anything is not a 
 generic field-path executor driven by `ProposedChange` rows (expressive enough to bypass any rule not
 independently enforced); letting the Gateway open its own transaction and write directly (the second
 mutation path ADR-0002 exists to prevent).
+
+### ADR-0043 — AI origin is derived from the authenticated principal, never from a request field
+
+**Context.** Checkpoint 7 left `raised_by_ai` as a parameter on `RaiseProposal`. Two rules key off
+it: BR-AI-02 requires an AI-originated Proposal to cite Evidence, and BR-C-03 requires an AI-sourced
+Commitment to do the same. Nothing exploited it, because every path through the API was a human and
+the request schema never exposed the flag — but it was a security property held up by the fact that
+nobody had wired the other case yet. The moment an agent has a credential, "is this AI-originated"
+becomes a question the caller answers about itself.
+
+The general shape of the bug is worth naming, because it recurs: a privilege or an obligation that
+travels in the payload rather than in the identity. A caller that can set the field can choose which
+rules apply to it. Here the flag carries an *obligation* rather than a permission, so setting it
+falsely would mean claiming to be AI and accepting more scrutiny — but the inverse is the attack: an
+agent that omits it escapes the evidence requirement entirely, and BR-AI-02 becomes advisory.
+
+**Decision.** `raised_by_ai` is deleted as an input. AI origin is read from the `Actor` on the
+service context: `actor.type is ActorType.AI`, which the `Actor` constructor already refuses to
+produce without an `ai_interaction_id` and a delegated `person_id` (BR-AI-02, BR-AI-03). The same
+rule applies to `produced_by_ai` on Commitment creation.
+
+An `Actor` of type AI can only be built by the agent runtime, from an `AgentPrincipal` that was
+authenticated and whose authority was intersected (ADR-0045). There is no request header, body field
+or query parameter anywhere in the system that produces one, and `test_no_request_field_can_claim_ai_origin`
+walks the API schemas to keep it that way.
+
+**Consequences.** The evidence requirement becomes unavoidable rather than self-declared: an agent
+cannot raise an evidence-free Proposal by omitting a flag, because the flag does not exist and its
+actor says what it is. A human cannot accidentally trigger AI-path rules either, which removes a
+class of confusing refusal.
+
+The cost is that an AI-originated write must now carry a real `ai_interaction_id` all the way down,
+so the interaction has to be created before any of its output. That ordering is a constraint on the
+runtime and is the correct one — an interaction that produced Proposals and left no record of itself
+is precisely what BR-PR-08 exists to prevent. Rejected: validating the flag against the actor and
+refusing a mismatch (still two sources of truth, one of which is attacker-controlled); a trusted
+header set by an internal proxy (moves the trust boundary to network position, which is not an
+authentication mechanism).
+
+### ADR-0044 — The job queue is a PostgreSQL table claimed with SKIP LOCKED, not Redis
+
+**Context.** Approved Proposals must execute outside the HTTP request. The requirement is exactly
+once: an approval authorises one mutation (BR-AI-20), and a queue that delivers twice must not
+produce two Work items. Redis is already running in Compose and is the obvious queue.
+
+It is the wrong choice here, for one reason that outweighs its convenience. The mutation, the
+ApprovalRecord's outcome fields, the audit entry and the outbox row all commit in one PostgreSQL
+transaction (BR-PR-01). If the job's completion lives in Redis, the two can disagree: the
+transaction commits and the acknowledgement is lost, so the job runs again; or the acknowledgement
+lands and the transaction rolls back, so the approval is stranded as claimed-but-unexecuted with
+nothing left to retry it. Every fix for that is a distributed-commit protocol between two systems,
+which is a large amount of machinery to avoid using the transactional database already present.
+
+**Decision.** A `job` table, claimed with `SELECT ... FOR UPDATE SKIP LOCKED` inside the same
+transaction that performs the work. Claiming, executing, and marking the job done are one commit, so
+a crash at any point leaves the job unclaimed and retryable, and a success leaves it unambiguously
+finished. `SKIP LOCKED` is what makes multiple workers safe without a lock service.
+
+Delivery is still at-least-once, because a worker can die after committing and before anything
+observes it. Exactly-once *execution* comes from the layer below: `claim_for_execution` moves an
+ApprovalRecord out of `pending` with a conditional update, so a redelivered job finds the approval
+already spent and completes without running the mutation again. The queue guarantees the work is
+attempted; the approval guarantees it happens once. Neither alone is sufficient and the composition
+is the design.
+
+Redis stays in the stack for caching and ephemeral state, where losing a value is a performance
+event rather than a correctness one.
+
+**Consequences.** No new infrastructure, no second durability story, and a queue that can be
+inspected with the same SQL as everything else — a stuck job is a row somebody can read. Throughput
+is bounded by PostgreSQL rather than by Redis, which at MVP volumes is not a constraint worth
+designing around; the day it is, the claim interface is narrow enough to put something else behind.
+
+The visible cost is polling: a worker with nothing to do wakes, runs one cheap indexed query, and
+sleeps. `LISTEN/NOTIFY` would remove the idle query and is deliberately not used yet, because it
+adds a delivery path that has to be correct *in addition to* the polling one rather than instead of
+it. Rejected: Redis with a Lua acknowledgement script (still two systems, still no shared
+transaction); an in-process background task (loses everything on restart, which is not a queue).
+
+### ADR-0045 — The agent layer is a package above the contexts and may import only published interfaces
+
+**Context.** ADR-0002 says AI has no database access and the Tool Gateway is the only mutation path.
+Until now that was a statement about a component nobody had written. Checkpoint 8 writes it, and the
+question becomes concrete: what stops the agent code from importing a repository, opening a session
+and writing a row — not maliciously, but because it was convenient at 6pm and the import was there.
+
+A convention does not stop it. Neither does a code review six months from now, on a diff that does
+one useful thing and one careless one.
+
+**Decision.** The agent lives in `app/agent`, a package placed above `app.contexts` in the layer
+contract, and constrained by three forbidden-import rules rather than by intent:
+
+* `app.agent` may not import `app.platform.db`, `sqlalchemy`, or any context internal — only
+  `app.contexts.*.public`. It has no way to name a repository, a model or a session.
+* `app.agent.providers` may not import `app.contexts` at all. A provider adapter talks to a model
+  and returns structured output; it has no business knowing what an Event is.
+* The Tool Gateway remains the only path to a mutation, and the agent reaches it exactly as a human
+  request does — by raising a Proposal that a person approves.
+
+The runtime receives a session-shaped dependency it cannot construct and cannot reach through: what
+it holds is an `AgentRuntimeContext` exposing published services, not a `Session`.
+
+**Consequences.** "AI cannot write to the database" is enforced by the build. `test_the_agent_layer_cannot_reach_the_database`
+walks the AST of every module under `app/agent` and fails on a forbidden import, so the violation is
+caught in the commit that introduces it rather than in an incident. A provider adapter for a new
+model vendor is a file in `app/agent/providers` that cannot, structurally, do anything but call a
+model.
+
+The cost is indirection: the agent must go through published interfaces even when a direct query
+would be shorter, and anything it needs that is not published has to be published deliberately.
+That is the intended friction — the alternative is a layer whose access is decided case by case by
+whoever is writing it. Rejected: putting the agent inside `app.contexts.intelligence` (inherits that
+context's internals, including its repository); a separate service over HTTP (a network boundary
+where a module boundary suffices, and the MVP does not need the deployment complexity).

@@ -95,6 +95,23 @@ class CommitmentService:
     def _org_id(self) -> uuid.UUID:
         return self._ctx.principal.org_id
 
+    @property
+    def _is_ai_actor(self) -> bool:
+        """ADR-0043. AI origin is read from the actor, never from a request field.
+
+        The test is `ai_interaction_id`, not `type`. Both cases matter and only one of them is an
+        AI-typed actor:
+
+        * an agent raising a Proposal is `ActorType.AI` and carries its interaction;
+        * an approved AI Proposal *executing* is attributed to the approving **person**
+          (BR-AI-19) and still carries the interaction that produced it.
+
+        The second is the one that decides BR-C-03: a Commitment the AI thought of does not stop
+        being AI-sourced because a human approved it, so the evidence requirement follows the
+        interaction rather than the signature on the execution.
+        """
+        return self._ctx.actor.ai_interaction_id is not None
+
     # ------------------------------------------------------------------ writes
 
     def create(self, command: CreateCommitment) -> Commitment:
@@ -107,7 +124,7 @@ class CommitmentService:
             due_precision=command.due_precision,
             confidence=command.confidence,
             has_evidence=bool(command.evidence_ids),
-            produced_by_ai=command.produced_by_ai,
+            produced_by_ai=self._is_ai_actor,
         )
         self._assert_references(command)
 
@@ -202,7 +219,7 @@ class CommitmentService:
 
         if command.target is CommitmentStatus.FULFILLED:
             assert_fulfilment_is_approved(
-                produced_by_ai=command.produced_by_ai,
+                produced_by_ai=self._is_ai_actor,
                 has_approval=command.approval_record_id is not None,
             )
         if command.target is CommitmentStatus.RENEGOTIATED:

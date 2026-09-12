@@ -108,3 +108,28 @@ def resolve_principal(
         raise NoRolesHeld("this person holds no active role in the organization")
 
     return Principal(person_id=person_id, org_id=org_id, roles=frozenset(roles))
+
+
+def resolve_principal_for(
+    session: Session, *, org_id: uuid.UUID, person_id: uuid.UUID
+) -> Principal:
+    """A principal for a person the system already trusts, without a bearer token.
+
+    Used by the worker (ADR-0044): a queued job has no request and no token, but the authority it
+    executes under must still be a real person's real roles, read from the database at execution
+    time rather than captured when the job was queued. Roles can be revoked between approval and
+    execution, and the later read is the one that should win.
+
+    Not an authentication path. It takes a `person_id` the caller already established — from an
+    ApprovalRecord written under an authenticated request — and never a subject claimed by anybody.
+    """
+    roles = {
+        Role(value)
+        for value in session.execute(
+            _ROLES, {"org_id": org_id, "person_id": person_id}
+        ).scalars()
+        if value in {role.value for role in Role}
+    }
+    if not roles:
+        raise NoRolesHeld("this person holds no active role in the organization")
+    return Principal(person_id=person_id, org_id=org_id, roles=frozenset(roles))

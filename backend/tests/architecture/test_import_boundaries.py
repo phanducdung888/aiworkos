@@ -142,6 +142,20 @@ CONTEXT_ORDER: tuple[str, ...] = (
     "intelligence",
 )
 
+#: ADR-0045. What the agent layer may never name directly.
+#:
+#: The import-linter contract of the same name runs with `allow_indirect_imports`, because the agent
+#: necessarily calls published services that reach the database eventually. This is the precise
+#: half: what each module actually writes down.
+AGENT_FORBIDDEN = (
+    "sqlalchemy",
+    "psycopg",
+    "app.platform.db",
+    "app.platform.jobs",
+    "app.platform.audit",
+    "app.platform.outbox",
+)
+
 
 def _declared_edges() -> list[tuple[str, str]]:
     """Every cross-context exception in `.importlinter`, as (importer, imported)."""
@@ -260,3 +274,72 @@ def test_only_the_db_module_creates_engines_or_sessions() -> None:
                 f"{module.relative_to(BACKEND_ROOT)} calls {marker}; "
                 "engines and sessions come from app.platform.db"
             )
+
+
+def test_the_agent_layer_cannot_reach_the_database() -> None:
+    """ADR-0045, the control that makes "AI has no database access" checkable.
+
+    A convention does not stop an import. Neither does a code review six months from now, on a diff
+    that does one useful thing and one careless one. This fails in the commit that adds the import.
+    """
+    for module in _modules(APP / "agent"):
+        for imported in _imports(module):
+            assert not imported.startswith(AGENT_FORBIDDEN), (
+                f"{module.relative_to(BACKEND_ROOT)} imports {imported}; the agent layer reaches "
+                "published interfaces and nothing else (ADR-0045)"
+            )
+
+
+def test_the_agent_layer_reaches_contexts_only_through_public_interfaces() -> None:
+    for module in _modules(APP / "agent"):
+        internals = {
+            i
+            for i in _imports(module)
+            if i.startswith("app.contexts.") and i.split(".")[3:4] != ["public"]
+        }
+        assert not internals, (
+            f"{module.relative_to(BACKEND_ROOT)} reaches into a context's internals: "
+            f"{sorted(internals)}"
+        )
+
+
+def test_llm_providers_know_nothing_about_the_domain() -> None:
+    """A provider adapter talks to a model and returns structured output.
+
+    It cannot name an Event, a Proposal or a session, which is what makes swapping one a contained
+    change rather than an audit of everything it might have touched.
+    """
+    for module in _modules(APP / "agent" / "providers"):
+        offending = {
+            i
+            for i in _imports(module)
+            if i.startswith(("app.contexts", "app.platform", "sqlalchemy", "psycopg"))
+        }
+        assert not offending, (
+            f"{module.relative_to(BACKEND_ROOT)} imports {sorted(offending)}; a provider knows "
+            "nothing about the application"
+        )
+
+
+def test_no_request_field_can_claim_ai_origin() -> None:
+    """ADR-0043. AI origin is derived from the principal, never asserted by a caller.
+
+    Walks the request schemas rather than trusting that nobody added the field back. The failure
+    this prevents is quiet: a Proposal that declares itself human-authored escapes BR-AI-02's
+    evidence requirement entirely, and nothing about the response would look wrong.
+    """
+    schemas = (APP / "api" / "v1" / "schemas.py").read_text()
+    for claimed in ("raised_by_ai", "produced_by_ai", "ai_origin", "is_ai"):
+        assert claimed not in schemas, (
+            f"`{claimed}` appears in the request schemas; AI origin must come from the "
+            "authenticated principal (ADR-0043)"
+        )
+
+
+def test_the_worker_dispatches_only_registered_handlers() -> None:
+    """A queue that dispatches on an arbitrary string runs arbitrary code by writing a row."""
+    from app.workers.runner import HANDLERS
+
+    assert HANDLERS, "the worker has no handlers; jobs would be claimed and dropped"
+    for kind, handler in HANDLERS.items():
+        assert callable(handler), f"{kind} maps to something that is not callable"

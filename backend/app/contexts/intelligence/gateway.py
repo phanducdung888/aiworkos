@@ -183,9 +183,6 @@ def _create_commitment(
                 else None
             ),
             confidence=int(arguments.get("confidence", 0)),
-            # BR-C-03. Anything arriving through the Gateway came from a Proposal, and a Proposal
-            # carries its Evidence — so the commitment is required to cite it.
-            produced_by_ai=True,
             evidence_ids=tuple(
                 _as_uuid(value, "evidence_ids") for value in arguments.get("evidence_ids", [])
             ),
@@ -210,14 +207,13 @@ def _change_commitment_status(
             expected_version=int(_require(arguments, "expected_version")),
             target=commitment.CommitmentStatus(_require(arguments, "target")),
             new_due_date=_as_date(arguments.get("new_due_date"), "new_due_date"),
-            # BR-C-10: fulfilment through this path is authorised by the approval that produced it,
-            # and the executor passes the record id so the domain can see one exists.
+            # BR-C-10: fulfilment through this path is authorised by the approval that produced
+            # it, and the executor passes the record id so the domain can see one exists.
             approval_record_id=(
                 _as_uuid(arguments["approval_record_id"], "approval_record_id")
                 if arguments.get("approval_record_id")
                 else None
             ),
-            produced_by_ai=True,
         )
     )
     return ExecutionResult(entity_type="commitment", entity_id=updated.id)
@@ -228,6 +224,11 @@ def _change_commitment_status(
 #: Readable in one screen on purpose (ADR-0042). Adding a capability is a registry entry, an
 #: argument schema, a matrix row if a new resource is involved, and a test — never a payload that
 #: happens to reach further.
+#: Bumped whenever an entry is added, removed or changes meaning. Recorded on every AIInteraction
+#: so a run can be read against the vocabulary it actually had — an interaction from before a tool
+#: existed should not look as though it declined to use one.
+REGISTRY_VERSION = "2026-09-12"
+
 REGISTRY: dict[tuple[str, str], Tool] = {
     tool.key: tool
     for tool in (

@@ -175,6 +175,10 @@ class Evidence(Base):
     assertion: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[int] = mapped_column(SmallInteger, server_default="0", nullable=False)
     produced_by_type: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Polymorphic by design (domain-model §Evidence): a Person id, or an AIInteraction id when
+    #: `produced_by_type` is `ai_interaction`. Deliberately not a foreign key to `ai_interaction` —
+    #: Signal is upstream of Intelligence (ADR-0040), and a column here pointing down the order
+    #: would make the capture context depend on the AI layer's schema.
     produced_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[dt.datetime] = mapped_column(

@@ -11,6 +11,8 @@ name = Layered architecture
 type = layers
 layers =
     app.api
+    app.workers
+    app.agent
     app.contexts
     app.platform
 
@@ -73,3 +75,40 @@ source_modules =
     app.contexts
 forbidden_modules =
     fastapi
+
+# ---------------------------------------------------------------------------
+# ADR-0045: the agent layer has no database access, and that is enforced rather
+# than intended. `app.agent` may reach published interfaces and nothing else.
+# ---------------------------------------------------------------------------
+
+[importlinter:contract:agent-has-no-database]
+name = The agent layer cannot reach the database
+type = forbidden
+source_modules =
+    app.agent
+forbidden_modules =
+    sqlalchemy
+    app.platform.db
+    app.platform.jobs
+    app.platform.audit
+    app.platform.outbox
+# Same reasoning as the api-purity contract: the agent necessarily calls published services that
+# reach the database eventually, and the chain `agent.runtime -> signal.public -> signal.queries ->
+# sqlalchemy` is not a violation — the agent names none of it. The rule worth enforcing is the
+# *direct* import, and `test_the_agent_layer_cannot_reach_the_database` walks the AST of every
+# module under `app/agent` to enforce exactly that. This guards the same boundary at package level.
+allow_indirect_imports = True
+
+[importlinter:contract:providers-know-no-domain]
+name = LLM providers know nothing about the domain
+type = forbidden
+source_modules =
+    app.agent.providers
+forbidden_modules =
+    app.contexts
+    app.platform
+    sqlalchemy
+# No flag here, and none is needed: a provider imports nothing from the application at all, so
+# there is no legitimate indirect chain to allow. This one is absolute.
+# A provider adapter talks to a model and returns structured output. It has no business knowing
+# what an Event is, which is what makes swapping one a contained change.

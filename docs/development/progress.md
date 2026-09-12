@@ -167,6 +167,31 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ### Open
 
+**The `job` table is readable without an organization context.** One deliberate exception to
+default-deny (ADR-0044): a worker serves every tenant, cannot know which has work before it looks,
+and no role holds BYPASSRLS. Reading and claiming are exempt; **enqueueing is not**, so nothing can
+manufacture work for a tenant it was not asked to act for. Pinned by
+`test_the_job_queue_is_the_only_unscoped_readable_table`, which fails if a second table ever gets
+the same policy. The residual risk is real and bounded: a session that forgets to scope can see
+queue rows — job kinds and approval ids, no content.
+
+**Agent capabilities are code, not configuration.** `AGENTS` and `DEFAULT_POLICY` are constants in
+the API module. BR-AI-30 requires policy keyed per `(organization, capability, entity_type,
+action)`, and that table does not exist yet — so today every organization gets the same policy and
+changing it is a deployment. That is the safe direction to be wrong in, and it must be resolved
+before a second agent or a second capability ships.
+
+**Execution can still run in-request.** `POST /approvals/{id}/execute` remains alongside the queued
+path, because the CP7 tests exercise it and removing it was not in scope. Both go through the same
+`ProposalService.execute`, so the safety properties are identical — but two paths to a mutation is
+one more than the design wants, and the synchronous one should go once the worker is deployed.
+
+**No `find_similar` tool, so BR-AI-05 is unenforced.** The rule requires a similarity search before
+proposing a new entity, to stop the agent proposing duplicates of things that already exist. The
+tool does not exist and the runtime does not call one. Nothing currently proposes at a volume where
+it matters; that stops being true with a real provider.
+
+
 **Creating Work with an unresolvable `project_id` returns 404.** `WorkService.create` loads the
 Project — it needs the row for visibility computation — and raises `EntityNotFound`, so a body field
 that does not resolve is reported as though the addressed resource were missing. This is the same
@@ -220,6 +245,26 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 `test_an_archived_team_can_still_be_given_new_work_today` so that changing it is visible.
 
 ### Resolved
+
+**`raised_by_ai` was caller-supplied (2026-09-12, the CP7 risk, closed in CP8).** Two rules keyed
+off a boolean the request could set. Nothing exploited it because every path through the API was a
+human and the schema never exposed the field, but it was a security property held up by the fact
+that nobody had wired the other case. Origin is now read from the `Actor` — specifically from
+`ai_interaction_id`, not from `type`, so an approved AI Proposal executing under the approver's
+signature is still recognised as AI-sourced (ADR-0043). `test_no_request_field_can_claim_ai_origin`
+walks the request schemas to keep the field from coming back.
+
+**A permanently failing job retried forever (2026-09-12, found in Checkpoint 8).** The worker rolls
+the transaction back before recording a failure, which also rolled back the claim's
+`attempts = attempts + 1`. The counter never moved, `dead` was unreachable, and the
+`job_dead_is_exhausted` constraint fired when the in-memory count disagreed with the row. `fail()`
+now writes `attempts` as an absolute value taken from the claim, which survives in memory precisely
+because it is not in the transaction that was rolled back.
+
+**An AI-proposed Commitment did not carry its Evidence into the action (2026-09-12, found in
+Checkpoint 8).** The Proposal cited Evidence, but the `create_commitment` arguments did not, so the
+Commitment built from them failed BR-C-03 at execution. Caught by the rule doing its job at exactly
+the right moment — after approval, before the write.
 
 **Nullable JSONB columns compared as JSON `null`, not SQL NULL (2026-09-12, found in Checkpoint
 7).** SQLAlchemy renders a Python `None` into a JSONB column as the JSON value `null` by default, so
@@ -324,6 +369,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 5.1 | Identity & Organization write side: domain, repositories, services, REST API; W-11 reference validation; ADR-0035/0036/0037; AuthProvider tests | ✅ complete · 429 backend + 38 frontend |
 | 6 | Signal/Capture: Event, EventParticipant, EventAttachment, Evidence foundation; capture API; ObjectStore port; ADR-0038/0039 | ✅ complete · 552 backend + 38 frontend |
 | 7 | Evidence, Commitment, Proposal + ApprovalRecord, Tool Gateway; ADR-0040/0041/0042 | ✅ complete · 748 backend + 38 frontend |
+| 8 | AgentRuntime, AIInteraction, agent authority, queued execution; ADR-0043/0044/0045 | ✅ complete · 808 backend + 38 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

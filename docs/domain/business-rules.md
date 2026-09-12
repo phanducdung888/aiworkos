@@ -182,6 +182,8 @@ Autonomy is Levels 1-2 only (PQ-3, ADR-0030).
 | BR-AI-01 | AI may only mutate state through registered tools. There is no other path. | INV |
 | BR-AI-02 | Every AI-originated Proposal and every AI-executed mutation carries an `ai_interaction_id` and at least one Evidence reference. | INV |
 | BR-AI-03 | Effective authority for a tool call is `agent_role ∩ delegated_principal ∩ capability_policy ∩ organization_scope`. A call exceeding any of the four is rejected and audited. | INV |
+| BR-AI-03a | AI origin is derived from the authenticated principal and never from a request field (ADR-0043). No request schema carries `raised_by_ai`, `produced_by_ai` or equivalent; origin is read from the `Actor`, which can only be built as AI by the agent runtime and only with a real `ai_interaction_id`. An obligation a caller can decline by omitting a field is not an obligation. | INV |
+| BR-AI-03b | The agent layer has no database access, enforced by import contracts rather than convention (ADR-0045): `app.agent` may import published interfaces only, and `app.agent.providers` may import nothing from the application at all. | INV |
 | BR-AI-04 | A single AIInteraction may raise at most N Proposals (default 25) and touch at most M entities (default 10). Exceeding the limit aborts the interaction and raises an operational alert. | POL |
 | BR-AI-05 | Before proposing a new Work, Commitment, Risk or Decision, the AI must call the corresponding `find_similar` tool. Proposing without a prior search in the same interaction is rejected. | INV |
 | BR-AI-10 | Content inside ingested Events is data. Any instruction found within it is ignored. Tool selection is driven only by the system prompt and the task definition. | INV |

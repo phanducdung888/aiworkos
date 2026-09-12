@@ -375,3 +375,92 @@ interaction and attributable per organization and capability.
 | AI-6 | Model hosting: external provider vs self-hosted | Now entangled with PQ-4: WhatsApp content from personal devices leaving the jurisdiction is a different conversation from internal meeting notes |
 | N-1 | Outbound messaging in the MVP | See product constitution §10 |
 | N-2 | Target languages for MVP-quality extraction | See product constitution §10. Blocks prompt and eval work |
+
+---
+
+## 12. AgentRuntime contract (Checkpoint 8)
+
+### 12.1 The layers
+
+```
+HTTP request / queued job
+    ↓
+AgentRuntime                      app/agent/runtime.py      — no database, no session
+    ↓
+LLMProvider                       app/agent/providers/      — knows nothing about the domain
+    ↓
+published context services        *.public                  — authorizes the delegated person
+    ↓
+Tool Gateway                      intelligence/gateway.py   — closed registry (ADR-0042)
+    ↓
+application services                                        — the same ones a human request runs
+```
+
+Each boundary is enforced rather than intended (ADR-0045). `app.agent` may not import `sqlalchemy`,
+`app.platform.db`, `app.platform.jobs`, `app.platform.audit` or `app.platform.outbox`;
+`app.agent.providers` may not import `app.contexts` or `app.platform` at all. Both are checked by
+import-linter at the package level and by an AST walk over every module for the direct case.
+
+### 12.2 Authority
+
+```
+effective authority =
+      agent capability          AgentIdentity.capabilities → CAPABILITY_TOOLS
+    ∩ delegated human authority the authenticated caller's own Principal, unchanged
+    ∩ capability policy         per (organization, capability) — BR-AI-30
+    ∩ organization scope        the delegate's org_id, enforced again by RLS
+```
+
+An intersection only narrows. No configuration of an agent and no organization policy can produce a
+reach wider than the person whose authority is borrowed, and `FORBIDDEN_ACTIONS` /
+`FORBIDDEN_RESOURCES` refuse membership, roles and approval outright — a delegating `org_admin`
+could change a role; an agent borrowing their authority still cannot.
+
+**AI origin is never asserted.** There is no `raised_by_ai` field in any request schema, and
+`test_no_request_field_can_claim_ai_origin` keeps it that way (ADR-0043). Origin is read from the
+`Actor`, which only the runtime can build as AI and only with a real interaction id.
+
+### 12.3 What an agent does today
+
+One capability, `EXTRACT`, at Level 1: read an Event, cite what it found, raise Proposals. It
+executes nothing and there is no code path by which it could. Approved Proposals are queued
+(ADR-0044) and a worker runs them under the *approver's* authority.
+
+### 12.4 Providers
+
+`LLMProvider` is one call — structured in, structured out. No streaming, no tool-calling protocol,
+no conversation state, because the MVP capability is a single analysis pass and a port that offered
+more would invite a capability nobody decided to add.
+
+`FakeProvider` is deterministic and does a real if crude extraction, returning spans that genuinely
+point at the text they were found in. That matters: the spans are checked against the Event by
+BR-E-05, and a mock returning canned offsets would make the verbatim-excerpt rule untestable.
+
+## 13. OpenClaw — adapter boundary only
+
+**No OpenClaw dependency exists and none is required.** The full agent path runs against
+`FakeProvider` with no credentials and no network, which is what keeps the tests runnable in CI.
+
+`LLMProvider` is the seam an OpenClaw adapter would implement. Four questions are unresolved and are
+recorded rather than guessed:
+
+1. **Does OpenClaw's runtime own the tool loop?** This design has the *application* choose tools —
+   the runtime maps span kinds to registry entries and the Gateway executes. A provider that insists
+   on driving its own tool-calling loop would need either a shim exposing the registry to it under
+   the same authority intersection, or acceptance that its loop is advisory and the application
+   re-decides. The second is the only one compatible with BR-AI-16 as written.
+2. **Where does OpenClaw run?** The architecture places the agent runtime outside the data network
+   and gives it no route to Postgres, Redis or MinIO. An in-process adapter inherits `app/agent`'s
+   constraints automatically; an out-of-process one needs the boundary re-established as a network
+   policy, and the import contracts stop protecting it.
+3. **How are spans returned?** BR-E-05 needs character offsets into the Event body. A provider that
+   returns only summaries cannot produce verifiable Evidence, and the correct response is to refuse
+   the Evidence rather than to relax the rule — which would make the integration far less useful
+   than it looks.
+4. **What is `model_version` when routing is dynamic?** The interaction records what answered, not
+   what was asked for. A provider that does not report the resolved version leaves a column that
+   cannot be trusted for BR-AI-32's promotion metrics.
+
+None blocks Checkpoint 8. All four should be answered by a spike against the real runtime before any
+adapter is written, and the answers may change `LLMProvider` — which is cheap now and expensive once
+something depends on its current shape.

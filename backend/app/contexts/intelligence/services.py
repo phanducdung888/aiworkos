@@ -49,6 +49,7 @@ from app.contexts.intelligence.domain import (
     validate_creation,
 )
 from app.contexts.intelligence.models import ApprovalRecord, Proposal
+from app.platform import jobs
 from app.platform.actor import Actor, ActorType
 from app.platform.audit import record_audit
 from app.platform.authz import (
@@ -67,6 +68,7 @@ from app.platform.authz import (
 from app.platform.authz.model import ResourceRef
 from app.platform.errors import DomainRuleViolation, EntityNotFound
 from app.platform.outbox import append_domain_event
+from app.platform.principal import resolve_principal_for
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -141,6 +143,23 @@ class ProposalService:
     def _org_id(self) -> uuid.UUID:
         return self._ctx.principal.org_id
 
+    @property
+    def _is_ai_actor(self) -> bool:
+        """ADR-0043. AI origin is read from the actor, never from a request field.
+
+        The test is `ai_interaction_id`, not `type`. Both cases matter and only one of them is an
+        AI-typed actor:
+
+        * an agent raising a Proposal is `ActorType.AI` and carries its interaction;
+        * an approved AI Proposal *executing* is attributed to the approving **person**
+          (BR-AI-19) and still carries the interaction that produced it.
+
+        The second is the one that decides BR-C-03: a Commitment the AI thought of does not stop
+        being AI-sourced because a human approved it, so the evidence requirement follows the
+        interaction rather than the signature on the execution.
+        """
+        return self._ctx.actor.ai_interaction_id is not None
+
     # ------------------------------------------------------------------ raise
 
     def raise_proposal(self, command: RaiseProposal) -> Proposal:
@@ -152,7 +171,7 @@ class ProposalService:
             summary=command.summary,
             confidence=command.confidence,
             evidence_count=len(command.evidence_ids),
-            raised_by_ai=command.raised_by_ai,
+            raised_by_ai=self._is_ai_actor,
         )
 
         # The tool has to exist and the arguments have to fit it *before* anybody reviews. A
@@ -188,6 +207,9 @@ class ProposalService:
             raised_by_person_id=self._ctx.actor.person_id,
             routed_to_person_id=command.routed_to_person_id,
             expires_at=expiry_from(now),
+            # Taken from the actor rather than the command when the actor is an AI: a run cannot
+            # produce a Proposal that forgets to say which run produced it (BR-AI-02).
+            ai_interaction_id=command.ai_interaction_id or self._ctx.actor.ai_interaction_id,
         )
         self._attach(proposal, command.evidence_ids, command.changes)
         self._audit(
@@ -384,12 +406,16 @@ class ProposalService:
             )
 
         action = Action.from_json(dict(record.approved_action))
+        proposal = self._load(record.proposal_id)
         # BR-AI-19. Attributed to the approving Person, carrying the chain that authorised it, so
-        # the resulting audit entry names the Proposal and the ApprovalRecord without a join.
+        # the resulting audit entry names the Proposal and the ApprovalRecord without a join. The
+        # interaction comes along too: the mutation is a person's act, and its *idea* is still the
+        # AI's, which is what BR-C-03 and BR-AI-02 ask about downstream.
         executing_actor = dataclasses.replace(
             self._ctx.actor,
             type=ActorType.PERSON,
             person_id=record.approver_person_id,
+            ai_interaction_id=proposal.ai_interaction_id,
             extra={
                 **self._ctx.actor.extra,
                 "executed_via": "ai_tool",
@@ -558,3 +584,66 @@ class ProposalService:
             },
             actor=self._ctx.actor,
         )
+
+
+#: The job kind that executes an approved Proposal (ADR-0044).
+EXECUTE_APPROVAL = "execute_approval"
+
+
+def enqueue_execution(
+    session: Session, *, org_id: uuid.UUID, approval_id: uuid.UUID
+) -> bool:
+    """Queue an approved action for the worker. Idempotent on the approval.
+
+    The dedupe key is the approval id, so a double-click or a retried request produces one job.
+    Returns False when one is already queued, which is not an error — the caller asked for work
+    that is already going to happen.
+    """
+    job = jobs.enqueue(
+        session,
+        org_id=org_id,
+        kind=EXECUTE_APPROVAL,
+        payload={"approval_id": str(approval_id)},
+        dedupe_key=str(approval_id),
+    )
+    return job is not None
+
+
+def execute_queued_approval(
+    session: Session, *, org_id: uuid.UUID, payload: dict[str, Any]
+) -> str:
+    """The job handler. Runs inside the worker's transaction (ADR-0044).
+
+    Everything that makes this safe already exists one layer down: `ProposalService.execute`
+    recomputes the action hash and claims the ApprovalRecord with a conditional update. A
+    redelivered job therefore finds the approval spent and returns without repeating the mutation,
+    which is how at-least-once delivery becomes exactly-once execution.
+
+    The principal is rebuilt from the approver on the record rather than carried in the payload: a
+    queue row is data, and a payload that named its own authority would be a request field deciding
+    permissions (ADR-0043).
+    """
+    approval_id = uuid.UUID(str(payload["approval_id"]))
+    record = repository.get_approval(session, org_id=org_id, approval_id=approval_id)
+    if record is None:
+        raise EntityNotFound("approval_record", approval_id)
+
+    if ExecutionStatus(record.execution_status) is not ExecutionStatus.PENDING:
+        # Already done, or a rejection that authorises nothing. Either way the job is complete:
+        # raising here would retry forever against a state that will never change.
+        return f"already {record.execution_status}"
+
+    principal = resolve_principal_for(session, org_id=org_id, person_id=record.approver_person_id)
+    service = ProposalService(
+        ServiceContext(
+            session=session,
+            principal=principal,
+            actor=Actor(
+                type=ActorType.PERSON,
+                person_id=record.approver_person_id,
+                extra={"executed_via": "job", "job_kind": EXECUTE_APPROVAL},
+            ),
+        )
+    )
+    outcome = service.execute(ExecuteApproval(approval_id=approval_id))
+    return f"{outcome.entity_type}:{outcome.entity_id}"

@@ -280,27 +280,36 @@ def test_a_commitment_created_through_the_gateway_cites_its_evidence(
     assert created["status"] == "captured"
 
 
-def test_a_gateway_commitment_without_evidence_is_refused(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    scoped_session: Session,
+def test_a_human_raised_commitment_needs_no_evidence(
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
 ) -> None:
-    """BR-C-03, at the point it actually bites."""
+    """BR-C-03 says so in as many words: commitments entered by a human need none.
+
+    Before ADR-0043 the Tool Gateway asserted `produced_by_ai=True` for everything passing through
+    it, which made this refuse — an over-approximation that treated "went through a Proposal" as
+    "came from an AI". Origin now follows the interaction, so a person recording a promise they
+    heard is a person recording a promise, whichever endpoint they used.
+
+    The AI half of BR-C-03 is exercised in `test_agent_flow.py`, where a run with an interaction id
+    is the only thing that can produce an AI-sourced commitment.
+    """
     proposal = a_proposal(
         api,
         as_admin,
         work_org.admin,
         target_type="commitment",
         tool="create_commitment",
-        summary="Record a promise nobody can show",
+        summary="Record the promise I heard in the meeting",
         arguments={
             "statement": "I will do the thing",
             "committed_by_person_id": str(work_org.member),
         },
     )
     record = approve(api, as_admin, proposal)
-    before = counts(scoped_session, work_org.org_id)
+    executed = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
+    assert executed.status_code == 200, executed.text
 
-    failed = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert failed.status_code == 422
-    assert "BR-C-03" in failed.text
-    assert counts(scoped_session, work_org.org_id) == before
+    created = api.get(
+        f"/api/v1/commitments/{executed.json()['entity_id']}", headers=as_admin
+    ).json()
+    assert created["statement"] == "I will do the thing"
