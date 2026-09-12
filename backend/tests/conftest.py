@@ -6,7 +6,10 @@ indexes, composite foreign keys and `jsonb` are all load-bearing here, and none 
 Two connections are exposed on purpose:
 
 * `owner_engine` — the role that owns the tables. Used by migrations and by the isolation tests that
-  must prove FORCE ROW LEVEL SECURITY applies even to the owner.
+  must prove FORCE ROW LEVEL SECURITY applies even to the owner. It is deliberately not the cluster
+  superuser: FORCE is inert for a superuser or a BYPASSRLS role, so an owner with either would make
+  those tests pass for the wrong reason. `test_rls_isolation` asserts that property before it
+  trusts anything else.
 * `app_engine` — the role the application actually uses.
 
 If either the deliberately-unprivileged path or the owner path could see another organization's
@@ -29,7 +32,8 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 
 OWNER_URL = os.environ.get(
-    "WORKOS_DATABASE_URL", "postgresql+psycopg://workos:workos@127.0.0.1:5432/workos_test"
+    "WORKOS_DATABASE_URL",
+    "postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test",
 )
 APP_URL = os.environ.get(
     "WORKOS_APP_DATABASE_URL",
@@ -48,8 +52,9 @@ def migrated_database() -> Iterator[str]:
     owner.dispose()
 
     # Roles are environment bootstrap, not migration content, and they must exist before the
-    # migrations run so that the conditional grants in 0001 actually land. In Compose the owner is
-    # the image superuser; locally the owner needs CREATEROLE.
+    # migrations run so that the conditional grants in 0001 actually land. Running the script as
+    # the owner is why its role blocks never ALTER an existing role: workos_owner has CREATEROLE
+    # but no admin option over a role the superuser created at initdb.
     owner = create_engine(OWNER_URL, future=True, isolation_level="AUTOCOMMIT")
     with owner.connect() as conn:
         conn.execute(text((REPO_ROOT / "ops" / "db" / "dev-roles.sql").read_text()))

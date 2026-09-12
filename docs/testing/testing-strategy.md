@@ -242,7 +242,7 @@ drift, migration drift, eval gate breach on a changed capability.
 |---|---|---|
 | T-1 | Compose-based L4 in CI, or testcontainers only? | (a) testcontainers for Postgres/Redis/MinIO, fake Keycloak (proposed, faster); (b) full compose, slower but closer to pilot |
 | T-2 | How much live-model testing is affordable per PR? | (a) cached responses plus a 10-case live sample (proposed); (b) fully cached, live only nightly |
-| T-3 | Is a single Keycloak test realm enough for authz tests, or do we stub the IdP? | (a) stub token issuance for speed (proposed); (b) real Keycloak for fidelity, at least in nightly |
+| ~~T-3~~ | **RESOLVED (Checkpoint 4a): option (a).** Tests sign their own tokens with an RSA key generated in a fixture and stub the JWKS document; Keycloak is never started by the suite. What is stubbed is key *distribution* only — `TokenVerifier` runs its real checks, so expired, forged, mis-audienced and mis-issued tokens are rejected in tests by the same code that rejects them in production, and each of those four has its own case. `ops/keycloak/realm.json` exports a dev realm for running the stack by hand. | — |
 | T-4 | Do we need contract tests between frontend and backend beyond generated clients? | Likely not in v1 given a single first-party client |
 | T-5 | How do we test the OpenClaw channel adapter without a live WhatsApp connection? | (a) a recorded-fixture adapter replaying realistic message shapes (proposed); (b) a sandbox number, which adds a live dependency to CI |
 | T-6 | Does the eval corpus need native-speaker review for Vietnamese labelling (N-2)? | Likely yes; inter-annotator agreement is meaningless without it |

@@ -49,6 +49,7 @@ Legend: **[INV]** invariant enforced at write time · **[TRN]** state transition
 | BR-P-07 | A Milestone becomes `missed` automatically when `target_date` has passed and status is not `achieved` or `cancelled`. This is a derived transition performed by the monitor, attributed to the system actor. | TRN |
 | BR-P-07a | **No synthetic Projects.** The system must not create a General, Default, Unassigned, Inbox or Miscellaneous Project to give unparented Work a parent, whether by migration, seed data, application default or AI proposal. | INV |
 | BR-P-08 | Project `health` is derived, never set: `off_track` if any hard-blocking dependency chain reaches an unachieved milestone past target; `at_risk` if an open critical/high Risk is scoped to it, or >20% of open Work is overdue; else `on_track`. Thresholds are organization policy. | DRV |
+| BR-P-09 | **Project visibility narrows read access and never widens it**, evaluated in addition to role reach exactly as BR-W-18 is for Work. `organization` — no further narrowing. `department` — additionally requires reach over the Project's Department, or over the Department of its owning Team. `team` — additionally requires membership of the owning Team, or department reach over that Team. `restricted` — no role reach suffices. At every level a Project is readable by its lead, its sponsor, the Person who created it, `org_admin` and `auditor`; that set is the floor, and `restricted` is exactly the floor. A Milestone carries no visibility of its own and takes its Project's, since it cannot exist apart from it (BR-P-05). | INV |
 
 ## 4. Work
 
@@ -71,6 +72,9 @@ Legend: **[INV]** invariant enforced at write time · **[TRN]** state transition
 | BR-W-14 | Ending an assignment sets `ended_at` and `status = ended`. Assignment rows are never deleted or overwritten, so assignment history stays queryable and attributable. | INV |
 | BR-W-15 | **Work may exist with no assignment**, and that is a valid steady state, not an error or a temporary condition to be corrected. No API, UI or service path may require an assignment to create Work. | INV |
 | BR-W-16 | At most one active assignment per Work may carry `is_primary = true`. | INV |
+| BR-W-17 | `started_at` is set on the first transition of a Work to `in_progress` and is never cleared, because it records when the work actually began rather than when it was most recently worked on. Reopening after `done` leaves `started_at` untouched and clears `completed_at` (BR-W-08). | INV |
+| BR-W-18 | **Work visibility narrows read access and never widens it.** It is evaluated in addition to role reach, not instead of it: a principal must satisfy both (security-model §3.2). `organization` — no further narrowing. `department` — additionally requires that the Work's Project sits in a Department the principal leads, or is owned by a Team in one. `team` — additionally requires membership of the Team owning the Work's Project, or department reach over that Team. `restricted` — no role reach suffices. At **every** level a Work is readable by anyone holding an active `WorkAssignment` on it, by the Person who created it, and by `org_admin` and `auditor`; that set is the floor, and `restricted` is exactly the floor. Work with no Project has neither Team nor Department, so `team` and `department` on such Work resolve to the floor as well — the default `team` value is meaningless for it by construction (ADR-0029), and resolving it downward is the only reading that does not silently publish unparented Work to the whole organization. | INV |
+| BR-W-19 | **Work belonging to a Project inherits that Project's visibility and is never wider than it.** On creation, Work with a Project takes the Project's level unless the caller names one explicitly, and an explicit level is accepted only if it is narrower than or equal to the Project's; wider is refused. Narrowing a Project's visibility narrows every Work of that Project that was wider, in the same transaction, with the originating action recorded in audit. Widening a Project's visibility does **not** widen its Work: read access is granted deliberately, never as a side effect. Work belonging to no Project is outside this rule and keeps its own default (ADR-0029). Order, widest to narrowest: `organization` > `department` > `team` > `restricted`. | INV |
 
 ## 5. Dependency
 
@@ -78,7 +82,7 @@ Legend: **[INV]** invariant enforced at write time · **[TRN]** state transition
 |---|---|---|
 | BR-D-01 | Endpoints must be distinct and in the same organization. | INV |
 | BR-D-02 | The graph of `active` dependencies of kind `blocks` must remain acyclic. A write creating a cycle is rejected with the offending path returned. | INV |
-| BR-D-03 | A Dependency is `resolved` automatically when the blocker reaches `done`/`achieved`, and that resolution unblocks the blocked item only if no other active blocker remains. | TRN |
+| BR-D-03 | A Dependency becomes `resolved` automatically when its blocker reaches `done`/`achieved`. That makes the blocked item *eligible* to proceed; the system does not change its status (BR-AI-29). When the last active blocker is resolved and the Work is still `blocked`, MON-007a detects it and notifies. | TRN |
 | BR-D-04 | Cross-project dependencies are allowed and flagged. Cross-organization dependencies are rejected. | INV |
 | BR-D-05 | A Dependency whose blocker is cancelled is `withdrawn`, not silently deleted. | TRN |
 | BR-D-06 | Duplicate dependencies with the same endpoints and kind are rejected as conflicts, returning the existing one. | INV |
@@ -274,6 +278,7 @@ reproducible. AI is not involved in evaluation.
 | MON-005 | Milestone with any open blocking dependency chain whose latest due date exceeds milestone target | Risk `schedule`, severity from slack |
 | MON-006 | Milestone target within 7 days with >30% of its Work incomplete | Risk `schedule` |
 | MON-007 | Work `blocked` longer than the block window (default 5 days) | Risk `dependency`, escalate to project lead |
+| MON-007a | Work `blocked` with no remaining active `blocks` dependency and no `blocked_reason` | Notification to the active OWNER, or to the capturing user and the team lead if there is no OWNER |
 | MON-008 | Person with open critical/high Work above load threshold, counted over active `OWNER` assignments across both work partitions (BR-RPT-05) | Risk `capacity` (dependent on PQ-5) |
 | MON-009 | Open Risk unowned beyond window (BR-R-03) | Escalation notification |
 | MON-010 | Open Risk with `review_due_at` passed | Notification to owner |

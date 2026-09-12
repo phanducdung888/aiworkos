@@ -141,6 +141,53 @@ def test_the_relay_publishes_and_marks_events(
     session.close()
 
 
+def test_events_from_one_transaction_relay_in_the_order_they_were_appended(
+    app_session_factory: sessionmaker[Session], two_orgs: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """W-4, the reason `outbox.seq` exists (migration 0006).
+
+    Ordering by `id` could not do this: ids are UUIDv7 and their sub-millisecond bits are random, so
+    a batch appended inside one transaction came back shuffled. Ordering by `occurred_at` could not
+    either — `now()` is transaction start time and is byte-identical for all of them. A consumer
+    seeing `WorkCompleted` before the `WorkStatusChanged` that caused it is not a cosmetic problem;
+    it is a consumer that cannot trust causality.
+
+    Twenty events rather than two, because with two a shuffle is a coin flip that passes half the
+    time.
+    """
+    org_a, _ = two_orgs
+    aggregate_id = uuid.uuid4()
+    expected = [f"Step{index:02d}" for index in range(20)]
+
+    session = app_session_factory()
+    _scoped(session, org_a)
+    # Drain anything earlier tests left behind, so this assertion is about ordering and not about
+    # which rows happen to be outstanding.
+    relay_once(session, RecordingPublisher(), limit=1000)
+    for event_type in expected:
+        append_domain_event(
+            session,
+            org_id=org_a,
+            type=event_type,
+            aggregate_type="work",
+            aggregate_id=aggregate_id,
+            payload={},
+            actor=system_actor("ordering"),
+        )
+    session.commit()
+    session.close()
+
+    publisher = RecordingPublisher()
+    session = app_session_factory()
+    _scoped(session, org_a)
+    relay_once(session, publisher, limit=1000)
+    session.commit()
+    session.close()
+
+    delivered = [e.type for e in publisher.published if e.aggregate_id == aggregate_id]
+    assert delivered == expected
+
+
 def test_a_failing_publisher_leaves_events_unpublished_and_records_the_error(
     app_session_factory: sessionmaker[Session], two_orgs: tuple[uuid.UUID, uuid.UUID]
 ) -> None:

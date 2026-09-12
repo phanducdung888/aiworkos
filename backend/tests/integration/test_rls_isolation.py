@@ -51,6 +51,32 @@ def role_factory(
     return sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 
+def test_neither_role_can_bypass_row_level_security(
+    role_factory: sessionmaker[Session],
+) -> None:
+    """The precondition every other test here depends on.
+
+    FORCE ROW LEVEL SECURITY is not enforced against a superuser or a role holding BYPASSRLS: the
+    policies still exist, the planner simply ignores them. An owner with either attribute turns the
+    rest of this module into a test of nothing, and the failure mode is silent — isolation looks
+    proven right up until production runs as the wrong role. So assert the attribute, not just the
+    behaviour.
+    """
+    session = role_factory()
+    role, is_superuser, bypasses = session.execute(
+        text(
+            "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles "
+            "WHERE rolname = current_user"
+        )
+    ).one()
+    session.close()
+    assert not is_superuser, (
+        f"{role} is a superuser; FORCE ROW LEVEL SECURITY does not apply to it and the isolation "
+        "proved below would be vacuous"
+    )
+    assert not bypasses, f"{role} holds BYPASSRLS; tenant policies are not enforced against it"
+
+
 def test_an_unscoped_session_sees_nothing(
     role_factory: sessionmaker[Session], two_orgs: tuple[uuid.UUID, uuid.UUID]
 ) -> None:

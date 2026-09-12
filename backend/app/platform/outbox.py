@@ -39,13 +39,17 @@ _APPEND = text(
     """
 )
 
+# Ordered by `seq`, not by `id` and not by `occurred_at`. Ids are UUIDv7 whose sub-millisecond bits
+# are random, so events appended inside one transaction have no order at all; `occurred_at` is
+# `now()`, which in PostgreSQL is transaction start time and is therefore identical for every one of
+# them. A sequence is the only column here that increases per row (migration 0006).
 _CLAIM = text(
     """
     SELECT id, org_id, type, aggregate_type, aggregate_id, payload, actor,
            correlation_id, causation_id, attempts
     FROM outbox
     WHERE published_at IS NULL
-    ORDER BY id
+    ORDER BY seq
     LIMIT :limit
     FOR UPDATE SKIP LOCKED
     """
@@ -122,6 +126,12 @@ def relay_once(session: Session, publisher: Publisher, *, limit: int = 100) -> i
 
     Uses `FOR UPDATE SKIP LOCKED` so several relay workers can run without coordination. Delivery
     is at-least-once, so consumers must be idempotent.
+
+    Ordering is per-transaction, not global. `seq` is assigned at insert but transactions commit in
+    a different order than they started, so a relay reading between two commits can see a gap that
+    fills in afterwards. Events from one transaction always arrive in the order they were appended,
+    which is what causal ordering needs; a strict global order needs `pg_current_snapshot()` or an
+    advisory lock, and is recorded in progress.md as a Phase 2 decision rather than guessed at here.
     """
     rows = session.execute(_CLAIM, {"limit": limit}).mappings().all()
     if not rows:

@@ -2,10 +2,14 @@
 
 SHELL := /bin/bash
 BACKEND := backend
-TEST_DB_URL := postgresql+psycopg://workos:workos@127.0.0.1:5432/workos_test
+# The image superuser. It bootstraps roles and hands the schema to workos_owner; nothing in the
+# application or the migrations ever connects as it.
+SUPERUSER := workos
+DEV_DB := workos
+TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help up down logs install migrate downgrade test test-unit test-fast lint types imports check test-db
+.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast lint types imports check dev-db test-db
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -22,9 +26,23 @@ logs:  ## Follow container logs
 install:  ## Install backend dependencies into the active virtualenv
 	cd $(BACKEND) && pip install -e ".[dev]"
 
+dev-db:  ## Provision roles and schema ownership on the development database
+	# Idempotent. Only needed on a volume created before ops/db/dev-roles.sql was last changed;
+	# a fresh volume runs the same script from docker-entrypoint-initdb.d.
+	docker compose exec -T postgres psql -U $(SUPERUSER) -d postgres -f /docker-entrypoint-initdb.d/10-dev-roles.sql
+	docker compose exec -T postgres psql -U $(SUPERUSER) -d $(DEV_DB) -f /docker-entrypoint-initdb.d/10-dev-roles.sql
+
 test-db:  ## Create the test database (run once after `make up`)
-	docker compose exec -T postgres psql -U workos -d postgres -c "CREATE DATABASE workos_test OWNER workos;" || true
-	docker compose exec -T postgres psql -U workos -d workos_test -f /docker-entrypoint-initdb.d/10-dev-roles.sql
+	docker compose exec -T postgres psql -U $(SUPERUSER) -d postgres -f /docker-entrypoint-initdb.d/10-dev-roles.sql
+	docker compose exec -T postgres psql -U $(SUPERUSER) -d postgres -c "CREATE DATABASE workos_test OWNER workos_owner;" || true
+	docker compose exec -T postgres psql -U $(SUPERUSER) -d workos_test -f /docker-entrypoint-initdb.d/10-dev-roles.sql
+
+openapi:  ## Regenerate the committed OpenAPI snapshot
+	# The snapshot is reviewed in the diff, so regenerating it is a deliberate act rather than
+	# something a test does behind the author's back.
+	cd $(BACKEND) && PYTHONPATH=. python -c "import json, pathlib; \
+from app.main import create_app; \
+pathlib.Path('openapi.json').write_text(json.dumps(create_app().openapi(), indent=2, sort_keys=True) + chr(10))"
 
 migrate:  ## Apply all migrations to the development database
 	cd $(BACKEND) && alembic upgrade head

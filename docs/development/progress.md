@@ -167,6 +167,12 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ### Resolved
 
+**Checkpoint 4b (2026-09-12).** W-6: `Idempotency-Key` implemented, optional on every POST, recorded in the mutation's own transaction. W-7: BR-W-19 written and enforced at creation, at a later visibility change, and as a cascade when a Project narrows; migration 0007 backfills rows that predate it. W-8: confirmed — authorship reaches READ and LIST. Project visibility, previously undefined, is now BR-P-09.
+
+**Checkpoint 4a (2026-09-12).** T-3 resolved as option (a): tests sign their own tokens, the JWKS is stubbed, verification is real. The missing implementation contract is now `docs/development/phase-1-implementation-contract.md` and every `contract §n` citation in the codebase was checked against it — one was wrong (`work/public.py` cited §12 for a data-access boundary rule, which is §13) and is corrected. Work visibility, previously undefined anywhere, is now BR-W-18.
+
+**Checkpoint 3.5 (2026-09-12).** W-1: `created_by_person_id` added to all five Work Core tables by migration 0006; the `PERSONAL` relation on Work is now assignment **or** authorship. PO decision, as amended by W-8 at Checkpoint 4a: authorship is permanent and reaches `READ`, `LIST`, `UPDATE` and `CHANGE_STATE`, plus `ASSIGN` under the paired condition in D1 (Checkpoint 4b) — the creator may claim the Work for themselves and may not staff it to anybody else. It does not reach `CHANGE_VISIBILITY`, `REASSIGN` or `END_ASSIGNMENT`. W-2: BR-D-03 reworded and MON-007a added; the narrow reading stands and the inconsistent state it leaves behind is now detected rather than ignored. W-3: BR-W-17 written. W-4: `outbox.seq` added and `relay_once` orders by it.
+
 | id | Decision | Source |
 |---|---|---|
 | PQ-1 | Web capture (mandatory) + OpenClaw/WhatsApp + internal Events; no other connectors | Decision Pack v1.0 |
@@ -190,6 +196,10 @@ Owner and due date to be filled at Phase 0 sign-off.
 | id | Question | Source | Blocks | Priority |
 |---|---|---|---|---|
 | N-2 | Target languages for MVP-quality extraction | product-constitution §10 | prompts, eval corpus, Phase 3 | **high** |
+| W-9 | **`idempotency_key` has no retention job.** Records are kept for the 24 hours a client retry needs and nothing deletes them afterwards, so the table grows with every keyed POST. The application role is granted SELECT and INSERT only, deliberately — a stored response is the answer that was given — so the sweeper runs as a different role. | migration 0007 | Phase 2 | medium, new |
+| W-10 | **Two concurrent requests sharing one Idempotency-Key.** The unique constraint catches the second at insert, after its mutation has run in the same transaction, so that transaction rolls back and the caller gets 409 with `Retry-After: 1`; the retry then replays the first response. Correct but pessimistic — it wastes the work already done. A reservation row inserted before the handler would serialise them properly, at the cost of a second round trip on the common path. | `platform/http/idempotency.py` | Phase 2 | low, new |
+| W-11 | **A reference to a non-existent Team, Department or Person is caught by the database, not the service.** Found by schemathesis: the FK violation now renders as 422 `constraint-violation` with a detail that names nothing, rather than a 500. It is a safety net and not validation — the service does not check that `owning_team_id` resolves before writing, so the error says less than it could. Proper validation needs Identity read access from the Work Core, which is an ADR-0001 question. | `platform/http/errors.py` | Checkpoint 5 | medium, new |
+| W-5 | **`outbox.seq` orders within a transaction, not globally.** A bigserial is assigned at insert, but transactions commit in a different order than they start, so a relay reading between two commits can pass a `seq` that is still uncommitted and see it appear behind it afterwards. Causal ordering is safe — events from one transaction always arrive in append order — and a single relay at pilot volume is fine. Multiple concurrent consumers, or any guarantee of a strict global order, needs `pg_current_snapshot()` watermarking or an advisory lock around the claim. A recorded trade-off, not an oversight. | `platform/outbox.py`, migration 0006 | Phase 2 relay with a real transport | medium, new |
 | N-4 | Should `COMMENT` Events be extraction-eligible despite internal origin? | domain-model §13 | Phase 2 comment UI, Phase 3 extraction scope | **high, new** |
 | M-10 | Comments are immutable Events (BR-E-01), so editing or deleting a comment means a new Event. Is that acceptable product behaviour? | ADR-0033 consequences | Phase 2 UI | medium, new |
 | S-7 | Channel sender policy: who may send into a connected channel | security-model §9 | Phase 3b | high, new |
@@ -215,8 +225,10 @@ Owner and due date to be filled at Phase 0 sign-off.
 |---|---|---|
 | 1 | Migrations 0001–0002, authorization model and matrix, RLS, audit, outbox, architecture tests | ✅ complete · 76 tests |
 | 2 | Migrations 0003–0005, Work Core schema and pure domain layer, read models | ✅ complete · 151 tests total |
-| 3 | Application services for Project, Milestone, Work, WorkAssignment, Dependency | ⬜ awaiting approval |
-| 4 | API layer and generated client | ⬜ |
+| 3 | Application services for Project, Milestone, Work, WorkAssignment, Dependency | ✅ complete · 185 tests total |
+| 3.5 | Defect and debt: W-1 creator provenance, W-4 outbox ordering, W-3 and W-2 rule text, the ASSIGN/REASSIGN bypass | ✅ complete · 195 tests total |
+| 4a | HTTP spine and the Work vertical slice: auth, principal, problem+json, ETag, cursor pagination, read side | ✅ complete · 238 tests total |
+| 4b | Project, Milestone, Dependency and ownership routers, visibility inheritance, idempotency, OpenAPI snapshot, schemathesis | ✅ complete · 299 tests total |
 | 5 | Frontend and E2E journeys | ⬜ |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
@@ -228,6 +240,21 @@ acyclicity, dependency acyclicity over active `blocks` edges, blocked-requires-a
 OWNER, single active primary assignment, milestone-belongs-to-the-same-project, and no assignment to
 a departed person. Each was verified by disabling the control and confirming the violation becomes
 possible.
+
+Checkpoint 3 delivered the write path: `app/contexts/work/{commands,repository,authorization,
+services}.py`, `app/contexts/identity/queries.py` and `app/platform/concurrency.py`. Every use case
+runs authorize → domain validation → repository → audit → outbox, in that order, inside a
+transaction the caller owns. No API layer and no read/list services; both are Checkpoint 4.
+
+Relationship facts for the matrix (`IN_TEAM`, `IN_DEPARTMENT`, `PERSONAL`) are resolved once per
+request by `authorization.reach_of` and supplied to the policy engine, which still never queries the
+database. Cross-context access to Identity goes through `identity.public` and is the first such edge
+in the codebase; the import-linter `independence` contract was stricter than ADR-0001 and now names
+that one edge as its only exception.
+
+Cascades implemented: BR-P-04 (a cancelled project cancels its open milestones and work, with the
+originating action recorded on the cascaded audit entries), BR-D-03 and BR-D-05 (a blocker reaching
+`done`/`achieved` resolves its dependencies, reaching `cancelled`/`rejected` withdraws them).
 
 ## Phase 1 readiness review
 
@@ -289,6 +316,7 @@ retrofit:
 | `test_every_table_has_org_id` | BR-G-01 |
 | `test_rls_policies_present` | BR-G-01a |
 | `test_tenant_isolation_without_application_scoping` | PQ-2 acceptance criteria |
+| `test_neither_role_can_bypass_row_level_security` | the precondition for the row above: FORCE RLS is inert for a superuser or BYPASSRLS role |
 | `test_no_assignee_column_on_work` | BR-W-12, ADR-0032 |
 | `test_single_active_owner_constraint_exists` | BR-W-13 |
 | `test_project_is_optional_on_work` | ADR-0029 |
@@ -296,7 +324,7 @@ retrofit:
 | `test_no_comment_table` | ADR-0033 |
 | `test_contexts_do_not_cross_import` | ADR-0001 |
 | `test_routers_have_no_business_logic` | layering |
-| `test_every_mutation_writes_audit` | BR-G-02 |
+| `test_every_mutating_service_call_writes_exactly_one_audit_entry_for_its_own_resource` | BR-G-02 |
 | `test_migrations_apply_and_rollback` | migration hygiene |
 
 The AI-boundary tests (`test_agent_has_no_db_access`, `test_tools_do_not_import_repositories`,
@@ -308,6 +336,17 @@ anything to violate them.
 
 | Date | Decision | Where |
 |---|---|---|
+| 2026-09-11 | Migrations moved off the cluster superuser onto a dedicated `workos_owner` (`NOSUPERUSER NOBYPASSRLS`). The superuser owned the schema, so `FORCE ROW LEVEL SECURITY` was not enforced on the owner path and the five `[owner_role]` isolation tests failed; they were proving a control the environment did not have. Implements ADR-0008 layer 2, no new decision. Guard test added; 153 green | `ops/db/dev-roles.sql`, `Makefile`, `docker-compose.yml`, `backend/` |
+| 2026-09-11 | PostgreSQL published on `127.0.0.1:5432`. The host-side workflow the Makefile and README already assumed had no route to the container | `docker-compose.yml` |
+| 2026-09-12 | Checkpoint 4b: migration 0007 (BR-W-19 backfill, `idempotency_key`, dropped the dead `ix_outbox_unpublished`), routers for Project, Milestone, Dependency and ownership, committed OpenAPI snapshot, schemathesis. BR-W-19 and BR-P-09 written. 299 tests green | `backend/app/api/v1/`, `backend/openapi.json`, `docs/domain/business-rules.md` |
+| 2026-09-12 | Schemathesis found three shape defects on its first run, all fixed at source: `type`, `priority` and `visibility` were free strings on the wire with CHECK constraints underneath, so a bad value reached PostgreSQL and returned 500; Starlette's own 404 and 405 bypassed the problem+json handler and answered in a second error shape; and the OpenAPI document published FastAPI's default validation schema while the application returns problem+json | `app/api/v1/schemas.py`, `app/platform/http/errors.py` |
+| 2026-09-12 | Checkpoint 4a: HTTP spine (`platform/auth`, `platform/principal`, `platform/http/*`) and the Work vertical slice (`api/v1/work`, `contexts/work/queries`). BR-W-18 written to define Work visibility, which the document set specified nowhere. 238 tests green | `backend/app/api/`, `backend/app/platform/http/`, `docs/domain/business-rules.md` |
+| 2026-09-12 | `DomainRuleViolation` and `EntityNotFound` moved from the Work Core to `platform/errors`. The HTTP error handler has to translate them and platform sits below every context, so leaving them in a context made the layering contract fail for a real reason rather than a technicality. `StaleVersionError` was already there; this makes the three consistent | `app/platform/errors.py` |
+| 2026-09-12 | The `api-purity` import contract now runs with `allow_indirect_imports`. It forbade any chain reaching `sqlalchemy`, which is every service and every query there will ever be; contract §12 forbids a router from executing SQL, not from calling something that eventually does. The direct-import rule is enforced by `test_routers_are_thin`, which was tightened to also forbid the policy engine and any context internal | `backend/.importlinter` |
+| 2026-09-12 | Checkpoint 3.5: migration 0006 (`created_by_person_id` on the five Work Core tables, `outbox.seq`), authorship relation, ASSIGN/REASSIGN bypass closed, BR-W-17 added, BR-D-03 reworded, MON-007a specified. 195 tests green | `backend/`, `docs/domain/business-rules.md` |
+| 2026-09-12 | The ASSIGN/REASSIGN bypass was fixed in the relation computation rather than by denying `member` END_ASSIGNMENT in the matrix. PERSONAL on a WorkAssignment now means *this assignment is mine*; it previously inherited the work's relation, which let any member on a work item end any other member's assignment and then assign themselves. The matrix cell was never the enabler, and denying it would have removed a real capability — stepping off work you hold — without closing the hole's cause | `app/contexts/work/authorization.py` |
+| 2026-09-12 | Checkpoint 3 implemented: Work Core application services, Identity read-side queries, optimistic concurrency. 185 tests green. Four readings taken where the rules were silent or the schema disagreed — all four recorded as open questions below rather than settled in code | `backend/app/contexts/`, `backend/app/platform/concurrency.py` |
+| 2026-09-12 | Import-linter `context-isolation` contract now permits `app.contexts.work.* -> app.contexts.identity.public`. The contract forbade any cross-context import; ADR-0001 and `test_contexts_do_not_import_each_other_directly` forbid reaching past a context's published interface. The contract was wrong, not the rule | `backend/.importlinter` |
 | 2026-09-11 | Phase 0 architecture set drafted; 25 ADRs proposed | `docs/decisions/ADR-INDEX.md` |
 | 2026-09-11 | Decision Pack v1.0 applied: PQ-1, PQ-2, PQ-3, A-1, A-7 resolved; ADRs 0026–0032 added; ADR-0011 amended by ADR-0030, ADR-0007 amended by ADR-0031 | `docs/decisions/decision-pack-v1.0.md` |
 | 2026-09-11 | Checkpoint 2 implemented: migrations 0003–0005, Work Core schema, pure domain layer, read models. 151 tests green. Person-tenancy contradiction resolved as a documentation correction in `security-model.md` §2 | `backend/` |

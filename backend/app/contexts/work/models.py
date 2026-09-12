@@ -1,7 +1,7 @@
 """Work Core persistence models.
 
-Mirrors migrations 0003 and 0004. The migration is authoritative; these exist for typed queries and
-so the drift test can prove the two agree.
+Mirrors migrations 0003, 0004 and 0006. The migration is authoritative; these exist for typed
+queries and so the drift test can prove the two agree.
 
 Note what is absent from `Work`: there is no `assignee_person_id`, no `owner_person_id` and no
 collaborator array. Assignment lives in `WorkAssignment` and only there (ADR-0032), and
@@ -38,6 +38,10 @@ class _Timestamped:
     created_at: Mapped[dt.datetime] = mapped_column(_TS, server_default=func.now(), nullable=False)
     updated_at: Mapped[dt.datetime] = mapped_column(_TS, server_default=func.now(), nullable=False)
     version: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
+    # Migration 0006. Nullable because a row created by a monitor, an import or any other system
+    # actor has no person behind it. The full actor — AI interaction and approval included — lives
+    # in `audit_entry`; this column exists so the `PERSONAL` authorization relation can be indexed.
+    created_by_person_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class Project(_Timestamped, Base):
@@ -102,6 +106,11 @@ class Project(_Timestamped, Base):
             ["person.id", "person.org_id"],
             name="fk_project_sponsor_person_id_org_id",
         ),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_project_created_by_person_id_org_id",
+        ),
         Index("ix_project_org_id_status", "org_id", "status"),
     )
 
@@ -137,6 +146,11 @@ class Milestone(_Timestamped, Base):
             ["project_id", "org_id"],
             ["project.id", "project.org_id"],
             name="fk_milestone_project_id_org_id",
+        ),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_milestone_created_by_person_id_org_id",
         ),
         Index("ix_milestone_org_id_project_id", "org_id", "project_id"),
     )
@@ -216,8 +230,14 @@ class Work(_Timestamped, Base):
             ["work.id", "work.org_id"],
             name="fk_work_parent_work_id_org_id",
         ),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_work_created_by_person_id_org_id",
+        ),
         Index("ix_work_org_id_status", "org_id", "status"),
         Index("ix_work_org_id_project_id", "org_id", "project_id"),
+        Index("ix_work_org_id_created_by_person_id", "org_id", "created_by_person_id"),
     )
 
 
@@ -263,6 +283,11 @@ class WorkAssignment(_Timestamped, Base):
             ["person.id", "person.org_id"],
             name="fk_work_assignment_person_id_org_id",
         ),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_work_assignment_created_by_person_id_org_id",
+        ),
     )
 
 
@@ -299,4 +324,9 @@ class Dependency(_Timestamped, Base):
             name="dependency_distinct_endpoints",
         ),
         UniqueConstraint("id", "org_id", name="uq_dependency_id_org_id"),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_dependency_created_by_person_id_org_id",
+        ),
     )

@@ -17,6 +17,7 @@ from app.platform.authz.model import (
     Principal,
     Relation,
     ResourceRef,
+    ResourceType,
     Role,
 )
 
@@ -80,6 +81,28 @@ def _ordered(grants: frozenset[Grant]) -> list[Grant]:
         Grant.DENY: 5,
     }
     return sorted(grants, key=lambda g: order[g])
+
+
+def grants_for(
+    principal: Principal, action: Action, resource_type: ResourceType
+) -> frozenset[Grant]:
+    """Which grant conditions this principal could satisfy, before any relation is known.
+
+    For a list query there is no single resource to decide about — the question is which rows to
+    return, and that has to become a predicate. This exposes the matrix's answer for the
+    (resource, action) pair so the query side can translate grants into SQL without reimplementing
+    the table. Deciding stays here; the caller only learns what the conditions are.
+    """
+    cell = MATRIX.get((resource_type, action))
+    if cell is None:
+        return frozenset()
+    granted = {
+        grant
+        for role in principal.roles
+        for grant in cell.get(role, frozenset())
+        if grant is not Grant.DENY
+    }
+    return frozenset(granted)
 
 
 def roles_for(*roles: Role) -> frozenset[Role]:

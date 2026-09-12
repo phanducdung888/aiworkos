@@ -23,6 +23,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    # Published on loopback only: `make migrate`, `make test-db` and `make test` run on the host
+    # against 127.0.0.1:5432. The `data` network stays the boundary for container-to-container
+    # traffic; this exposes nothing beyond the developer's own machine.
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     networks: [data]
 
   redis:
@@ -55,7 +60,10 @@ services:
     build:
       context: ./backend
     environment:
-      WORKOS_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-workos}:${POSTGRES_PASSWORD:-workos}@postgres:5432/${POSTGRES_DB:-workos}
+      # Migrations run as workos_owner, not as the image superuser: FORCE ROW LEVEL SECURITY
+      # does not apply to a superuser, so owning the schema with one would quietly disable the
+      # second of the two isolation mechanisms ADR-0008 relies on.
+      WORKOS_DATABASE_URL: postgresql+psycopg://workos_owner:${OWNER_DB_PASSWORD:-workos_owner}@postgres:5432/${POSTGRES_DB:-workos}
       WORKOS_APP_DATABASE_URL: postgresql+psycopg://workos_app:${APP_DB_PASSWORD:-workos_app}@postgres:5432/${POSTGRES_DB:-workos}
     depends_on:
       postgres:

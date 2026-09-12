@@ -37,16 +37,32 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 cd backend && pip install -e ".[dev]" && cd ..
 
 make up          # PostgreSQL, Redis, MinIO
-make test-db     # create workos_test and the application role
+make dev-db      # create workos_owner and workos_app, hand them the development schema
+make test-db     # same, for workos_test
 make migrate     # apply migrations 0001-0005
-make check       # ruff + mypy + import contracts + 151 tests
+make check       # ruff + mypy + import contracts + 153 tests
 ```
+
+`make dev-db` is only needed on a database created before `ops/db/dev-roles.sql` last changed; a
+fresh volume runs the same script from `docker-entrypoint-initdb.d`. It is idempotent either way.
 
 In VS Code select `.venv` as the interpreter (Ctrl/Cmd+Shift+P → *Python: Select Interpreter*). The
 Testing panel is pre-configured to run pytest from `backend/`.
 
-If you do not want Docker, any local PostgreSQL 16 works. The owner role needs `CREATEROLE`, because
-`ops/db/dev-roles.sql` creates the unprivileged application role that row-level security depends on.
+If you do not want Docker, any local PostgreSQL 16 works. Run `ops/db/dev-roles.sql` as a superuser
+first: it creates the two roles the stack uses and hands schema `public` to the first of them.
+
+Neither role is the cluster superuser, and that is a control rather than hygiene. `FORCE ROW LEVEL
+SECURITY` is not enforced against a superuser or a `BYPASSRLS` role — the policies remain, the
+planner ignores them. An owner with either attribute would leave tenant isolation resting on
+application scoping alone while every isolation test still passed, so
+`test_rls_isolation.py::test_neither_role_can_bypass_row_level_security` asserts the attribute
+directly.
+
+| Role | Purpose | Attributes |
+|---|---|---|
+| `workos_owner` | owns the schema, runs migrations | `LOGIN CREATEROLE NOSUPERUSER NOBYPASSRLS` |
+| `workos_app` | serves requests | `LOGIN` only; owns nothing |
 
 ## 4. Layout
 

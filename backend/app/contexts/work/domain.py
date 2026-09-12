@@ -17,13 +17,10 @@ import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
+from app.platform.errors import DomainRuleViolation
 
-class DomainRuleViolation(ValueError):
-    """A business rule was broken. Carries the rule id so the message is traceable to the spec."""
-
-    def __init__(self, rule: str, message: str) -> None:
-        super().__init__(f"{rule}: {message}")
-        self.rule = rule
+# `DomainRuleViolation` is raised throughout this module but defined in `platform.errors`: every
+# context raises it, and the HTTP layer has to translate it without importing a context (ADR-0001).
 
 
 # --------------------------------------------------------------------------- vocabulary
@@ -75,6 +72,93 @@ class DependencyStatus(enum.StrEnum):
     ACTIVE = "active"
     RESOLVED = "resolved"
     WITHDRAWN = "withdrawn"
+
+
+#: Mirrors the CHECK constraints in migration 0003. The database is the backstop; naming the
+#: vocabulary here is what lets the edge refuse a bad value with a 422 instead of letting it
+#: reach PostgreSQL and come back as a constraint violation.
+class WorkType(enum.StrEnum):
+    DELIVERABLE = "deliverable"
+    TASK = "task"
+    ACTIVITY = "activity"
+    INVESTIGATION = "investigation"
+
+
+class WorkPriority(enum.StrEnum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class Visibility(enum.StrEnum):
+    ORGANIZATION = "organization"
+    DEPARTMENT = "department"
+    TEAM = "team"
+    RESTRICTED = "restricted"
+
+
+#: Widest to narrowest (BR-W-19). The position in this tuple *is* the comparison: the levels are
+#: stored as text with a CHECK constraint, so they carry no order of their own and every "wider
+#: than" question in the system resolves here rather than in whichever module asked it.
+VISIBILITY_ORDER: tuple[Visibility, ...] = (
+    Visibility.ORGANIZATION,
+    Visibility.DEPARTMENT,
+    Visibility.TEAM,
+    Visibility.RESTRICTED,
+)
+
+
+def _rank(level: Visibility | str) -> int:
+    try:
+        return VISIBILITY_ORDER.index(Visibility(level))
+    except ValueError as exc:
+        raise DomainRuleViolation("BR-W-19", f"{level} is not a visibility level") from exc
+
+
+def is_narrower_or_equal(candidate: Visibility | str, limit: Visibility | str) -> bool:
+    return _rank(candidate) >= _rank(limit)
+
+
+def effective_work_visibility(
+    *, requested: str | None, project_visibility: str | None, default: str
+) -> str:
+    """BR-W-19. The visibility a Work is created with.
+
+    Three cases and no fourth. With no Project there is nothing to inherit from, so the caller's
+    choice or the default stands (ADR-0029). With a Project and no explicit choice, the Project's
+    level is inherited — which is the fix for the leak where marking a Project `restricted`
+    protected nothing. With a Project and an explicit choice, narrower is allowed and wider is
+    refused: a Work may keep a secret its Project does not, never the reverse.
+    """
+    if project_visibility is None:
+        return requested if requested is not None else default
+    if requested is None:
+        return project_visibility
+    if not is_narrower_or_equal(requested, project_visibility):
+        raise DomainRuleViolation(
+            "BR-W-19",
+            f"work cannot be more visible than its project: {requested} is wider than "
+            f"{project_visibility}",
+        )
+    return requested
+
+
+def narrowing_to(current: str, limit: str) -> str | None:
+    """The level `current` must move to in order to sit inside `limit`, or None if it already does.
+
+    Returns None rather than the unchanged value so a caller cannot accidentally rewrite a row that
+    needed no change — the difference between a cascade that touches three Work items and one that
+    audits every Work in the project.
+    """
+    return None if is_narrower_or_equal(current, limit) else limit
+
+
+#: BR-W-18. Roles for which visibility imposes no further narrowing. `auditor` is defined by
+#: security-model §3.1 as reading every entity; `org_admin` holds CHANGE_VISIBILITY on all Work in
+#: the organization, so withholding read from them would be theatre — they can widen it and look.
+#: Expressed here, in the domain, because it is a business rule and not a query detail.
+VISIBILITY_EXEMPT_ROLES = frozenset({"org_admin", "auditor"})
 
 
 class Source(enum.StrEnum):

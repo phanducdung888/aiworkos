@@ -11,7 +11,7 @@ from app.platform.authz.model import (
     ResourceType,
     Role,
 )
-from app.platform.authz.policy import authorize, can, roles_for
+from app.platform.authz.policy import authorize, can, grants_for, roles_for
 
 __all__ = [
     "Action",
@@ -25,5 +25,6 @@ __all__ = [
     "Role",
     "authorize",
     "can",
+    "grants_for",
     "roles_for",
 ]

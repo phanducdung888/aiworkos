@@ -105,6 +105,21 @@ single-organization schema is not. Single database, `org_id` on every organizati
 All three remain in a single-organization deployment. Retrofitting isolation later is far more expensive
 than carrying it from the start.
 
+**Database roles.** Layer 2 is only real if the connecting role is subject to it. `FORCE ROW LEVEL
+SECURITY` is not enforced against a superuser or a role holding `BYPASSRLS`: the policies remain
+attached, the planner skips them, and nothing in the schema reports the difference. The stack
+therefore uses three roles and connects as neither of the privileged ones:
+
+| Role | Connects from | Attributes |
+|---|---|---|
+| cluster superuser | initdb and `ops/db/dev-roles.sql` only | full |
+| `workos_owner` | migrations, administrative tasks | `LOGIN CREATEROLE NOSUPERUSER NOBYPASSRLS` |
+| `workos_app` | the API and workers | `LOGIN`; owns nothing |
+
+Owning the schema with a superuser is the failure this guards against, and it is silent: the
+isolation suite passes unchanged while enforcing nothing. `test_rls_isolation.py` asserts
+`rolsuper` and `rolbypassrls` are false for both connecting roles before it asserts any behaviour.
+
 **Isolation acceptance criteria (PQ-2).** A test must prove that a user of Organization A cannot read
 Organization B data, modify it, drive AI actions against it, or infer it through search, listing,
 reporting, rollup or error-message channels. The same isolation applies identically to AI-originated

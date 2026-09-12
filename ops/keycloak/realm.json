@@ -1,0 +1,126 @@
+{
+  "_comment": [
+    "Development realm for AI WorkOS. Imported by the Compose `keycloak` service at start-up",
+    "(`start-dev --import-realm`). For running the stack by hand only: the test suite never starts",
+    "Keycloak, it signs its own tokens with a throwaway RSA key and stubs the JWKS endpoint",
+    "(testing-strategy T-3, resolved as option (a)). Production code validates identically either",
+    "way — issuer, audience, expiry and signature.",
+    "One realm serves every organization (PQ-2, ADR-0031). There is deliberately no organization",
+    "claim anywhere below: membership is resolved from local rows, because a claim would keep",
+    "asserting a membership after it was revoked (security-model §2).",
+    "Every secret and password here is a development placeholder and is meant to be visible."
+  ],
+  "realm": "workos",
+  "enabled": true,
+  "displayName": "AI WorkOS (development)",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+
+  "roles": {
+    "realm": [
+      {
+        "name": "workos-user",
+        "description": "Can sign in to AI WorkOS. Carries no authority of its own: every permission that matters comes from RoleAssignment rows in the application database (security-model §2)."
+      }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "workos-web",
+      "name": "AI WorkOS web application",
+      "description": "First-party SPA. Authorization code with PKCE, no client secret, access token held in memory only.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "defaultClientScopes": ["profile", "email", "roles", "workos-audience"]
+    },
+    {
+      "clientId": "workos-api",
+      "name": "AI WorkOS API",
+      "description": "The resource server. Bearer-only: it is the audience tokens are checked against, never an issuer of them.",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "workos-connector",
+      "name": "Channel connector (Phase 2)",
+      "description": "Client-credentials service account for the ingestion API. Holds ingestion rights only and must never be able to reach the Tool Gateway (ADR-0027): a compromised channel may inject content but may not act on it. Unused until Phase 2.",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "dev-connector-secret",
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": ["roles", "workos-audience"]
+    }
+  ],
+
+  "clientScopes": [
+    {
+      "name": "workos-audience",
+      "description": "Puts `workos-api` in the `aud` claim. Without it every token would be rejected, because audience is one of the four things the API checks on every request.",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false" },
+      "protocolMappers": [
+        {
+          "name": "workos-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "workos-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "avery.admin",
+      "email": "avery.admin@example.test",
+      "firstName": "Avery",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "workos", "temporary": false }],
+      "realmRoles": ["workos-user"]
+    },
+    {
+      "username": "tomas.lead",
+      "email": "tomas.lead@example.test",
+      "firstName": "Tomas",
+      "lastName": "Lead",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "workos", "temporary": false }],
+      "realmRoles": ["workos-user"]
+    },
+    {
+      "username": "mira.member",
+      "email": "mira.member@example.test",
+      "firstName": "Mira",
+      "lastName": "Member",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "workos", "temporary": false }],
+      "realmRoles": ["workos-user"]
+    }
+  ]
+}

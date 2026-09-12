@@ -20,6 +20,12 @@ type = independence
 modules =
     app.contexts.identity
     app.contexts.work
+# ADR-0001 forbids reaching into another context, not talking to one. A context's `public` module
+# is the published interface and is the one edge that is allowed; everything behind it stays
+# unreachable. Listing the exception here rather than relaxing the contract keeps the difference
+# between "imports the interface" and "imports the internals" a thing CI can still tell apart.
+ignore_imports =
+    app.contexts.work.* -> app.contexts.identity.public
 
 [importlinter:contract:api-purity]
 name = Routers never touch the database or the policy engine directly
@@ -30,6 +36,17 @@ forbidden_modules =
     app.platform.db
     app.platform.authz.matrix
     sqlalchemy
+# Contract §12 forbids a router from executing SQL or implementing authorization policy. It does not
+# forbid one from calling something that eventually does — which is every service and every query
+# there will ever be. Without this flag the contract fails on chains like
+# `api.v1.work -> contexts.work.public -> contexts.work.models -> sqlalchemy`, where the router names
+# none of it and the reported "violation" is that a returned object is an ORM row.
+#
+# The direct-import rule is the one worth enforcing, and it still is:
+# `test_routers_are_thin` walks the AST of every module under `app/api` and fails on a direct import
+# of the data layer, the policy tables, or any context internal. That test is the real contract;
+# this one guards the same boundary at the package level.
+allow_indirect_imports = True
 
 [importlinter:contract:domain-has-no-web]
 name = Contexts never import the web framework
