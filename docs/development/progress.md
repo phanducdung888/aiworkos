@@ -167,6 +167,29 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ### Open
 
+**`find_similar` matches titles only.** Trigram over `work.title`, so two items describing the same
+thing in different words do not match — "Send the revised quote" and "Get the updated pricing to
+Nam" are the same task and score near zero. BR-AI-05 is satisfied (the agent looks, and the search
+is recorded) and the *quality* of the looking is limited. Embeddings would fix it and a vector store
+is not being introduced on speculation; the interface returns references, so replacing the
+implementation changes nothing above it.
+
+**The agent registry is still code.** `AGENTS` in `app/api/v1/agent.py` names one agent and its
+capabilities. The *policy* is now per-organization data, which was the urgent half; which agents
+exist and what each is built to do is still a deployment. That is the right order — a policy row
+cannot widen an agent that was never built to do the thing — but a second agent will want a table.
+
+**No execution window.** BR-AI-22 says an ApprovalRecord not executed within 24 hours expires and
+must be re-approved. Nothing expires one today: a job that fails repeatedly reaches `dead` and its
+approval stays `pending` forever. The single execution path (ADR-0048) is what makes this
+implementable in one place, and it is not implemented.
+
+**Confidence bands are uncalibrated.** `Confidence.HIGH = 85` and `MIN_CONFIDENCE = 60` are numbers
+chosen so the fake provider's output crosses the threshold. They mean nothing yet, and BR-AI-09's
+"below threshold produces no Proposal" is only as good as the mapping a real provider gets. Deciding
+it silently when the adapter is written would make the rule decorative.
+
+
 **The `job` table is readable without an organization context.** One deliberate exception to
 default-deny (ADR-0044): a worker serves every tenant, cannot know which has work before it looks,
 and no role holds BYPASSRLS. Reading and claiming are exempt; **enqueueing is not**, so nothing can
@@ -245,6 +268,25 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 `test_an_archived_team_can_still_be_given_new_work_today` so that changing it is visible.
 
 ### Resolved
+
+**The job queue was readable without an organization context (closed in CP9).** The Checkpoint 8
+exemption was keyed on the *absence* of a setting, so any session that forgot to scope — including
+one serving an HTTP request — could read the queue. A condition granting access when a variable is
+unset is the opposite of default-deny. The exemption is now an identity: `workos_worker`, one policy
+on one table (ADR-0046). Two tests hold the shape — no policy anywhere may test for a missing
+organization, and `workos_worker` appears in exactly one policy.
+
+**Agent capability policy was hard-coded (closed in CP9).** Two module-level constants meant every
+organization shared one policy and changing it was a deployment, which BR-AI-30 explicitly forbids.
+Now a tenant-scoped table where absence is denial (ADR-0047).
+
+**Two paths to an approved mutation (closed in CP9).** The synchronous endpoint is gone (ADR-0048).
+Every future execution control — a rate limit, a window, a kill switch — is now implementable once
+rather than twice-or-bypassable.
+
+**BR-AI-05 was unenforced (closed in CP9).** `find_similar_work` exists, the runtime calls it before
+proposing, and the search is recorded as its own tool call — so "did this interaction look first" is
+answerable from the audit trail rather than by trusting the code did.
 
 **`raised_by_ai` was caller-supplied (2026-09-12, the CP7 risk, closed in CP8).** Two rules keyed
 off a boolean the request could set. Nothing exploited it because every path through the API was a
@@ -370,6 +412,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 6 | Signal/Capture: Event, EventParticipant, EventAttachment, Evidence foundation; capture API; ObjectStore port; ADR-0038/0039 | ✅ complete · 552 backend + 38 frontend |
 | 7 | Evidence, Commitment, Proposal + ApprovalRecord, Tool Gateway; ADR-0040/0041/0042 | ✅ complete · 748 backend + 38 frontend |
 | 8 | AgentRuntime, AIInteraction, agent authority, queued execution; ADR-0043/0044/0045 | ✅ complete · 808 backend + 38 frontend |
+| 9 | Capability policy, job isolation, single execution path, find_similar; ADR-0046/0047/0048 | ✅ complete · 843 backend + 38 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

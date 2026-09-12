@@ -24,6 +24,7 @@ from fastapi import APIRouter, Query, Response, status
 
 import app.contexts.intelligence.public as intelligence
 import app.contexts.signal.public as signal
+import app.contexts.work.public as work
 from app.agent.providers.fake import FakeProvider
 from app.agent.runtime import AgentRuntime
 from app.api.v1.schemas import (
@@ -32,11 +33,15 @@ from app.api.v1.schemas import (
     AIInteractionList,
     AIInteractionResource,
     AnalysisResource,
+    CapabilityPolicyList,
+    CapabilityPolicyResource,
+    CapabilityPolicySet,
     ToolCallResource,
 )
 from app.platform.actor import Actor
-from app.platform.authz import Principal
+from app.platform.authz import Action, Principal, ResourceType, authorize
 from app.platform.authz.agent import AgentCapability, AgentIdentity, AgentPrincipal
+from app.platform.authz.model import ResourceRef
 from app.platform.errors import EntityNotFound
 from app.platform.http.deps import (
     ActorDep,
@@ -62,9 +67,10 @@ AGENTS: dict[str, AgentIdentity] = {
     ),
 }
 
-#: BR-AI-30's policy, keyed per organization and capability once it is configurable. Until then the
-#: MVP default: extraction may propose Work and Commitments, and nothing else is reachable.
-DEFAULT_POLICY = frozenset({"create_work", "create_commitment"})
+#: No default policy constant. It used to live here and that was the Checkpoint 8 gap: every
+#: organization shared one hard-coded set, so turning extraction off for one customer was a
+#: deployment. The policy is now rows in `agent_capability_policy`, read per request, and an
+#: organization with no rows denies everything (ADR-0047).
 
 
 class _RuntimeServices:
@@ -109,6 +115,20 @@ class _RuntimeServices:
         # Read-filtered: the agent sees what the delegating person sees, restricted Events
         # included — which is to say, not included (BR-E-08).
         return signal.read_event(self._session, self._principal, event_id)
+
+    def find_similar_work(self, title: str) -> list[work.SimilarWork]:
+        """BR-AI-05, through the caller's own visibility.
+
+        The reach is the *delegating person's*, so an agent cannot discover Work its delegate
+        cannot see. A similarity search is an excellent way to leak a corpus one probe at a time,
+        and the defence is to never select the rows rather than to filter them afterwards.
+        """
+        return work.find_similar_work(
+            self._session,
+            self._principal,
+            work.reach_of(self._session, self._principal),
+            title=title,
+        )
 
     def create_evidence(
         self, actor: Actor, command: signal.CreateEvidence
@@ -167,9 +187,12 @@ def analyze_event(
         return replay_response(stored)
 
     # The intersection (BR-AI-03): this agent's capabilities, the caller's own authority, and the
-    # organization policy. The delegating principal is the authenticated caller — not a field.
+    # organization's policy read from the database. The delegating principal is the authenticated
+    # caller — never a field — and an organization that has decided nothing denies everything.
     agent_principal = AgentPrincipal(
-        identity=identity, delegated=principal, policy_allows=DEFAULT_POLICY
+        identity=identity,
+        delegated=principal,
+        policy=intelligence.load_capability_policy(session, org_id=principal.org_id),
     )
     result = AgentRuntime(FakeProvider()).analyze_event(
         _RuntimeServices(session, principal, store),
@@ -244,3 +267,58 @@ def queue_approved_execution(
         "queued": queued,
         "queued_at": dt.datetime.now(dt.UTC).isoformat(),
     }
+
+
+@router.get("/agent-policy", response_model=CapabilityPolicyList)
+def read_capability_policy(
+    session: SessionDep, principal: PrincipalDep
+) -> CapabilityPolicyList:
+    """What this organization has decided its agents may do.
+
+    Readable organization-wide: somebody asked to review an AI-raised Proposal is entitled to know
+    what the AI was permitted to do in the first place.
+    """
+    return CapabilityPolicyList(
+        items=[
+            CapabilityPolicyResource.model_validate(row)
+            for row in intelligence.capability_policy_rows(
+                session, org_id=principal.org_id
+            )
+        ]
+    )
+
+
+@router.put("/agent-policy", response_model=CapabilityPolicyResource)
+def set_capability_policy(
+    body: CapabilityPolicySet,
+    session: SessionDep,
+    principal: PrincipalDep,
+    actor: ActorDep,
+) -> Any:
+    """Set one cell. `org_admin` only, and never reachable by an agent (ADR-0047).
+
+    PUT rather than POST: a cell is set, not created. There is one row per
+    `(capability, entity_type, action)` and setting it twice is the same decision made twice, so
+    the operation is idempotent and "what is the policy" has exactly one answer.
+    """
+    decision = authorize(
+        principal,
+        Action.UPDATE,
+        ResourceRef(
+            type=ResourceType.AGENT_CAPABILITY_POLICY,
+            org_id=principal.org_id,
+            id=None,
+            relations=frozenset(),
+        ),
+    )
+    return intelligence.set_capability_mode(
+        session,
+        principal=principal,
+        actor=actor,
+        decision=decision,
+        capability=body.capability,
+        entity_type=body.entity_type,
+        action=body.action,
+        mode=body.mode,
+        reason=body.reason,
+    )

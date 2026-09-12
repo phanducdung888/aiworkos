@@ -101,6 +101,9 @@ RESOURCE_ACTIONS: dict[ResourceType, frozenset[Action]] = {
     # APPROVE covers rejection too: both are the same act of deciding, and splitting them would
     # invite a role that may reject but not approve, which is a veto rather than a review.
     R.PROPOSAL: frozenset({A.CREATE, A.READ, A.LIST, A.UPDATE, A.APPROVE}),
+    # No CREATE: a policy cell is set or cleared, never created and deleted, so
+    # there is exactly one row per cell and one answer to 'what is the policy'.
+    R.AGENT_CAPABILITY_POLICY: frozenset({A.READ, A.LIST, A.UPDATE}),
 }
 
 MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
@@ -181,6 +184,14 @@ MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
     (R.DEPENDENCY, A.READ):         row(ORG, DEPT, TEAM, TEAM_OR_OWN, ORG, ORG, ORG),
     (R.DEPENDENCY, A.LIST):         row(ORG, DEPT, TEAM, TEAM_OR_OWN, ORG, ORG, ORG),
     (R.DEPENDENCY, A.CHANGE_STATE): row(ORG, DEPT, TEAM, OWN,         NO,  NO,  NO),
+    # ---------------------------------------------------------------- agent capability policy
+    # Deciding how much autonomy an organization grants is an administrative act, not a team one.
+    # Reading it is wider: somebody asked to review an AI-raised Proposal is entitled to know what
+    # the organization decided the AI may do.
+    #                                          admin dept team member viewer audit exec
+    (R.AGENT_CAPABILITY_POLICY, A.READ):   row(ORG,  ORG, ORG, ORG,   ORG,   ORG,  ORG),
+    (R.AGENT_CAPABILITY_POLICY, A.LIST):   row(ORG,  ORG, ORG, ORG,   ORG,   ORG,  ORG),
+    (R.AGENT_CAPABILITY_POLICY, A.UPDATE): row(ORG,  NO,  NO,  NO,    NO,    NO,   NO),
     # ---------------------------------------------------------------- audit
     # ---------------------------------------------------------------- event (capture)
     # Capture is the act the product exists for, so every working role can do it and the read-only

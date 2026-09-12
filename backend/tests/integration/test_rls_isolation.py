@@ -87,6 +87,11 @@ SCOPED_QUERIES = {
     # The AI layer (CP8). `ai_interaction` names which human's authority a run borrowed, and
     # `tool_call` records what it tried — including what it was refused. Both are audit surfaces,
     # so a cross-tenant read here is a read of another organization's oversight.
+    # Since ADR-0046 the queue is an ordinary tenant table for every role but the worker,
+    # so it belongs in the sweep that proves default-deny.
+    "job queue": "SELECT count(*) FROM job",
+    "job payloads": "SELECT count(*) FROM job WHERE payload IS NOT NULL",
+    "agent capability policy": "SELECT count(*) FROM agent_capability_policy",
     "ai interaction": "SELECT count(*) FROM ai_interaction",
     "ai interaction by principal": (
         "SELECT count(*) FROM ai_interaction WHERE principal_person_id IS NOT NULL"
@@ -272,16 +277,13 @@ def test_every_registered_table_has_rls_enabled_and_forced(owner_engine: Engine)
         assert forced, f"{name} does not force row-level security, so the owner bypasses it"
 
 
-def test_the_job_queue_is_the_only_unscoped_readable_table(owner_engine: Engine) -> None:
-    """ADR-0044's one deliberate exception, held to exactly one table.
+def test_no_table_is_readable_without_an_organization_context(owner_engine: Engine) -> None:
+    """ADR-0046 closed the Checkpoint 8 exception, and this is what keeps it closed.
 
-    A worker serves every tenant and cannot know which organization has work before it looks, and
-    no role here holds BYPASSRLS. So `job` — and only `job` — permits a SELECT with no organization
-    context. Writing is not exempt: `job_enqueue_is_scoped` still requires one, so a worker cannot
-    manufacture work for a tenant it was never asked to act for.
-
-    This test exists because the exception is the kind that spreads. A second table with the same
-    policy would be a second place default-deny quietly stopped applying.
+    That exception was keyed on *the absence of a setting*, so any session that forgot to scope —
+    including one serving an HTTP request — could read the queue. A condition that grants access
+    when a variable is unset is the opposite of default-deny, and the fix was to key the worker's
+    exemption on identity instead. No policy anywhere may test for a missing organization again.
     """
     with owner_engine.connect() as conn:
         unscoped = set(
@@ -290,15 +292,100 @@ def test_the_job_queue_is_the_only_unscoped_readable_table(owner_engine: Engine)
                     """
                     SELECT DISTINCT tablename FROM pg_policies
                     WHERE schemaname = 'public'
-                      AND qual LIKE '%app_current_org() IS NULL%'
+                      AND (qual LIKE '%app_current_org() IS NULL%'
+                           OR with_check LIKE '%app_current_org() IS NULL%')
                     """
                 )
             ).scalars()
         )
-    assert unscoped == {"job"}, (
-        f"tables readable without an organization context: {sorted(unscoped)}; only the job "
-        "queue may be, and only so a worker can claim (ADR-0044)"
+    assert not unscoped, (
+        f"policies granting access when no organization is set: {sorted(unscoped)}; the exemption "
+        "must be an identity, not a missing setting (ADR-0046)"
     )
+
+
+def test_only_the_worker_role_is_exempt_and_only_on_the_queue(owner_engine: Engine) -> None:
+    """The exemption exists, is one role, and reaches one table.
+
+    A second table naming `workos_worker` would be a second place the worker can see across
+    tenants, which is the kind of thing that spreads one convenient grant at a time.
+    """
+    with owner_engine.connect() as conn:
+        exempt = set(
+            conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT tablename FROM pg_policies
+                    WHERE schemaname = 'public' AND qual LIKE '%workos_worker%'
+                    """
+                )
+            ).scalars()
+        )
+    assert exempt == {"job"}, (
+        f"tables the worker role can reach across tenants: {sorted(exempt)}; only the queue may be"
+    )
+
+
+def test_the_application_role_cannot_read_the_queue_unscoped(
+    app_session_factory: sessionmaker[Session], two_orgs: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """The regression Checkpoint 9 exists to prevent.
+
+    The application role serves every HTTP request and is the one an attacker reaches. Before
+    ADR-0046 a forgotten `set_config` handed it the whole queue.
+    """
+    session = app_session_factory()
+    _scoped(session, None)
+    assert session.execute(text("SELECT count(*) FROM job")).scalar() == 0
+    session.close()
+
+
+def test_the_worker_role_can_claim_across_tenants(
+    worker_engine: Engine, two_orgs: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """The other half: the exemption has to actually work, or the worker cannot function.
+
+    A test that only asserted the refusals would pass against a database where the worker is as
+    blind as everybody else, and the queue would simply never drain.
+    """
+    factory = sessionmaker(bind=worker_engine, expire_on_commit=False, future=True)
+    session = factory()
+    _scoped(session, None)
+    for org_id in two_orgs:
+        session.execute(
+            text(
+                "INSERT INTO job (id, org_id, kind, payload) "
+                "VALUES (gen_random_uuid(), :org, 'execute_approval', '{}'::jsonb)"
+            ),
+            {"org": org_id},
+        )
+    session.commit()
+
+    _scoped(session, None)
+    visible = session.execute(
+        text("SELECT count(DISTINCT org_id) FROM job WHERE org_id = ANY(:orgs)"),
+        {"orgs": list(two_orgs)},
+    ).scalar()
+    assert visible == 2, "the worker must see work in every tenant, or the queue never drains"
+    session.rollback()
+    session.close()
+
+
+def test_the_worker_role_is_not_exempt_on_business_tables(
+    worker_engine: Engine, two_orgs: tuple[uuid.UUID, uuid.UUID]
+) -> None:
+    """One policy on one table. Everywhere else the worker is as constrained as the app role.
+
+    This is what makes "the worker scoped itself correctly" a property the database enforces
+    rather than something the loop remembers to do.
+    """
+    factory = sessionmaker(bind=worker_engine, expire_on_commit=False, future=True)
+    session = factory()
+    _scoped(session, None)
+    for table in ("work", "event", "proposal", "approval_record", "person", "commitment"):
+        count = session.execute(text(f"SELECT count(*) FROM {table}")).scalar()
+        assert count == 0, f"the worker saw {count} rows of {table} with no organization set"
+    session.close()
 
 
 def test_enqueueing_still_requires_an_organization(

@@ -39,6 +39,9 @@ class ResourceType(enum.StrEnum):
     EVIDENCE = "evidence"
     COMMITMENT = "commitment"
     PROPOSAL = "proposal"
+    #: ADR-0047. An organization's autonomy policy. Absent from every agent-reachable
+    #: path: an agent that could widen its own policy would make the rest advisory.
+    AGENT_CAPABILITY_POLICY = "agent_capability_policy"
     AUDIT_ENTRY = "audit_entry"
 
 

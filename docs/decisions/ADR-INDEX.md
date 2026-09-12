@@ -60,6 +60,9 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0043 | AI origin is derived from the authenticated principal, never from a request field | accepted | BR-AI-03, CP7 risk |
 | 0044 | The job queue is a PostgreSQL table claimed with SKIP LOCKED, not Redis | accepted | arch §3, BR-PR-01 |
 | 0045 | The agent layer is a package above the contexts and may import only published interfaces | accepted | ADR-0002, ADR-0040 |
+| 0046 | The worker holds a dedicated database role; default-deny is restored for everyone else | accepted | ADR-0044, BR-G-01a |
+| 0047 | Agent capability policy is a tenant-scoped table, deny by default | accepted | BR-AI-30, BR-AI-03 |
+| 0048 | Approved execution has exactly one path, and it is the queue | accepted | ADR-0044, BR-PR-01 |
 
 ---
 
@@ -893,3 +896,116 @@ That is the intended friction — the alternative is a layer whose access is dec
 whoever is writing it. Rejected: putting the agent inside `app.contexts.intelligence` (inherits that
 context's internals, including its repository); a separate service over HTTP (a network boundary
 where a module boundary suffices, and the MVP does not need the deployment complexity).
+
+### ADR-0046 — The worker holds a dedicated database role; default-deny is restored for everyone else
+
+**Context.** Checkpoint 8 gave the `job` table a policy permitting SELECT and UPDATE when no
+organization context is set, because a worker cannot know which tenant has work before it looks and
+no role in this system holds BYPASSRLS. It worked, and it was the wrong shape: the exemption was
+keyed on *the absence of a setting*, so any session that forgot to scope — including one serving an
+HTTP request — could read the queue. The control protecting every other table was switched off by
+the same mistake it exists to catch.
+
+What leaked was modest (job kinds, approval ids, which organizations had work) and the mechanism was
+not: a condition that grants access when a variable is unset is the opposite of default-deny.
+
+**Decision.** The exemption moves from a *state* to an *identity*. A third database role,
+`workos_worker`, holds a policy on `job` and on nothing else:
+
+```sql
+CREATE POLICY job_worker_claim ON job
+  USING (current_user = 'workos_worker' OR org_id = app_current_org())
+```
+
+`workos_app` and `workos_owner` get strict tenant isolation back on `job`, exactly like every other
+table, and `test_an_unscoped_session_sees_nothing` covers the queue again. The worker process is the
+only thing that connects as `workos_worker`; it claims a job, scopes the session to that job's
+organization, and everything the handler then touches is subject to the ordinary policies.
+
+The role is `NOSUPERUSER NOBYPASSRLS NOCREATEROLE`, so its reach is one policy on one table. On every
+other table it is as constrained as the application role, which is what makes "the worker scoped
+itself correctly" a property the database enforces rather than something the loop remembers.
+
+**Decision on global jobs.** A job outside tenant scope would be infrastructure rather than
+business, and none exists. `job.org_id` stays `NOT NULL`, so the category cannot be created by
+accident; introducing one means a migration, a null-scope policy and an explicit decision about what
+a global job may see — which is the conversation worth being forced into.
+
+**Consequences.** The blast radius of a forgotten `set_config` returns to nothing. An attacker
+reaching the application role gets no queue visibility, and reaching the worker role gets the queue
+and nothing else. The cost is a third credential to provision and rotate, and a worker that must be
+deployed with it — a real operational cost, paid to remove a conditional that granted access on
+absence. Rejected: keeping the unscoped-read policy with a test pinning it to one table (pins the
+blast radius, not the mechanism); BYPASSRLS for the worker (removes isolation on *every* table to
+solve a problem on one); a per-organization polling loop (needs an unscoped read of `organization`,
+which is the same exemption moved one table over).
+
+### ADR-0047 — Agent capability policy is a tenant-scoped table, deny by default
+
+**Context.** BR-AI-30 requires autonomy to be stored per `(organization, capability, entity_type,
+action)` and forbids a global flag. Checkpoint 8 shipped two module-level constants instead —
+`AGENTS` and `DEFAULT_POLICY` — so every organization had the same policy and changing it was a
+deployment. Safe, because the constants were restrictive, and wrong in a way that gets worse: the
+first customer who wants extraction off is a code change, and the second who wants it on for one
+team has nowhere to put that.
+
+**Decision.** `agent_capability_policy`, one row per `(org_id, capability, entity_type, action)`,
+holding `mode` ∈ `off | level_1_propose | level_2_approved_execution`. Tenant-scoped with RLS like
+everything else.
+
+**Absence is denial.** There is no default row, no seed and no fallback: a capability with no policy
+for an organization is `off`. That is the opposite of how permission tables usually drift — a
+missing row is normally read as "no restriction" — and it is chosen because the failure modes are
+not symmetric. A capability that is off when it should be on is a support ticket; one that is on
+when it should be off is an AI writing into somebody's organization without anybody having decided
+it should.
+
+**Policy narrows and never grants.** The effective authority stays an intersection:
+
+```
+agent capability ∩ delegated human authority ∩ capability policy ∩ organization scope
+                 ∩ forbidden actions/resources
+```
+
+A policy row naming a capability the agent does not have grants nothing; a policy row naming an
+action the delegating person cannot perform grants nothing. `FORBIDDEN_ACTIONS` and
+`FORBIDDEN_RESOURCES` are applied last and are not policy-configurable at all — membership, roles and
+approval cannot be switched on by a row.
+
+**Agents cannot change it.** `AGENT_CAPABILITY_POLICY` is not in the tool registry, has no
+application service reachable from `app/agent`, and `ROLE_ASSIGNMENT`-style resources are already in
+`FORBIDDEN_RESOURCES`. An agent that could widen its own policy would make every other control
+advisory.
+
+**Consequences.** Autonomy becomes an organization's decision, recorded with an audit entry naming
+who made it, which is what BR-AI-32's promotion process needs to point at. Evaluation is a pure
+function over rows and is testable without a model. The cost is that a new organization starts with
+every capability off and somebody has to turn them on — deliberate friction at exactly the moment
+the decision should be made rather than inherited.
+
+### ADR-0048 — Approved execution has exactly one path, and it is the queue
+
+**Context.** Checkpoint 8 added the queued path and left the synchronous one in place, because the
+Checkpoint 7 tests exercised it and removing it was not in scope. Two ways to perform the same
+mutation is one more than a design wants, and the cost is not theoretical: every future safety
+property — rate limiting, a circuit breaker, an execution window, a kill switch — has to be
+implemented twice or it is implemented once and bypassable.
+
+**Decision.** `POST /approvals/{id}/execute` is gone. Approving writes the ApprovalRecord;
+`POST /approvals/{id}/queue` enqueues; the worker executes. The HTTP layer has no code path that
+performs an approved mutation, and `test_no_synchronous_execution_path_remains` walks the routers to
+keep it that way.
+
+Approval and execution stay separate transactions, which is what made the split worth having: the
+ApprovalRecord is durable before anything runs, so a crash between the two loses nothing and a
+replay finds the approval already spent.
+
+**Consequences.** One path to harden, one path to audit, one place where an execution policy would
+go. A client that wants the mutation now waits for a worker rather than getting it in the response —
+which is honest, because the work was always going to be asynchronous the moment a queue existed,
+and a synchronous endpoint that sometimes ran and sometimes queued would be worse than either.
+
+Rejected: keeping the synchronous path behind a feature flag (a flag is a second path with extra
+steps, and the flag itself becomes a bypass); making the synchronous endpoint enqueue and wait
+(re-creates request-lifetime coupling to the worker and turns a queue backlog into request
+timeouts).

@@ -28,6 +28,7 @@ from typing import Any, Protocol
 
 import app.contexts.intelligence.public as intelligence
 import app.contexts.signal.public as signal
+import app.contexts.work.public as work
 from app.agent.providers.port import CompletionRequest, ExtractedSpan, LLMProvider
 from app.platform.actor import Actor, ActorType
 from app.platform.authz.agent import (
@@ -70,6 +71,8 @@ class RuntimeServices(Protocol):
 
     def read_event(self, event_id: uuid.UUID) -> signal.Event | None: ...
 
+    def find_similar_work(self, title: str) -> list[work.SimilarWork]: ...
+
     def create_evidence(
         self, actor: Actor, command: signal.CreateEvidence
     ) -> signal.Evidence: ...
@@ -88,6 +91,8 @@ class AnalysisResult:
     #: discarded, because "the model saw something and we chose not to act" is the observation
     #: BR-AI-09 wants kept.
     low_confidence: int
+    #: Spans that matched existing Work and produced no Proposal (BR-AI-05).
+    duplicates_skipped: int = 0
 
 
 class AgentRuntime:
@@ -165,7 +170,7 @@ class AgentRuntime:
                     max_spans=MAX_PROPOSALS,
                 )
             )
-            evidence_ids, proposal_ids, low = self._propose_from(
+            evidence_ids, proposal_ids, low, duplicates = self._propose_from(
                 services,
                 principal,
                 actor,
@@ -195,6 +200,10 @@ class AgentRuntime:
                 "evidence": len(evidence_ids),
                 "proposals": len(proposal_ids),
                 "low_confidence": low,
+                # BR-AI-05's answer, kept as a number: how often the agent looked and found the
+                # work already there. A rising count is the signal that something upstream is
+                # re-delivering, not that the agent is being cautious.
+                "duplicates_skipped": duplicates,
             },
         )
         return AnalysisResult(
@@ -202,6 +211,7 @@ class AgentRuntime:
             evidence_ids=evidence_ids,
             proposal_ids=proposal_ids,
             low_confidence=low,
+            duplicates_skipped=duplicates,
         )
 
     def _propose_from(
@@ -213,10 +223,11 @@ class AgentRuntime:
         event: signal.Event,
         spans: tuple[ExtractedSpan, ...],
         routed_to_person_id: uuid.UUID,
-    ) -> tuple[tuple[uuid.UUID, ...], tuple[uuid.UUID, ...], int]:
+    ) -> tuple[tuple[uuid.UUID, ...], tuple[uuid.UUID, ...], int, int]:
         evidence_ids: list[uuid.UUID] = []
         proposal_ids: list[uuid.UUID] = []
         low_confidence = 0
+        duplicates = 0
         sequence = 0
 
         for span in spans:
@@ -233,6 +244,42 @@ class AgentRuntime:
             tool_name, target_type = mapping
 
             sequence += 1
+
+            # BR-AI-05. Look before proposing. The result is recorded as its own tool call, so
+            # "did this interaction search before it proposed" is answerable from the audit trail
+            # rather than from trusting that the code did.
+            similar = services.find_similar_work(span.summary)
+            services.record_tool_call(
+                ai_interaction_id=actor.ai_interaction_id,
+                sequence=sequence,
+                tool_name="find_similar_work",
+                tool_version="v1",
+                arguments_redacted={"keys": ["title"]},
+                authorization_result="allowed",
+                outcome="succeeded",
+            )
+            sequence += 1
+            if similar:
+                # Something like this already exists. Not proposing is the correct outcome and a
+                # normal one — an agent that reads ten messages about one deadline must not
+                # propose ten Work items, because somebody then rejects nine and learns to stop
+                # reading proposals carefully.
+                services.record_tool_call(
+                    ai_interaction_id=actor.ai_interaction_id,
+                    sequence=sequence,
+                    tool_name=tool_name,
+                    tool_version="v1",
+                    arguments_redacted={
+                        "keys": sorted(span.attributes),
+                        "similar_to": [str(row.id) for row in similar[:3]],
+                    },
+                    authorization_result="allowed",
+                    outcome="refused",
+                    error="similar work already exists (BR-AI-05)",
+                )
+                duplicates += 1
+                continue
+
             # BR-AI-03's intersection, checked before the call and recorded either way. A denial is
             # the most interesting row in `tool_call`, so it is written before anything else.
             if not principal.may_use(tool_name):
@@ -304,7 +351,7 @@ class AgentRuntime:
                 target_entity_type=target_type,
             )
 
-        return tuple(evidence_ids), tuple(proposal_ids), low_confidence
+        return tuple(evidence_ids), tuple(proposal_ids), low_confidence, duplicates
 
     def _arguments_for(
         self,

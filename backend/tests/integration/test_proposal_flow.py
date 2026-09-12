@@ -18,9 +18,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from tests.integration.conftest import Realm, WorkOrg, auth, grant, subject_of
+from tests.integration.conftest import Realm, WorkOrg, auth, execute_approval, grant, subject_of
 
 pytestmark = pytest.mark.integration
 
@@ -118,6 +118,7 @@ def decide(
 def test_the_chain_runs_from_a_message_to_a_work_item(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     event = an_event(api, as_admin)
     evidence = some_evidence(api, as_admin, event)
@@ -133,13 +134,11 @@ def test_the_chain_runs_from_a_message_to_a_work_item(
     assert record["decision"] == "approved"
     assert record["execution_status"] == "pending", "approving is not executing (BR-PR-01)"
 
-    executed = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert executed.status_code == 200, executed.text
-    outcome = executed.json()
-    assert outcome["entity_type"] == "work"
-    assert outcome["approval"]["execution_status"] == "executed"
+    executed = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    assert executed.execution_status == "executed", executed.body
+    assert executed.entity_type == "work"
 
-    created = api.get(f"/api/v1/work/{outcome['entity_id']}", headers=as_admin)
+    created = api.get(f"/api/v1/work/{executed.entity_id}", headers=as_admin)
     assert created.status_code == 200
     assert created.json()["title"] == "Send the revised quote"
 
@@ -149,7 +148,7 @@ def test_the_chain_runs_from_a_message_to_a_work_item(
         text(
             "SELECT actor FROM audit_entry WHERE resource_id = :id AND action = 'create'"
         ),
-        {"id": uuid.UUID(outcome["entity_id"])},
+        {"id": uuid.UUID(executed.entity_id or "")},
     ).mappings().one()
     assert entry["actor"]["person_id"] == str(work_org.admin)
     assert entry["actor"]["extra"]["executed_via"] == "ai_tool"
@@ -160,6 +159,7 @@ def test_the_chain_runs_from_a_message_to_a_work_item(
 def test_the_chain_traverses_backwards(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-PR-08. From the created Work item back to the words somebody actually said."""
     event = an_event(api, as_admin)
@@ -168,9 +168,7 @@ def test_the_chain_traverses_backwards(
         api, as_admin, routed_to=work_org.admin, event=event, evidence=evidence
     )
     record = decide(api, as_admin, proposal).json()
-    outcome = api.post(
-        f"/api/v1/approvals/{record['id']}/execute", headers=as_admin
-    ).json()
+    outcome = execute_approval(api, as_admin, record['id'], worker_session_factory)
 
     scoped_session.rollback()
     # work <- approval_record <- proposal <- proposal_evidence <- evidence <- event
@@ -186,7 +184,7 @@ def test_the_chain_traverses_backwards(
             WHERE a.resulting_entity_id = :work AND a.org_id = :org
             """
         ),
-        {"work": uuid.UUID(outcome["entity_id"]), "org": work_org.org_id},
+        {"work": uuid.UUID(outcome.entity_id or ""), "org": work_org.org_id},
     ).mappings().one()
     assert row["excerpt"] in row["body_text"]
     assert row["body_text"] == SAID
@@ -198,6 +196,7 @@ def test_the_chain_traverses_backwards(
 def test_the_approved_action_cannot_be_tampered_with(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """The first line of defence: an ApprovalRecord is immutable at the database.
 
@@ -224,6 +223,7 @@ def test_the_approved_action_cannot_be_tampered_with(
 def test_execution_refuses_a_record_whose_hash_does_not_match_its_action(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """The second line: BR-AI-18's recomputation, tested independently of the trigger.
 
@@ -253,9 +253,11 @@ def test_execution_refuses_a_record_whose_hash_does_not_match_its_action(
     )
     scoped_session.commit()
 
-    refused = api.post(f"/api/v1/approvals/{forged}/execute", headers=as_admin)
-    assert refused.status_code == 422
-    assert "BR-AI-18" in refused.text
+    refused = execute_approval(api, as_admin, forged, worker_session_factory)
+    assert refused.execution_status == "pending", (
+        "a refused execution must leave the approval usable"
+    )
+    assert refused.entity_id is None
 
     scoped_session.rollback()
     assert scoped_session.execute(
@@ -266,14 +268,18 @@ def test_execution_refuses_a_record_whose_hash_does_not_match_its_action(
 def test_an_approval_executes_exactly_once(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     proposal = a_proposal(api, as_admin, routed_to=work_org.admin)
     record = decide(api, as_admin, proposal).json()
 
-    first = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    second = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert first.status_code == 200
-    assert second.status_code == 422, "a spent approval must not run again"
+    first = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    second = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    assert first.execution_status == "executed"
+    # Queueing again is accepted and does nothing: the approval is spent, so the worker
+    # completes the job without repeating the mutation (ADR-0044).
+    assert second.execution_status == "executed"
+    assert second.entity_id == first.entity_id
 
     scoped_session.rollback()
     assert scoped_session.execute(
@@ -282,7 +288,8 @@ def test_an_approval_executes_exactly_once(
 
 
 def test_a_rejection_authorises_nothing(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     proposal = a_proposal(api, as_admin, routed_to=work_org.admin)
     record = decide(
@@ -290,8 +297,9 @@ def test_a_rejection_authorises_nothing(
     ).json()
     assert record["execution_status"] == "not_applicable"
 
-    refused = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert refused.status_code == 422
+    refused = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    assert refused.execution_status == "not_applicable"
+    assert refused.entity_id is None
 
     read = api.get(f"/api/v1/proposals/{proposal['id']}", headers=as_admin).json()
     assert read["status"] == "rejected"
@@ -299,7 +307,8 @@ def test_a_rejection_authorises_nothing(
 
 
 def test_a_revised_proposal_requires_a_new_approval(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """ADR-0041, the property the whole design rests on.
 
@@ -325,7 +334,8 @@ def test_a_revised_proposal_requires_a_new_approval(
 
 
 def test_approving_with_edits_approves_the_edited_action(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-PR-06. The hash is of what the approver agreed to, never of what was proposed."""
     proposal = a_proposal(api, as_admin, routed_to=work_org.admin)
@@ -340,15 +350,14 @@ def test_approving_with_edits_approves_the_edited_action(
     assert record["approved_action_hash"] != proposal["action_hash"]
     assert record["edits"]["to"]["title"] == "Send the quote, with the discount applied"
 
-    outcome = api.post(
-        f"/api/v1/approvals/{record['id']}/execute", headers=as_admin
-    ).json()
-    created = api.get(f"/api/v1/work/{outcome['entity_id']}", headers=as_admin).json()
+    outcome = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    created = api.get(f"/api/v1/work/{outcome.entity_id}", headers=as_admin).json()
     assert created["title"] == "Send the quote, with the discount applied"
 
 
 def test_edits_are_refused_on_a_plain_approval(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     proposal = a_proposal(api, as_admin, routed_to=work_org.admin)
     response = decide(
@@ -364,6 +373,7 @@ def test_edits_are_refused_on_a_plain_approval(
 def test_a_proposal_routed_elsewhere_cannot_be_approved(
     api: TestClient, realm: Realm, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-PR-04. A proposal anyone can approve is a queue somebody empties, not a review."""
     proposal = a_proposal(api, as_admin, routed_to=work_org.team_lead)
@@ -378,6 +388,7 @@ def test_a_proposal_routed_elsewhere_cannot_be_approved(
 def test_approving_grants_the_approver_no_new_permission(
     api: TestClient, realm: Realm, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-PR-05, the claim that makes approval safe to delegate.
 
@@ -392,16 +403,18 @@ def test_approving_grants_the_approver_no_new_permission(
     response = decide(api, viewer, proposal)
     # Either the viewer cannot decide at all, or they can decide and the execution is refused.
     if response.status_code == 201:
-        executed = api.post(
-            f"/api/v1/approvals/{response.json()['id']}/execute", headers=viewer
+        executed = execute_approval(api, viewer, response.json()['id'], worker_session_factory)
+        assert executed.execution_status == "pending", (
+            "a viewer must not create work by approving; the service refuses at execution"
         )
-        assert executed.status_code == 403, "a viewer must not create work by approving"
+        assert executed.entity_id is None
     else:
         assert response.status_code == 403
 
 
 def test_a_proposal_naming_an_unregistered_tool_is_refused_at_creation(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """ADR-0042. A proposal that could never execute must not reach a reviewer."""
     response = api.post(
@@ -422,7 +435,8 @@ def test_a_proposal_naming_an_unregistered_tool_is_refused_at_creation(
 
 
 def test_a_proposal_targeting_a_person_is_refused(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-AI-08, BR-AI-23. No tool changes Identity, so this could only ever expire."""
     response = api.post(
@@ -447,7 +461,8 @@ def test_a_proposal_targeting_a_person_is_refused(
 
 
 def test_another_organizations_proposal_is_invisible(
-    api: TestClient, as_admin: dict[str, str], roles: None, app_session_factory
+    api: TestClient, as_admin: dict[str, str], roles: None, app_session_factory,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     from app.platform.ids import uuid7
 

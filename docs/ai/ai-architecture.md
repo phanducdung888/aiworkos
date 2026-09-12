@@ -464,3 +464,74 @@ recorded rather than guessed:
 None blocks Checkpoint 8. All four should be answered by a spike against the real runtime before any
 adapter is written, and the answers may change `LLMProvider` — which is cheap now and expensive once
 something depends on its current shape.
+
+---
+
+## 14. Hardening (Checkpoint 9)
+
+### 14.1 Capability policy
+
+`agent_capability_policy`, one row per `(org_id, capability, entity_type, action)`, mode ∈
+`off | level_1_propose | level_2_approved_execution`. Tenant-scoped with RLS.
+
+**Absence is denial.** No default row, no seed, no fallback. A new organization grants nothing and
+somebody has to decide — deliberate friction at exactly the moment the decision should be made
+rather than inherited.
+
+The intersection is unchanged and now reads from the table:
+
+```
+agent capability ∩ delegated human authority ∩ capability policy ∩ organization scope
+                 ∩ forbidden actions/resources
+```
+
+Both directions narrow: a policy row naming a capability the agent does not hold grants nothing, and
+a capability the policy has not enabled grants nothing. `FORBIDDEN_ACTIONS` and
+`FORBIDDEN_RESOURCES` are applied last and are not policy-configurable — membership, roles and
+approval cannot be switched on by a row. An agent cannot reach the policy at all: it is not in the
+tool registry, has no service reachable from `app/agent`, and an architecture test walks the agent
+layer's imports to keep it that way.
+
+### 14.2 Job isolation
+
+The Checkpoint 8 exemption keyed on *the absence of an organization setting*, so any session that
+forgot to scope could read the queue. It is now keyed on identity: `workos_worker`, a role with one
+policy on one table (ADR-0046). The application role — the one an attacker reaches — has strict
+tenant isolation on `job` like everything else.
+
+Two tests hold the shape: no policy anywhere may test for a missing organization, and
+`workos_worker` appears in exactly one policy. Two more prove the exemption works and that the
+worker is *not* exempt on business tables, because a test suite that only asserted the refusals
+would pass against a database where the queue never drains.
+
+### 14.3 One execution path
+
+`POST /approvals/{id}/execute` is gone (ADR-0048). Approve → queue → worker → Tool Gateway →
+application service. There is no HTTP path that performs an approved mutation, and an architecture
+test walks the routers to keep it that way. One path to harden, one path to audit, one place an
+execution policy would go.
+
+### 14.4 `find_similar`
+
+Deterministic trigram matching over Work titles, through `readable_work` so the search sees exactly
+what the delegating person sees. Determinism over recall: BR-AI-05 asks "did you look", and an
+answer that varies between runs makes the check unreproducible. Returns references — id, title,
+status, score — not content.
+
+No vector database. One would improve quality and is not required to make the rule enforceable, so
+it is not being introduced on speculation.
+
+## 15. OpenClaw — still unresolved
+
+The four questions from Checkpoint 8 stand unchanged, and Checkpoint 9 adds two more:
+
+5. **Does the provider need conversation state across calls?** `LLMProvider` is one call, structured
+   in and structured out, because the MVP capability is a single analysis pass. A runtime that
+   requires multi-turn state would need the port widened — cheap now, expensive once something
+   depends on its current shape.
+6. **How does a real provider's confidence map to BR-AI-09's threshold?** `Confidence` is coarse
+   bands on purpose: a model's self-reported probability is not calibrated enough to deserve two
+   decimal places. A provider reporting log-probs or nothing at all needs a documented mapping, and
+   picking one silently would make the threshold meaningless.
+
+All six should be answered by a spike against the real runtime before an adapter is written.

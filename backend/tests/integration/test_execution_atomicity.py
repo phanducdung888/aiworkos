@@ -17,9 +17,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from tests.integration.conftest import WorkOrg
+from tests.integration.conftest import WorkOrg, execute_approval
 
 pytestmark = pytest.mark.integration
 
@@ -74,6 +74,7 @@ def approve(api: TestClient, headers: dict[str, str], proposal: dict) -> dict:
 def test_a_successful_execution_writes_the_mutation_and_the_outcome_together(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """The control. Without it, an execution path that wrote nothing would pass every rollback
     test below perfectly."""
@@ -81,8 +82,8 @@ def test_a_successful_execution_writes_the_mutation_and_the_outcome_together(
     record = approve(api, as_admin, proposal)
     before = counts(scoped_session, work_org.org_id)
 
-    executed = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert executed.status_code == 200, executed.text
+    executed = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    assert executed.execution_status == "executed", executed.body
 
     after = counts(scoped_session, work_org.org_id)
     assert after["work"] == before["work"] + 1
@@ -110,6 +111,7 @@ def test_a_successful_execution_writes_the_mutation_and_the_outcome_together(
 def test_a_refused_mutation_leaves_no_work_and_no_spent_approval(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """The action names a Project that does not exist, so the Work Core refuses it (ADR-0035).
 
@@ -125,13 +127,13 @@ def test_a_refused_mutation_leaves_no_work_and_no_spent_approval(
     record = approve(api, as_admin, proposal)
     before = counts(scoped_session, work_org.org_id)
 
-    failed = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
+    failed = execute_approval(api, as_admin, record['id'], worker_session_factory)
     # 404 today, because `WorkService.create` loads the Project and raises `EntityNotFound` for a
     # `project_id` that does not resolve — the same body-field-as-404 inconsistency found and fixed
     # for assignments in Checkpoint 5.1, still present on this path and left alone here because it
     # is Work Core behaviour rather than anything this checkpoint introduced. Recorded as open.
     # What this test is actually about is the line below it: whatever the status, nothing was left.
-    assert 400 <= failed.status_code < 500, failed.text
+    assert failed.execution_status == "pending", failed.body
 
     after = counts(scoped_session, work_org.org_id)
     assert after["work"] == before["work"], "a refused execution created work"
@@ -150,7 +152,8 @@ def test_a_refused_mutation_leaves_no_work_and_no_spent_approval(
 
 
 def test_a_retried_failed_execution_can_succeed(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """The other half of the rollback: the approval is still spendable afterwards.
 
@@ -161,8 +164,8 @@ def test_a_retried_failed_execution_can_succeed(
         api, as_admin, work_org.admin, arguments={"title": "x", "project_id": str(uuid.uuid4())}
     )
     record = approve(api, as_admin, proposal)
-    first = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert 400 <= first.status_code < 500
+    first = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    assert first.execution_status == "pending"
 
     read = api.get(f"/api/v1/proposals/{proposal['id']}/approval", headers=as_admin).json()
     assert read["execution_status"] == "pending"
@@ -171,6 +174,7 @@ def test_a_retried_failed_execution_can_succeed(
 def test_a_rejected_proposal_writes_a_record_and_no_mutation(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     proposal = a_proposal(api, as_admin, work_org.admin)
     before = counts(scoped_session, work_org.org_id)
@@ -190,6 +194,7 @@ def test_a_rejected_proposal_writes_a_record_and_no_mutation(
 def test_no_approval_claims_an_entity_that_does_not_exist(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """The invariant asserted over everything this suite has written.
 
@@ -198,7 +203,7 @@ def test_no_approval_claims_an_entity_that_does_not_exist(
     """
     proposal = a_proposal(api, as_admin, work_org.admin)
     record = approve(api, as_admin, proposal)
-    api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
+    execute_approval(api, as_admin, record['id'], worker_session_factory)
 
     scoped_session.rollback()
     orphans = scoped_session.execute(
@@ -221,7 +226,8 @@ def test_no_approval_claims_an_entity_that_does_not_exist(
 
 
 def test_a_commitment_created_through_the_gateway_cites_its_evidence(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-C-03. Anything arriving through the Gateway came from a Proposal, so it must cite.
 
@@ -270,18 +276,19 @@ def test_a_commitment_created_through_the_gateway_cites_its_evidence(
         evidence_ids=[evidence.json()["id"]],
     )
     record = approve(api, as_admin, proposal)
-    executed = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert executed.status_code == 200, executed.text
+    executed = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    assert executed.execution_status == "executed", executed.body
 
     created = api.get(
-        f"/api/v1/commitments/{executed.json()['entity_id']}", headers=as_admin
+        f"/api/v1/commitments/{executed.entity_id}", headers=as_admin
     ).json()
     assert created["origin_event_id"] == event["id"]
     assert created["status"] == "captured"
 
 
 def test_a_human_raised_commitment_needs_no_evidence(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-C-03 says so in as many words: commitments entered by a human need none.
 
@@ -306,10 +313,10 @@ def test_a_human_raised_commitment_needs_no_evidence(
         },
     )
     record = approve(api, as_admin, proposal)
-    executed = api.post(f"/api/v1/approvals/{record['id']}/execute", headers=as_admin)
-    assert executed.status_code == 200, executed.text
+    executed = execute_approval(api, as_admin, record['id'], worker_session_factory)
+    assert executed.execution_status == "executed", executed.body
 
     created = api.get(
-        f"/api/v1/commitments/{executed.json()['entity_id']}", headers=as_admin
+        f"/api/v1/commitments/{executed.entity_id}", headers=as_admin
     ).json()
     assert created["statement"] == "I will do the thing"

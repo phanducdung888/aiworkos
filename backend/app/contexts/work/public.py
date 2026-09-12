@@ -9,6 +9,7 @@ Gateway constructs a `ServiceContext` and calls a service; none of them may reac
 which is why it is absent from this module and stays absent (ADR-0002, contract §13).
 """
 
+from app.contexts.work.authorization import ActorReach, reach_of
 from app.contexts.work.commands import (
     AssignWork,
     ChangeDependencyStatus,
@@ -77,10 +78,20 @@ from app.contexts.work.services import (
     ServiceContext,
     WorkService,
 )
+from app.contexts.work.similarity import (
+    MIN_SIMILARITY,
+    SimilarWork,
+    find_similar_work,
+)
 from app.platform.errors import DomainRuleViolation, EntityNotFound
 from app.platform.partial import UNSET
 
 __all__ = [
+    "reach_of",
+    "ActorReach",
+    "find_similar_work",
+    "SimilarWork",
+    "MIN_SIMILARITY",
     "assert_work_exists",
     "UNSET",
     "AssignWork",

@@ -266,3 +266,23 @@ untrustworthy for everyone.
 | S-6 | Should `executive` see restricted-visibility work in aggregate counts? | (a) counts include it without detail (proposed); (b) fully excluded, which makes rollups wrong |
 | S-7 | **Channel sender policy.** Who may send into a connected channel and have it captured? | (a) allow-list of known numbers mapped to People (proposed, safest); (b) capture everything from configured groups, classify and let review filter it; (c) capture everything. Blocks the WhatsApp adapter (T-11) |
 | S-8 | Does capture of a WhatsApp group require notifying non-user participants? | Legal input required, tied to PQ-4 and T-12 |
+
+## Database roles (Checkpoint 9)
+
+Three roles, none of them the cluster superuser and none holding BYPASSRLS — FORCE ROW LEVEL
+SECURITY is silently inert for a role with either, so the isolation tests would be proving nothing.
+
+| Role | Used by | Reach |
+|---|---|---|
+| `workos_owner` | migrations | Owns the schema. Subject to every policy. |
+| `workos_app` | the API | Strict tenant isolation on every table. |
+| `workos_worker` | the job worker | The same, plus one policy on `job` (ADR-0046). |
+
+The worker's exemption lets it claim work before it knows which tenant the work belongs to, and
+reaches exactly one table. It is an *identity*, not a session state: `current_user` cannot be set by
+a request, a header, or a forgotten `set_config`, which is what the Checkpoint 8 version got wrong.
+
+A compromised application role gets no queue visibility. A compromised worker role gets the queue
+and nothing else — on every business table it is as constrained as the application role, which is
+what makes "the worker scoped itself correctly" something the database enforces rather than
+something the loop remembers.

@@ -16,6 +16,7 @@ plus an `outsider` who is in the organization and in none of it, and a `departed
 from __future__ import annotations
 
 import base64
+import dataclasses
 import time
 import uuid
 from collections.abc import Iterator
@@ -425,3 +426,69 @@ def object_store(api: TestClient) -> InMemoryObjectStore:
     store = api.app.state.object_store  # type: ignore[attr-defined]
     assert isinstance(store, InMemoryObjectStore)
     return store
+
+
+@pytest.fixture
+def agent_enabled(scoped_session: Session, work_org: WorkOrg) -> None:
+    """Turn on the capabilities an agent test needs (ADR-0047).
+
+    Required explicitly because absence is denial: an organization that has decided nothing denies
+    everything, and a test that forgot this would see an agent propose nothing and might read that
+    as a bug rather than as the policy working. Making it a fixture keeps the default visible.
+    """
+    for entity_type, action in (("work", "create"), ("commitment", "create")):
+        scoped_session.execute(
+            text(
+                "INSERT INTO agent_capability_policy "
+                "(id, org_id, capability, entity_type, action, mode) "
+                "VALUES (:id, :org, 'extract', :entity, :action, 'level_1_propose')"
+            ),
+            {
+                "id": uuid7(),
+                "org": work_org.org_id,
+                "entity": entity_type,
+                "action": action,
+            },
+        )
+    scoped_session.commit()
+
+
+@dataclasses.dataclass(frozen=True)
+class ExecutionOutcome:
+    """What the queue did with one approval, for tests that used to call `/execute`."""
+
+    status_code: int
+    entity_type: str | None
+    entity_id: str | None
+    execution_status: str
+    body: dict
+
+
+def execute_approval(
+    api: TestClient,
+    headers: dict[str, str],
+    approval_id: str,
+    worker_factory: sessionmaker[Session],
+) -> ExecutionOutcome:
+    """Queue an approved action and run the worker until the queue is empty.
+
+    The single canonical path since ADR-0048: there is no HTTP endpoint that performs an approved
+    mutation, so a test that wants the mutation has to go the way production goes. Draining rather
+    than running one job because the suite shares a database and `run_once` claims the oldest
+    pending row, which is often one another test left behind.
+    """
+    from app.workers.runner import run_once
+
+    queued = api.post(f"/api/v1/approvals/{approval_id}/queue", headers=headers)
+    while run_once(worker_factory).claimed:
+        pass
+
+    record = api.get(f"/api/v1/approvals/{approval_id}", headers=headers)
+    body = record.json() if record.status_code == 200 else {}
+    return ExecutionOutcome(
+        status_code=queued.status_code,
+        entity_type=body.get("resulting_entity_type"),
+        entity_id=body.get("resulting_entity_id"),
+        execution_status=body.get("execution_status", "unknown"),
+        body=body,
+    )

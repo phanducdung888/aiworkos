@@ -343,3 +343,68 @@ def test_the_worker_dispatches_only_registered_handlers() -> None:
     assert HANDLERS, "the worker has no handlers; jobs would be claimed and dropped"
     for kind, handler in HANDLERS.items():
         assert callable(handler), f"{kind} maps to something that is not callable"
+
+
+def test_no_synchronous_execution_path_remains() -> None:
+    """ADR-0048. One way to perform an approved mutation, and it is the queue.
+
+    Two paths is one more than a design wants, and the cost is not theoretical: every future safety
+    property — a rate limit, a circuit breaker, an execution window, a kill switch — has to be
+    implemented twice, or it is implemented once and bypassable.
+    """
+    for module in _modules(APP / "api"):
+        source = module.read_text()
+        assert "/execute" not in source, (
+            f"{module.relative_to(BACKEND_ROOT)} publishes an execution endpoint; approved "
+            "mutations run through the queue only (ADR-0048)"
+        )
+        # The service method exists and is called by the worker. A router calling it would be the
+        # same bypass wearing a different URL.
+        assert ".execute(" not in source, (
+            f"{module.relative_to(BACKEND_ROOT)} calls execute() directly; the worker does that"
+        )
+
+
+def test_the_agent_layer_cannot_reach_the_capability_policy() -> None:
+    """ADR-0047. An agent that could widen its own policy makes every other control advisory."""
+    for module in _modules(APP / "agent"):
+        for imported in _imports(module):
+            assert "policy" not in imported.rsplit(".", 1)[-1], (
+                f"{module.relative_to(BACKEND_ROOT)} imports {imported}; the agent layer may not "
+                "reach the capability policy"
+            )
+
+
+def test_the_worker_cannot_execute_an_unregistered_tool() -> None:
+    """The worker dispatches on a closed map, and every handler it can reach ends in the Gateway.
+
+    A queue that dispatches on an arbitrary string runs arbitrary code by writing a row, and a
+    handler that bypassed the registry would make the Tool Gateway advisory for exactly the path
+    that matters most — the one nobody is watching.
+    """
+    from app.contexts.intelligence.public import REGISTRY
+    from app.workers.runner import HANDLERS
+
+    assert set(HANDLERS) == {"execute_approval"}, (
+        f"the worker dispatches {sorted(HANDLERS)}; each kind is a new way to run code"
+    )
+    forbidden = ("delete", "remove", "purge", "grant", "revoke", "member", "role", "send", "sql")
+    for (name, _), tool in REGISTRY.items():
+        for word in forbidden:
+            assert word not in name, f"{name} looks like a forbidden operation"
+            assert word not in tool.run.__name__, f"{tool.run.__name__} is suspicious"
+
+
+def test_policy_evaluation_cannot_reach_the_database() -> None:
+    """The intersection is a pure function over rows that were already loaded.
+
+    Evaluation that could query would be evaluation that could be made to answer differently by
+    something other than the policy — and it would run inside authorization, where a surprise query
+    is hardest to reason about.
+    """
+    agent_module = APP / "platform" / "authz" / "agent.py"
+    for imported in _imports(agent_module):
+        assert not imported.startswith(("sqlalchemy", "app.platform.db", "app.contexts")), (
+            f"app/platform/authz/agent.py imports {imported}; policy evaluation is a pure "
+            "function and must stay one"
+        )

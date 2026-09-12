@@ -109,6 +109,85 @@ class AgentIdentity:
         return frozenset(tools)
 
 
+class AutonomyMode(enum.StrEnum):
+    """BR-AI-30, BR-AI-31. The MVP ceiling is level 2, and nothing above it is representable.
+
+    Not "disabled", not guarded by a check somewhere — absent from the type, so a Level 3 policy
+    cannot be written down, stored, or arrived at by editing a row.
+    """
+
+    OFF = "off"
+    PROPOSE = "level_1_propose"
+    APPROVED_EXECUTION = "level_2_approved_execution"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class PolicyCell:
+    """One row of `agent_capability_policy` (ADR-0047)."""
+
+    capability: AgentCapability
+    entity_type: str
+    action: Action
+    mode: AutonomyMode
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CapabilityPolicy:
+    """An organization's autonomy policy, as a deterministic function over its rows.
+
+    **Absence is denial.** There is no default row, no fallback and no wildcard: a cell with no
+    policy is `off`. That is the opposite of how permission tables usually drift, and it is chosen
+    because the two failure modes are not symmetric — a capability that is off when it should be on
+    is a support ticket, and one that is on when it should be off is an AI writing into somebody's
+    organization without anybody having decided it should.
+    """
+
+    cells: tuple[PolicyCell, ...] = ()
+
+    def mode_for(
+        self, capability: AgentCapability, entity_type: str, action: Action
+    ) -> AutonomyMode:
+        for cell in self.cells:
+            if (
+                cell.capability is capability
+                and cell.entity_type == entity_type
+                and cell.action is action
+            ):
+                return cell.mode
+        return AutonomyMode.OFF
+
+    def allows(
+        self, capability: AgentCapability, entity_type: str, action: Action
+    ) -> bool:
+        return self.mode_for(capability, entity_type, action) is not AutonomyMode.OFF
+
+    def enabled_tools(self, capabilities: frozenset[AgentCapability]) -> frozenset[str]:
+        """Which tools the policy turns on, for capabilities the agent actually holds.
+
+        The capability set is intersected here rather than trusted from the policy: a row naming a
+        capability this agent does not have grants nothing, which is what keeps a policy edit from
+        widening an agent that was never built to do the thing.
+        """
+        allowed: set[str] = set()
+        for cell in self.cells:
+            if cell.mode is AutonomyMode.OFF or cell.capability not in capabilities:
+                continue
+            allowed |= CAPABILITY_TOOLS[cell.capability] & TOOLS_FOR_ENTITY.get(
+                cell.entity_type, frozenset()
+            )
+        return frozenset(allowed)
+
+
+#: Which tools produce which entity type. The policy is keyed on entity type (BR-AI-30) and the
+#: registry on tool name, so something has to relate them; keeping it here rather than importing the
+#: registry keeps `platform` free of a dependency on a context.
+TOOLS_FOR_ENTITY: dict[str, frozenset[str]] = {
+    "work": frozenset({"create_work", "update_work_status"}),
+    "work_assignment": frozenset({"assign_work"}),
+    "commitment": frozenset({"create_commitment", "change_commitment_status"}),
+}
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class AgentPrincipal:
     """An authenticated agent acting under a named person's authority, in one organization.
@@ -121,8 +200,9 @@ class AgentPrincipal:
     identity: AgentIdentity
     #: The human whose authority is borrowed. This is what the application authorizes.
     delegated: Principal
-    #: Autonomy policy for this organization and capability, keyed as BR-AI-30 requires.
-    policy_allows: frozenset[str] = frozenset()
+    #: The organization's policy, read from `agent_capability_policy` (ADR-0047). An empty policy
+    #: denies everything, which is what a newly created organization has.
+    policy: CapabilityPolicy = dataclasses.field(default_factory=CapabilityPolicy)
 
     @property
     def org_id(self) -> uuid.UUID:
@@ -144,11 +224,18 @@ class AgentPrincipal:
     def effective_tools(self) -> frozenset[str]:
         """BR-AI-03's intersection, for the tool vocabulary.
 
-        Capability ∩ policy. The remaining two narrowings — the delegate's authority and the
-        organization scope — are applied where they belong: by the application service that
-        authorizes `delegated`, and by RLS on the session.
+        Capability ∩ policy, and the intersection is taken in both directions: a capability the
+        policy has not enabled grants nothing, and a policy naming a capability the agent does not
+        hold grants nothing either. Neither side can widen the other, which is the property that
+        makes editing a policy row a bounded decision.
+
+        The remaining narrowings are applied where they belong: the delegate's authority by the
+        application service that authorizes `delegated`, the organization scope by RLS on the
+        session, and the absolute refusals by `assert_within_agent_authority`.
         """
-        return self.identity.allowed_tools() & self.policy_allows
+        return self.identity.allowed_tools() & self.policy.enabled_tools(
+            self.identity.capabilities
+        )
 
     def may_use(self, tool_name: str) -> bool:
         return tool_name in self.effective_tools()

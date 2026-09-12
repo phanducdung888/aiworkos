@@ -45,7 +45,9 @@ from app.contexts.work.public import (
     WorkStatus,
     WorkType,
 )
+from app.platform.authz import Action as PolicyAction
 from app.platform.authz import Role as WorkosRole
+from app.platform.authz.agent import AgentCapability, AutonomyMode
 from app.platform.http.validation import CleanText
 
 
@@ -1167,3 +1169,42 @@ class AnalysisResource(BaseModel):
     proposal_ids: list[uuid.UUID] = Field(default_factory=list)
     #: BR-AI-09. Spans the model produced that were below threshold and became nothing.
     low_confidence: int = 0
+
+
+# --------------------------------------------------------------------------- capability policy
+
+
+class CapabilityPolicyResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    capability: str
+    entity_type: str
+    action: str
+    mode: str
+    reason: str | None
+    decided_by_person_id: uuid.UUID | None
+    updated_at: dt.datetime
+    version: int
+
+
+class CapabilityPolicyList(BaseModel):
+    """Only the cells an organization has decided.
+
+    An absent cell is `off` (ADR-0047) and is deliberately not rendered as a row: listing every
+    possible combination with a default would make the decided ones hard to see, which is the
+    opposite of what an autonomy policy is read for.
+    """
+
+    items: list[CapabilityPolicyResource]
+
+
+class CapabilityPolicySet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capability: AgentCapability
+    entity_type: CleanText = Field(min_length=1)
+    action: PolicyAction
+    mode: AutonomyMode
+    #: What a reviewer actually wants six months later.
+    reason: CleanText | None = None

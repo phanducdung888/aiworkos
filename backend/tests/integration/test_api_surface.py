@@ -78,6 +78,10 @@ def test_every_published_path_is_one_of_the_five_work_core_aggregates(
         # The agent layer (CP8). `analyze` is Level 1 — it proposes and executes nothing — and
         # `queue` hands an already-approved action to the worker rather than running it here.
         "/api/v1/ai-interactions",
+        # The organization's autonomy policy (ADR-0047). Read widely, set by `org_admin` only,
+        # and unreachable by an agent — an agent that could widen its own policy would make every
+        # other control here advisory.
+        "/api/v1/agent-policy",
         "/health",
     )
     unexpected = [p for p in paths if not p.startswith(allowed_prefixes)]

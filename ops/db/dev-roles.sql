@@ -11,6 +11,11 @@
 --                 itself (the test harness does exactly that) without needing the superuser.
 --   workos_app    serves requests. No ownership, no CREATEROLE, so isolation holds even if a
 --                 policy is ever mis-specified.
+--   workos_worker runs the job worker and nothing else (ADR-0046). It holds one extra policy, on
+--                 `job`, so it can claim work before it knows which tenant the work belongs to.
+--                 On every other table it is exactly as constrained as workos_app — the exemption
+--                 is an identity with one privilege, not a session state that switches isolation
+--                 off wherever it is forgotten.
 --
 -- Neither block alters an existing role. Re-running this as workos_owner must be a no-op rather
 -- than a permission error, and the ownership statements below are skipped unless the caller is the
@@ -25,6 +30,11 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'workos_app') THEN
         CREATE ROLE workos_app LOGIN PASSWORD 'workos_app'
+            NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'workos_worker') THEN
+        CREATE ROLE workos_worker LOGIN PASSWORD 'workos_worker'
             NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB;
     END IF;
 END

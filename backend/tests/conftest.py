@@ -154,3 +154,25 @@ def two_orgs(app_session_factory: sessionmaker[Session]) -> Iterator[tuple[uuid.
         session.close()
 
     yield org_a, org_b
+
+
+@pytest.fixture(scope="session")
+def worker_engine(migrated_database: str) -> Iterator[Engine]:
+    """A connection as `workos_worker` (ADR-0046).
+
+    The worker role holds one extra policy, on `job`, so it can claim work before it knows which
+    tenant the work belongs to. Tests that exercise the worker must use it — running the loop as
+    the application role would prove the loop works against an exemption the application role does
+    not have, which is precisely the thing Checkpoint 9 removed.
+    """
+    url = migrated_database.replace("workos_owner:workos_owner", "workos_worker:workos_worker")
+    engine = create_engine(url, future=True, pool_pre_ping=True)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def worker_session_factory(worker_engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=worker_engine, expire_on_commit=False, future=True)

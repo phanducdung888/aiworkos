@@ -42,6 +42,18 @@ from app.contexts.intelligence.models import (
     ProposedChange,
     ToolCall,
 )
+from app.contexts.intelligence.policy import (
+    AgentCapabilityPolicy,
+)
+from app.contexts.intelligence.policy import (
+    load as load_capability_policy,
+)
+from app.contexts.intelligence.policy import (
+    rows_for as capability_policy_rows,
+)
+from app.contexts.intelligence.policy import (
+    set_mode as set_capability_mode,
+)
 from app.contexts.intelligence.queries import (
     ProposalFilter,
     ProposalPage,
@@ -63,6 +75,10 @@ from app.contexts.intelligence.services import (
 )
 
 __all__ = [
+    "set_capability_mode",
+    "load_capability_policy",
+    "capability_policy_rows",
+    "AgentCapabilityPolicy",
     "approval_for_id",
     "execute_queued_approval",
     "enqueue_execution",

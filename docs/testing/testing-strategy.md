@@ -320,3 +320,25 @@ production loop does not guarantee either.
 an agent's reach does not: a policy naming an unavailable tool, a capability outside policy, an
 admin delegate against a forbidden action. Testing that the allowed case works is one test; testing
 that the forbidden cases stay forbidden is the rest of the file.
+
+## Hardening (Checkpoint 9)
+
+**The policy tests are mostly about the default.** A permission table's dangerous failure is not a
+wrong row — it is a missing row read as "no restriction". So denial is asserted from several
+directions (no policy, an unrelated cell, an explicit `off`) and there is exactly one test that a
+grant works at all. That one exists because without it a policy that denied everything would pass
+the rest of the file.
+
+**Isolation is tested from both sides.** That the worker role *can* claim across tenants, and that
+it *cannot* read business tables unscoped. Asserting only the refusals would pass against a database
+where the queue never drains; asserting only the capability would pass against one where the worker
+can read everything.
+
+**Queue tests run as `workos_worker`.** Running them as the application role would prove the loop
+works against an exemption the application role no longer has, which is the exact regression
+Checkpoint 9 removed.
+
+**Execution tests go through the queue.** There is no synchronous endpoint left, so a test that
+wants a mutation goes the way production goes: queue, drain, then read the outcome off the
+ApprovalRecord. The shared `execute_approval` helper is what made converting the Checkpoint 7 and 8
+tests mechanical rather than a rewrite.

@@ -124,10 +124,10 @@ def run_forever(
 
 
 def main() -> None:  # pragma: no cover - process entry point
-    from app.platform.db import session_factory
+    from app.platform.db import worker_session_factory
 
     logging.basicConfig(level=logging.INFO)
-    run_forever(session_factory())
+    run_forever(worker_session_factory())
 
 
 if __name__ == "__main__":  # pragma: no cover

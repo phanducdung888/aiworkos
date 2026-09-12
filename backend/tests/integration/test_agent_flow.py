@@ -17,9 +17,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
-from tests.integration.conftest import Realm, WorkOrg, auth, grant, subject_of
+from tests.integration.conftest import Realm, WorkOrg, auth, execute_approval, grant, subject_of
 
 pytestmark = pytest.mark.integration
 
@@ -61,7 +61,8 @@ def counts(session: Session, org_id: uuid.UUID) -> dict[str, int]:
 
 
 def test_a_run_produces_evidence_and_proposals(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, agent_enabled: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     event = an_event(api, as_admin)
     result = analyze(api, as_admin, event)
@@ -78,8 +79,9 @@ def test_a_run_produces_evidence_and_proposals(
 
 
 def test_a_run_executes_nothing(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    api: TestClient, as_admin: dict[str, str], roles: None, agent_enabled: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """Level 1. The negative assertion this whole checkpoint rests on."""
     before = counts(scoped_session, work_org.org_id)
@@ -94,7 +96,9 @@ def test_a_run_executes_nothing(
 
 
 def test_the_citation_quotes_the_event_verbatim(
-    api: TestClient, as_admin: dict[str, str], roles: None
+    api: TestClient, as_admin: dict[str, str], roles: None,
+    worker_session_factory: sessionmaker[Session],
+    agent_enabled: None,
 ) -> None:
     """BR-E-05, and the reason the provider returns spans rather than summaries.
 
@@ -113,8 +117,9 @@ def test_the_citation_quotes_the_event_verbatim(
 
 
 def test_ai_output_carries_its_interaction(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    api: TestClient, as_admin: dict[str, str], roles: None, agent_enabled: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-AI-02, ADR-0043. Derived from the actor, so it cannot be forgotten or declined."""
     result = analyze(api, as_admin, an_event(api, as_admin))
@@ -135,8 +140,9 @@ def test_ai_output_carries_its_interaction(
 
 
 def test_the_chain_traverses_from_a_work_item_back_to_the_words(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    api: TestClient, as_admin: dict[str, str], roles: None, agent_enabled: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-PR-08, with the AI hop in it.
 
@@ -154,10 +160,8 @@ def test_the_chain_traverses_from_a_work_item_back_to_the_words(
         headers={**as_admin, "If-Match": f'W/"{proposal["version"]}"'},
     )
     assert record.status_code == 201, record.text
-    executed = api.post(
-        f"/api/v1/approvals/{record.json()['id']}/execute", headers=as_admin
-    )
-    assert executed.status_code == 200, executed.text
+    executed = execute_approval(api, as_admin, record.json()['id'], worker_session_factory)
+    assert executed.execution_status == "executed", executed.body
 
     scoped_session.rollback()
     row = scoped_session.execute(
@@ -173,7 +177,7 @@ def test_the_chain_traverses_from_a_work_item_back_to_the_words(
             WHERE a.resulting_entity_id = :entity AND a.org_id = :org
             """
         ),
-        {"entity": uuid.UUID(executed.json()["entity_id"]), "org": work_org.org_id},
+        {"entity": uuid.UUID(executed.entity_id or ""), "org": work_org.org_id},
     ).mappings().one()
     assert row["excerpt"] in row["body_text"]
     assert row["agent_identity"] == "extractor"
@@ -184,8 +188,9 @@ def test_the_chain_traverses_from_a_work_item_back_to_the_words(
 
 
 def test_an_internal_event_is_never_extracted(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    api: TestClient, as_admin: dict[str, str], roles: None, agent_enabled: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-E-11 loop prevention, at the point it actually bites.
 
@@ -217,8 +222,10 @@ def test_an_internal_event_is_never_extracted(
 
 
 def test_a_restricted_event_is_not_analysable_by_a_non_participant(
-    api: TestClient, realm: Realm, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    api: TestClient, realm: Realm, as_admin: dict[str, str], roles: None,
+    agent_enabled: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """The agent sees exactly what its delegate sees — which here is nothing (BR-E-08)."""
     event = an_event(
@@ -233,8 +240,10 @@ def test_a_restricted_event_is_not_analysable_by_a_non_participant(
 
 
 def test_a_viewer_cannot_run_an_analysis(
-    api: TestClient, realm: Realm, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    api: TestClient, realm: Realm, as_admin: dict[str, str], roles: None,
+    agent_enabled: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-AI-03: the agent's reach is its delegate's reach. A viewer proposes nothing."""
     event = an_event(api, as_admin)
@@ -245,7 +254,8 @@ def test_a_viewer_cannot_run_an_analysis(
 
 
 def test_an_unknown_agent_is_refused(
-    api: TestClient, as_admin: dict[str, str], roles: None
+    api: TestClient, as_admin: dict[str, str], roles: None,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     event = an_event(api, as_admin)
     response = api.post(
@@ -255,8 +265,9 @@ def test_an_unknown_agent_is_refused(
 
 
 def test_low_confidence_produces_no_proposal(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    api: TestClient, as_admin: dict[str, str], roles: None, agent_enabled: None, work_org: WorkOrg,
     scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """BR-AI-09. Guessing quietly is worse than silence.
 
@@ -281,7 +292,8 @@ def test_low_confidence_produces_no_proposal(
 
 
 def test_the_interaction_records_what_ran(
-    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
+    api: TestClient, as_admin: dict[str, str], roles: None, agent_enabled: None, work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     result = analyze(api, as_admin, an_event(api, as_admin))
     interaction = api.get(
@@ -299,7 +311,9 @@ def test_the_interaction_records_what_ran(
 
 
 def test_the_interaction_stores_no_secret_and_no_message_body(
-    api: TestClient, as_admin: dict[str, str], roles: None, scoped_session: Session
+    api: TestClient, as_admin: dict[str, str], roles: None,
+    agent_enabled: None, scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     """An audit row that accumulated a copy of every message would have its own retention story,
     and BR-E-07's purge would leave it behind."""
@@ -318,7 +332,9 @@ def test_the_interaction_stores_no_secret_and_no_message_body(
 
 
 def test_tool_calls_are_recorded_including_refusals(
-    api: TestClient, as_admin: dict[str, str], roles: None
+    api: TestClient, as_admin: dict[str, str], roles: None,
+    worker_session_factory: sessionmaker[Session],
+    agent_enabled: None,
 ) -> None:
     """A denial is the authority model working, and is the row worth reading."""
     result = analyze(api, as_admin, an_event(api, as_admin))
@@ -327,14 +343,27 @@ def test_tool_calls_are_recorded_including_refusals(
     ).json()
 
     assert interaction["tool_calls"], "a run that proposed something made tool calls"
+
+    by_tool = {call["tool_name"] for call in interaction["tool_calls"]}
+    # BR-AI-05: the run looked before it proposed, and the search is its own recorded call — so
+    # "did this interaction search first" is answerable from the audit trail rather than by
+    # trusting the code did.
+    assert "find_similar_work" in by_tool
+
     for call in interaction["tool_calls"]:
-        # Nothing executed: the Proposal was raised and the tool has not run.
-        assert call["outcome"] in ("not_attempted", "refused")
         assert call["authorization_result"] in ("allowed", "denied")
+        if call["tool_name"] == "find_similar_work":
+            # A read. It runs immediately and succeeds or does not.
+            assert call["outcome"] == "succeeded"
+        else:
+            # A mutation tool. Nothing executed: the Proposal was raised and the tool has not run,
+            # and will not until somebody approves it.
+            assert call["outcome"] in ("not_attempted", "refused")
 
 
 def test_another_organizations_interaction_is_invisible(
-    api: TestClient, as_admin: dict[str, str], roles: None
+    api: TestClient, as_admin: dict[str, str], roles: None,
+    worker_session_factory: sessionmaker[Session],
 ) -> None:
     assert api.get(
         f"/api/v1/ai-interactions/{uuid.uuid4()}", headers=as_admin

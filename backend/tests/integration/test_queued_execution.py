@@ -1,4 +1,9 @@
-"""Approval → queue → worker → exactly one mutation (ADR-0044).
+"""Approval → queue → worker → exactly one mutation (ADR-0044, ADR-0048).
+
+The loop runs as `workos_worker` throughout. That is not a detail: since Checkpoint 9 the queue
+exemption is an identity rather than a session state (ADR-0046), so running these as the
+application role would prove the loop works against an exemption the application role no longer
+has — which is the exact regression this checkpoint exists to prevent.
 
 The queue delivers at-least-once and says so. Exactly-once *execution* comes from the layer below:
 `ProposalService.execute` claims the ApprovalRecord with a conditional update, so a redelivered job
@@ -132,14 +137,14 @@ def test_queueing_does_not_execute(
 
 def test_the_worker_executes_a_queued_approval(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    app_session_factory: sessionmaker[Session], scoped_session: Session,
+    worker_session_factory: sessionmaker[Session], scoped_session: Session,
 ) -> None:
     title = a_title("executed-once")
     proposal = a_proposal(api, as_admin, work_org.admin, title=title)
     record = approve(api, as_admin, proposal)
     api.post(f"/api/v1/approvals/{record['id']}/queue", headers=as_admin)
 
-    report = drain(app_session_factory)
+    report = drain(worker_session_factory)
     assert report.succeeded >= 1
 
     assert work_count(scoped_session, title) == 1
@@ -152,12 +157,12 @@ def test_the_worker_executes_a_queued_approval(
 
 
 def test_an_idle_worker_claims_nothing(
-    app_session_factory: sessionmaker[Session]
+    worker_session_factory: sessionmaker[Session]
 ) -> None:
     """The control. A worker that reported work when there was none would make every other
     assertion here meaningless."""
-    drain(app_session_factory)
-    assert run_once(app_session_factory).claimed == 0
+    drain(worker_session_factory)
+    assert run_once(worker_session_factory).claimed == 0
 
 
 # --------------------------------------------------------------------------- exactly once
@@ -184,7 +189,9 @@ def test_queueing_twice_produces_one_job(
 
 def test_a_duplicate_delivery_executes_once(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    app_session_factory: sessionmaker[Session], scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
+    app_session_factory: sessionmaker[Session],
+    scoped_session: Session,
 ) -> None:
     """At-least-once delivery meeting exactly-once execution (ADR-0044).
 
@@ -195,7 +202,7 @@ def test_a_duplicate_delivery_executes_once(
     proposal = a_proposal(api, as_admin, work_org.admin, title=title)
     record = approve(api, as_admin, proposal)
     api.post(f"/api/v1/approvals/{record['id']}/queue", headers=as_admin)
-    assert drain(app_session_factory).succeeded >= 1
+    assert drain(worker_session_factory).succeeded >= 1
 
     session = app_session_factory()
     # Scoped, because `job_enqueue_is_scoped` requires it: a job can only be created from inside a
@@ -214,7 +221,7 @@ def test_a_duplicate_delivery_executes_once(
     session.commit()
     session.close()
 
-    second = drain(app_session_factory)
+    second = drain(worker_session_factory)
     assert second.claimed == 1
     assert second.succeeded == 1, "a redelivery is not a failure; it is already-done"
     assert work_count(scoped_session, title) == 1
@@ -222,7 +229,7 @@ def test_a_duplicate_delivery_executes_once(
 
 def test_two_workers_do_not_both_claim_the_same_job(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    app_session_factory: sessionmaker[Session], scoped_session: Session,
+    worker_session_factory: sessionmaker[Session], scoped_session: Session,
 ) -> None:
     """`SKIP LOCKED` in the claim, tested by holding the row and claiming again.
 
@@ -233,11 +240,11 @@ def test_two_workers_do_not_both_claim_the_same_job(
     record = approve(api, as_admin, proposal)
     api.post(f"/api/v1/approvals/{record['id']}/queue", headers=as_admin)
 
-    holder = app_session_factory()
+    holder = worker_session_factory()
     claimed = jobs.claim(holder, kinds=("execute_approval",))
     assert claimed is not None, "the first worker should claim something"
     try:
-        other = app_session_factory()
+        other = worker_session_factory()
         try:
             second = jobs.claim(other, kinds=("execute_approval",))
             # Not "claimed nothing": the suite leaves other pending jobs behind, so a second
@@ -259,7 +266,7 @@ def test_two_workers_do_not_both_claim_the_same_job(
 
 def test_a_failing_job_is_retried_and_leaves_no_partial_state(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    app_session_factory: sessionmaker[Session], scoped_session: Session,
+    worker_session_factory: sessionmaker[Session], scoped_session: Session,
 ) -> None:
     """The action names a Project that does not exist, so the Work Core refuses it.
 
@@ -276,7 +283,7 @@ def test_a_failing_job_is_retried_and_leaves_no_partial_state(
     record = approve(api, as_admin, proposal)
     api.post(f"/api/v1/approvals/{record['id']}/queue", headers=as_admin)
 
-    report = drain(app_session_factory)
+    report = drain(worker_session_factory)
     assert report.failed >= 1
 
     assert work_count(scoped_session, doomed) == 0
@@ -296,7 +303,9 @@ def test_a_failing_job_is_retried_and_leaves_no_partial_state(
 
 def test_a_job_that_exhausts_its_attempts_is_kept_as_dead(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    app_session_factory: sessionmaker[Session], scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
+    app_session_factory: sessionmaker[Session],
+    scoped_session: Session,
 ) -> None:
     """A queue that tidies away its failures leaves a gap instead of a fault."""
     proposal = a_proposal(
@@ -309,6 +318,13 @@ def test_a_job_that_exhausts_its_attempts_is_kept_as_dead(
     api.post(f"/api/v1/approvals/{record['id']}/queue", headers=as_admin)
 
     session = app_session_factory()
+    # Scoped, because since Checkpoint 9 the application role has no queue exemption (ADR-0046).
+    # Without this the UPDATE matches no rows and says so by changing nothing, which is RLS
+    # working and is exactly the regression this test would otherwise hide.
+    session.execute(
+        text("SELECT set_config('app.current_org_id', :org, true)"),
+        {"org": str(work_org.org_id)},
+    )
     session.execute(
         text(
             "UPDATE job SET max_attempts = 1, run_after = now() - interval '1 minute' "
@@ -319,7 +335,7 @@ def test_a_job_that_exhausts_its_attempts_is_kept_as_dead(
     session.commit()
     session.close()
 
-    assert drain(app_session_factory).failed >= 1
+    assert drain(worker_session_factory).failed >= 1
     row = job_row(scoped_session, record["id"])
     assert row["status"] == "dead"
     assert row["finished_at"] is not None
@@ -328,7 +344,9 @@ def test_a_job_that_exhausts_its_attempts_is_kept_as_dead(
 
 def test_a_rejected_approval_completes_the_job_without_executing(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    app_session_factory: sessionmaker[Session], scoped_session: Session,
+    worker_session_factory: sessionmaker[Session],
+    app_session_factory: sessionmaker[Session],
+    scoped_session: Session,
 ) -> None:
     """Retrying forever against a state that will never change is a stuck queue, not a safeguard."""
     never = a_title("never")
@@ -354,7 +372,7 @@ def test_a_rejected_approval_completes_the_job_without_executing(
     session.commit()
     session.close()
 
-    report = drain(app_session_factory)
+    report = drain(worker_session_factory)
     assert report.succeeded >= 1, "the job is complete; there is nothing to retry"
     assert work_count(scoped_session, never) == 0
 
@@ -364,7 +382,7 @@ def test_a_rejected_approval_completes_the_job_without_executing(
 
 def test_the_worker_scopes_itself_to_the_job_s_organization(
     api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
-    app_session_factory: sessionmaker[Session], scoped_session: Session,
+    worker_session_factory: sessionmaker[Session], scoped_session: Session,
 ) -> None:
     """A worker serves every tenant and must not leak one into the next.
 
@@ -375,7 +393,7 @@ def test_the_worker_scopes_itself_to_the_job_s_organization(
     proposal = a_proposal(api, as_admin, work_org.admin, arguments={"title": scoped})
     record = approve(api, as_admin, proposal)
     api.post(f"/api/v1/approvals/{record['id']}/queue", headers=as_admin)
-    assert drain(app_session_factory).succeeded >= 1
+    assert drain(worker_session_factory).succeeded >= 1
 
     scoped_session.rollback()
     org_id = scoped_session.execute(

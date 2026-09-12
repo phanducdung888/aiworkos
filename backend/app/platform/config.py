@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://workos_owner:workos_owner@localhost:5432/workos"
     # Normal application traffic runs as a role that owns nothing, so that RLS actually applies.
     app_database_url: str = "postgresql+psycopg://workos_app:workos_app@localhost:5432/workos"
+    # The worker connects as its own role (ADR-0046). It holds one extra policy, on `job`, so it
+    # can claim work before it knows which tenant the work belongs to; on every other table it is
+    # exactly as constrained as the application role. Separate credentials rather than a shared
+    # one, so the queue exemption cannot be reached by anything serving an HTTP request.
+    worker_database_url: str = (
+        "postgresql+psycopg://workos_worker:workos_worker@localhost:5432/workos"
+    )
 
     sql_echo: bool = False
 

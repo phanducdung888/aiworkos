@@ -4,11 +4,15 @@ The autonomy ceiling for the MVP is Level 2 (PQ-3): something proposes, a human 
 system executes exactly what was approved. Level 3 — acting without per-action approval — is not
 representable here, and that is a property of the schema rather than a setting (BR-AI-31).
 
-Approval and execution are two endpoints on purpose. `POST /{id}/decision` writes an immutable
-ApprovalRecord and changes nothing else; `POST /approvals/{id}/execute` recomputes the action hash,
-refuses any mismatch (BR-AI-18) and calls one registered tool. Keeping them apart is what makes the
-binding checkable: between the two calls there is a durable record of exactly what a person agreed
-to, and execution has to match it or not happen.
+Approval and execution are separate, and execution does not happen here at all. `POST
+/{id}/decision` writes an immutable ApprovalRecord and changes nothing else; running the approved
+action is the queue's job and the worker's (ADR-0048). There is no HTTP path that performs an
+approved mutation, which is what makes every future execution control — a rate limit, a window, a
+kill switch — something implemented once rather than once per path.
+
+Keeping the two apart is also what makes the binding checkable: between approval and execution
+there is a durable record of exactly what a person agreed to, and execution has to match it or not
+happen.
 
 Revision is not an edit. `POST /{id}/revise` creates a *new* Proposal superseding the old one,
 because a changed action has a different hash and therefore cannot match an approval given for the
@@ -26,7 +30,6 @@ from fastapi import APIRouter, Header, Query, Response, status
 from app.api.v1.schemas import (
     PROBLEM_RESPONSES,
     ApprovalRecordResource,
-    ExecutionResult,
     ProposalCreate,
     ProposalDecision,
     ProposalDetail,
@@ -37,7 +40,6 @@ from app.api.v1.schemas import (
 )
 from app.contexts.intelligence.public import (
     DecideProposal,
-    ExecuteApproval,
     ProposalFilter,
     ProposalKind,
     ProposalService,
@@ -47,6 +49,7 @@ from app.contexts.intelligence.public import (
     ReviseProposal,
     ServiceContext,
     approval_for,
+    approval_for_id,
     changes_for_proposal,
     evidence_for_proposal,
     get_proposal,
@@ -265,24 +268,17 @@ def read_approval(
     return record
 
 
-@router.post("/approvals/{approval_id}/execute", response_model=ExecutionResult)
-def execute_approval(
-    approval_id: uuid.UUID,
-    session: SessionDep,
-    principal: PrincipalDep,
-    actor: ActorDep,
+@router.get("/approvals/{approval_id}", response_model=ApprovalRecordResource)
+def read_approval_record(
+    approval_id: uuid.UUID, session: SessionDep, principal: PrincipalDep
 ) -> Any:
-    """Recompute the hash, claim the record once, call one registered tool.
+    """One approval, including what its execution produced.
 
-    No `If-Match`: this is not an edit of the approval but the single use of it. Idempotence comes
-    from the record itself — the claim is a conditional update, so a retried execute finds the
-    approval already spent and is refused rather than running the mutation twice.
+    Addressed by its own id rather than only through its Proposal, because since ADR-0048 the
+    execution outcome is written by a worker after the request that approved it has ended — so the
+    record is the thing a client polls.
     """
-    outcome = ProposalService(_context(session, principal, actor)).execute(
-        ExecuteApproval(approval_id=approval_id)
-    )
-    return ExecutionResult(
-        approval=ApprovalRecordResource.model_validate(outcome.approval),
-        entity_type=outcome.entity_type,
-        entity_id=outcome.entity_id,
-    )
+    record = approval_for_id(session, principal, approval_id)
+    if record is None:
+        raise EntityNotFound("approval_record", approval_id)
+    return record

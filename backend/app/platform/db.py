@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from functools import lru_cache
 
 from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.engine import Engine
@@ -104,3 +105,20 @@ def admin_session(factory: sessionmaker[Session] | None = None) -> Iterator[Sess
         raise
     finally:
         session.close()
+
+
+@lru_cache
+def worker_engine() -> Engine:
+    """The worker's connection, as `workos_worker` (ADR-0046).
+
+    Separate from the application engine on purpose: the queue exemption lives on this role, and a
+    shared pool would mean an HTTP request could be served by a connection that holds it.
+    """
+    settings = get_settings()
+    return create_engine(
+        settings.worker_database_url, echo=settings.sql_echo, future=True, pool_pre_ping=True
+    )
+
+
+def worker_session_factory() -> sessionmaker[Session]:
+    return sessionmaker(bind=worker_engine(), expire_on_commit=False, future=True)
