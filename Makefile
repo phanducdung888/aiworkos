@@ -2,6 +2,7 @@
 
 SHELL := /bin/bash
 BACKEND := backend
+FRONTEND := frontend
 # The image superuser. It bootstraps roles and hands the schema to workos_owner; nothing in the
 # application or the migrations ever connects as it.
 SUPERUSER := workos
@@ -9,7 +10,7 @@ DEV_DB := workos
 TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast lint types imports check dev-db test-db
+.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast lint types imports check dev-db test-db seed web-install web-check web-test e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -68,4 +69,24 @@ types:  ## mypy --strict over contexts and platform
 imports:  ## Architecture boundary contracts
 	cd $(BACKEND) && lint-imports --config .importlinter
 
-check: lint types imports test  ## Everything CI runs
+seed:  ## Create the development organization, people and team (idempotent)
+	# Runs as the superuser: "which organization has this slug?" is a question from outside every
+	# tenant, and RLS means no tenant-scoped role can answer it. See ops/dev/seed.py.
+	PYTHONPATH=$(BACKEND) .venv/bin/python ops/dev/seed.py
+
+web-install:  ## Install frontend dependencies
+	cd $(FRONTEND) && npm ci
+
+web-test:  ## Frontend component tests (L5)
+	cd $(FRONTEND) && npm run test
+
+web-check:  ## Frontend: generated-client drift, types, lint, component tests, production build
+	# The drift check first, because a client that has fallen behind the spec makes every other
+	# frontend failure below it a red herring.
+	cd $(FRONTEND) && npm run generate:api:check && npm run typecheck && npm run lint \
+		&& npm run test && npm run build
+
+e2e:  ## The curated journeys (L6). Needs PostgreSQL; starts the API and the dev server itself.
+	cd $(FRONTEND) && npm run e2e
+
+check: lint types imports test web-check  ## Everything CI runs

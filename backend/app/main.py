@@ -14,6 +14,7 @@ from fastapi import FastAPI
 
 from app.api.v1.dependencies import router as dependency_router
 from app.api.v1.dependencies import work_scoped as work_dependency_router
+from app.api.v1.identity import router as identity_router
 from app.api.v1.projects import milestones as milestone_router
 from app.api.v1.projects import projects as project_router
 from app.api.v1.work import router as work_router
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(project_router)
     app.include_router(milestone_router)
     app.include_router(dependency_router)
+    app.include_router(identity_router)
 
     @app.get("/health", tags=["operations"])
     def health() -> dict[str, str]:

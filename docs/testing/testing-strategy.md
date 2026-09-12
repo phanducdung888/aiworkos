@@ -115,6 +115,8 @@ live, and a thin, stable L6.
 - Accessibility checks on the core surfaces (axe), keyboard navigability of the review inbox.
 
 ### L6 E2E (curated, ~9 journeys)
+
+Implemented in Checkpoint 5: **1, 1a, 1b and 4** — the four the Phase 1 domain can complete. Playwright drives a real browser against the real API; tokens are minted per run against a JWKS the dev server publishes, so the API's production verification runs with no Keycloak in the loop (T-3, option (a)). The remaining journeys need Events, Proposals, Commitments or Risks and are tracked as W-15.
 1. Log in, create a project, create work, assign, complete.
 1a. Create Work with **no Project and no assignment**, progress it, complete it. Confirm no UI path
    demands either (ADR-0029, BR-W-15). Then add an OWNER, two CONTRIBUTORs and a REVIEWER, end the

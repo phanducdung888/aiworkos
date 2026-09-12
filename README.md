@@ -40,7 +40,11 @@ make up          # PostgreSQL, Redis, MinIO
 make dev-db      # create workos_owner and workos_app, hand them the development schema
 make test-db     # same, for workos_test
 make migrate     # apply migrations 0001-0005
-make check       # ruff + mypy + import contracts + 153 tests
+make seed        # a development organization, its people and a team
+make check       # backend gate + frontend gate
+
+cd frontend && npm ci && cp .env.example .env.local && npm run dev
+make e2e         # the curated journeys, in a real browser
 ```
 
 `make dev-db` is only needed on a database created before `ops/db/dev-roles.sql` last changed; a
@@ -63,6 +67,23 @@ directly.
 |---|---|---|
 | `workos_owner` | owns the schema, runs migrations | `LOGIN CREATEROLE NOSUPERUSER NOBYPASSRLS` |
 | `workos_app` | serves requests | `LOGIN` only; owns nothing |
+
+## 3a. The frontend
+
+React + TypeScript + Vite, TanStack Query for every piece of server state and no client-side copy of
+it. The API client is generated from `backend/openapi.json`; `npm run generate:api:check` fails the
+build when the two have drifted, which is what keeps the spec honest rather than decorative.
+
+Sign-in is OIDC authorization-code with PKCE against the Compose Keycloak realm. The access token is
+held in memory only. The organization arrives in an `X-Organization-Id` header on every request and
+is never inferred from the token, because a human may work for more than one.
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Vite, proxying `/api` to the backend on 8000 |
+| `npm run test` | L5 component tests, including axe checks |
+| `npm run e2e` | L6 journeys; starts the API and the dev server itself |
+| `npm run generate:api` | Regenerate the client from the committed OpenAPI snapshot |
 
 ## 4. Layout
 

@@ -49,10 +49,17 @@ def test_every_published_path_is_one_of_the_five_work_core_aggregates(
     """
     paths = set(api.get("/api/v1/openapi.json").json()["paths"])
     allowed_prefixes = (
+        # Work Core
         "/api/v1/work",
         "/api/v1/projects",
         "/api/v1/milestones",
         "/api/v1/dependencies",
+        # Identity & Organization, read-only: every Work Core write names a Person, a Team or a
+        # Department, so a client cannot complete a journey without looking them up.
+        "/api/v1/me",
+        "/api/v1/people",
+        "/api/v1/teams",
+        "/api/v1/departments",
         "/health",
     )
     unexpected = [p for p in paths if not p.startswith(allowed_prefixes)]

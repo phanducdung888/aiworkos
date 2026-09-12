@@ -1,0 +1,20 @@
+/* Phase 1 is not a visual design (contract §14). This is legibility and focus visibility, and it
+   stops there so that nobody mistakes it for a decision about how the product should look. */
+:root { color-scheme: light dark; --edge: color-mix(in oklab, currentColor 22%, transparent); }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; }
+header { display: flex; gap: 1rem; justify-content: space-between; align-items: baseline;
+         padding: .75rem 1rem; border-bottom: 1px solid var(--edge); flex-wrap: wrap; }
+nav { display: flex; gap: 1rem; }
+nav a[aria-current='page'] { font-weight: 700; text-decoration-thickness: 2px; }
+main { padding: 1rem; max-width: 70rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--edge); }
+.partitions { display: flex; gap: 2rem; margin: 0 0 1rem; }
+.partitions dt { font-size: .85rem; opacity: .75; }
+.partitions dd { margin: 0; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.field { display: flex; flex-direction: column; gap: .25rem; max-width: 28rem; }
+.field__hint, .state__hint { font-size: .85rem; opacity: .75; }
+.actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.state--error, .state--forbidden { border-left: 3px solid currentColor; padding-left: .75rem; }
+:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }

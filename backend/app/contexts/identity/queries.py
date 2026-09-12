@@ -13,9 +13,14 @@ become the reason the other can be dropped (BR-G-01a).
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
+
+from app.contexts.identity.models import Department, Person, Team
+from app.platform.authz import Action, Grant, Principal, ResourceType, grants_for
+from app.platform.http.pagination import Cursor, encode_cursor
 
 _PERSON_STATUS = text(
     "SELECT status FROM person WHERE id = :person_id AND org_id = :org_id"
@@ -104,3 +109,142 @@ def team_ids_in_departments(
         {"org_id": org_id, "department_ids": list(department_ids)},
     ).scalars()
     return frozenset(rows)
+
+
+# --------------------------------------------------------------------------- directory reads
+
+
+def _readable(
+    model: type[Any], principal: Principal, action: Action, resource: ResourceType
+) -> Any:
+    """Identity rows carry no visibility column, so reach from the matrix is the whole answer.
+
+    Unlike Work and Project (BR-W-18, BR-P-09) there is no second dimension here: a Person is either
+    within the caller's reach or not. Every role in the matrix holds an ORG grant on `PERSON.READ`,
+    `TEAM.READ` and `DEPARTMENT.READ` — a directory everybody in an organization can see is the
+    point of a directory — so the predicate below is normally just the tenant boundary. It is still
+    written out, because a role added later with a narrower grant must narrow this too rather than
+    silently inherit the whole organization.
+    """
+    grants = grants_for(principal, action, resource)
+    if Grant.ORG in grants:
+        return model.org_id == principal.org_id
+    if not grants:
+        return model.id.is_(None)
+    # No non-ORG grant is declared for these reads today. Refusing rather than guessing keeps the
+    # matrix the only place that decides.
+    return model.id.is_(None)
+
+
+def list_people(
+    session: Session,
+    principal: Principal,
+    *,
+    query: str | None = None,
+    include_departed: bool = False,
+    limit: int = 50,
+    cursor: Cursor | None = None,
+) -> tuple[list[Person], str | None]:
+    """The people picker behind every assignment field.
+
+    Departed people are excluded by default because BR-I-05 stops them receiving new assignments, so
+    offering them in a picker offers a choice the service will refuse. They remain requestable,
+    because "who owned this in March" is a question about somebody who has since left.
+    """
+    statement = select(Person).where(
+        _readable(Person, principal, Action.LIST, ResourceType.PERSON)
+    )
+    if not include_departed:
+        statement = statement.where(Person.status == "active")
+    if query:
+        pattern = f"%{query.strip()}%"
+        statement = statement.where(
+            or_(Person.display_name.ilike(pattern), Person.email.ilike(pattern))
+        )
+    return _page(session, statement, Person, limit, cursor)
+
+
+def get_person(
+    session: Session, principal: Principal, person_id: uuid.UUID
+) -> Person | None:
+    return session.execute(
+        select(Person)
+        .where(_readable(Person, principal, Action.READ, ResourceType.PERSON))
+        .where(Person.id == person_id)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def list_teams(
+    session: Session,
+    principal: Principal,
+    *,
+    department_id: uuid.UUID | None = None,
+    limit: int = 50,
+    cursor: Cursor | None = None,
+) -> tuple[list[Team], str | None]:
+    statement = select(Team).where(
+        _readable(Team, principal, Action.LIST, ResourceType.TEAM),
+        Team.status == "active",
+    )
+    if department_id is not None:
+        statement = statement.where(Team.department_id == department_id)
+    return _page(session, statement, Team, limit, cursor)
+
+
+def get_team(session: Session, principal: Principal, team_id: uuid.UUID) -> Team | None:
+    return session.execute(
+        select(Team)
+        .where(_readable(Team, principal, Action.READ, ResourceType.TEAM))
+        .where(Team.id == team_id)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def list_departments(
+    session: Session,
+    principal: Principal,
+    *,
+    limit: int = 50,
+    cursor: Cursor | None = None,
+) -> tuple[list[Department], str | None]:
+    statement = select(Department).where(
+        _readable(Department, principal, Action.LIST, ResourceType.DEPARTMENT),
+        Department.status == "active",
+    )
+    return _page(session, statement, Department, limit, cursor)
+
+
+def get_department(
+    session: Session, principal: Principal, department_id: uuid.UUID
+) -> Department | None:
+    return session.execute(
+        select(Department)
+        .where(_readable(Department, principal, Action.READ, ResourceType.DEPARTMENT))
+        .where(Department.id == department_id)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def _page(
+    session: Session, statement: Any, model: type[Any], limit: int, cursor: Cursor | None
+) -> tuple[list[Any], str | None]:
+    """The same keyset paging the Work Core uses, over `(created_at, id)`."""
+    if cursor is not None:
+        statement = statement.where(
+            or_(
+                model.created_at > cursor.created_at,
+                and_(model.created_at == cursor.created_at, model.id > cursor.id),
+            )
+        )
+    rows = list(
+        session.execute(
+            statement.order_by(model.created_at, model.id)
+            .limit(limit + 1)
+            .execution_options(populate_existing=True)
+        ).scalars()
+    )
+    if len(rows) > limit:
+        last = rows[limit - 1]
+        return rows[:limit], encode_cursor(last.created_at, last.id)
+    return rows, None

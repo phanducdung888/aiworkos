@@ -375,3 +375,78 @@ PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: _problem("Request validation failed, or a business rule refused the change"),
     428: _problem("This request requires an If-Match header"),
 }
+
+
+# --------------------------------------------------------------------------- identity
+
+
+class CurrentPrincipal(BaseModel):
+    """The caller, as this organization sees them.
+
+    `roles` is here so a client can render navigation that matches what the caller may do. It is
+    guidance for the interface and nothing more: the backend re-decides every request, so a client
+    that ignored this and showed every button would be refused rather than obeyed (contract §14).
+    """
+
+    person_id: uuid.UUID
+    org_id: uuid.UUID
+    display_name: str
+    email: str | None
+    roles: list[str]
+
+
+class PersonResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    display_name: str
+    email: str | None
+    status: str
+    timezone: str | None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+    version: int
+
+
+class PersonList(BaseModel):
+    items: list[PersonResource]
+    next_cursor: str | None = None
+
+
+class TeamResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    department_id: uuid.UUID | None
+    name: str
+    lead_person_id: uuid.UUID | None
+    status: str
+    created_at: dt.datetime
+    updated_at: dt.datetime
+    version: int
+
+
+class TeamList(BaseModel):
+    items: list[TeamResource]
+    next_cursor: str | None = None
+
+
+class DepartmentResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    parent_department_id: uuid.UUID | None
+    name: str
+    lead_person_id: uuid.UUID | None
+    status: str
+    created_at: dt.datetime
+    updated_at: dt.datetime
+    version: int
+
+
+class DepartmentList(BaseModel):
+    items: list[DepartmentResource]
+    next_cursor: str | None = None
