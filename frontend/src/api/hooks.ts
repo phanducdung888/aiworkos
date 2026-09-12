@@ -74,6 +74,8 @@ export interface WorkFilters {
   partition?: 'project' | 'non_project'
   project_id?: string
   owner_person_id?: string
+  /** `due_date < this`. The server compares dates; the caller decides what "soon" means. */
+  due_before?: string
 }
 
 export function useMe(enabled = true): UseQueryResult<Me> {
@@ -491,6 +493,7 @@ export interface CommitmentFilters {
   status?: CommitmentStatus
   committed_by_person_id?: string
   committed_to_person_id?: string
+  due_before?: string
 }
 
 export function useCommitments(filters: CommitmentFilters = {}): UseQueryResult<Commitment[]> {

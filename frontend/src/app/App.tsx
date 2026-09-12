@@ -9,6 +9,7 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 import { useMe } from '@/api/hooks'
 import { useAuth } from '@/auth/AuthProvider'
 import { ErrorState, Loading } from '@/components/States'
+import { Attention } from '@/features/attention/Attention'
 import { Capture } from '@/features/capture/Capture'
 import { CommitmentDetail, CommitmentList } from '@/features/commitments/Commitments'
 import { ProposalDetail, ProposalList } from '@/features/proposals/Proposals'
@@ -55,6 +56,7 @@ export function App() {
     <>
       <header>
         <nav aria-label="Main">
+          <NavLink to="/attention">Attention</NavLink>
           <NavLink to="/work">Work</NavLink>
           <NavLink to="/work/new">New work</NavLink>
           <NavLink to="/capture">Capture message</NavLink>
@@ -75,6 +77,7 @@ export function App() {
           <Route path="/work" element={<WorkList />} />
           <Route path="/work/new" element={<CreateWork />} />
           <Route path="/work/:workId" element={<WorkDetail />} />
+          <Route path="/attention" element={<Attention />} />
           <Route path="/capture" element={<Capture />} />
           <Route path="/proposals" element={<ProposalList />} />
           <Route path="/proposals/:proposalId" element={<ProposalDetail />} />

@@ -521,6 +521,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 14 | External identity resolution (PQ-7), commitment duplicate routing, capture/proposal/approval UI; ADR-0054 | ✅ complete · 1049 backend + 61 frontend |
 | 15 | Deadline reading (quote, never compute), canonical provenance walk, commitment list/detail and lifecycle UI; ADR-0055/0056 | ✅ complete · 1103 backend + 74 frontend |
 | 16 | Work brought to the same standard: provenance panel on Work, created-entity links, the four blanks the AI may not fill asserted | ✅ complete · 1109 backend + 81 frontend |
+| 17 | Attention view: six deterministic sections over existing endpoints, each stating the rule that produced it; no new API, no AI scores | ✅ complete · 1115 backend + 92 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application
