@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     llm_model: str = "claude-sonnet-5"
     llm_timeout_seconds: float = 30.0
 
+    # A second provider behind the same contract (CP13). Deliberately parallel keys rather than a
+    # redesign of `llm_*`: a provider registry is the right shape and is a change of its own, and
+    # doing it here would mean touching configuration that three checkpoints already depend on.
+    # Neither key has a value in the repository; both come from the environment or not at all.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+
 
 @lru_cache
 def get_settings() -> Settings:

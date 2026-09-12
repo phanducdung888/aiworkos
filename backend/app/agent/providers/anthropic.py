@@ -17,14 +17,12 @@ audit entry or a log line.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
 
 from app.agent.providers.errors import (
     ProviderAuthenticationFailure,
-    ProviderContractViolation,
     ProviderInvalidResponse,
     ProviderRateLimited,
     ProviderTimeout,
@@ -33,27 +31,13 @@ from app.agent.providers.errors import (
 from app.agent.providers.port import (
     CompletionRequest,
     CompletionResult,
-    ExtractedSpan,
     FinishReason,
     ModelIdentity,
 )
-from app.platform.agentkit.confidence import (
-    UNKNOWN_CONFIDENCE,
-    ConfidenceNormalizer,
-    ConfidenceSource,
-)
+from app.agent.providers.structured import SCHEMA_INSTRUCTION, parse_spans
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
-
-#: What the model is asked to return. Constrained to what BR-E-05 can verify: a span the excerpt
-#: can be sliced from, not a summary that would read well and be unverifiable.
-_SCHEMA_NOTE = (
-    "Return JSON only: {\"spans\": [{\"kind\": \"commitment\"|\"work\", "
-    "\"summary\": string, \"char_start\": int, \"char_end\": int, "
-    "\"confidence\": int 0-100}]}. char_start and char_end must index the supplied text exactly. "
-    "Return an empty list rather than guessing."
-)
 
 _FINISH_REASONS = {
     "end_turn": FinishReason.COMPLETE,
@@ -84,13 +68,12 @@ class AnthropicProvider:
         self._model = model
         self._timeout = timeout_seconds
         self._client = client
-        self._normalizer = ConfidenceNormalizer()
 
     def complete(self, request: CompletionRequest) -> CompletionResult:
         payload: dict[str, Any] = {
             "model": request.model or self._model,
             "max_tokens": 2048,
-            "system": f"{request.instruction}\n\n{_SCHEMA_NOTE}",
+            "system": f"{request.instruction}\n\n{SCHEMA_INSTRUCTION}",
             # The Event body is data, never instruction (BR-AI-10). It is passed as user content
             # and the system prompt above is the only source of task definition; anything inside
             # the body that looks like a command is content the model is told to treat as text.
@@ -132,47 +115,19 @@ class AnthropicProvider:
     def _parse(
         self, body: dict[str, Any], request: CompletionRequest
     ) -> CompletionResult:
+        # Anthropic returns content as a list of typed blocks. Extracting the text from them is
+        # the only vendor-specific part of reading this answer; everything after it is shared.
         blocks = body.get("content") or []
         text = "".join(
             block.get("text", "") for block in blocks if block.get("type") == "text"
         )
-        try:
-            parsed = json.loads(text)
-            raw_spans = parsed["spans"]
-        except (ValueError, KeyError, TypeError) as error:
-            # A malformed answer is a broken contract, not a low confidence (ADR-0049). Treating
-            # them the same would make an outage indistinguishable from a quiet day.
-            raise ProviderInvalidResponse(
-                "the provider did not return the requested JSON shape"
-            ) from error
-
-        spans: list[ExtractedSpan] = []
-        for raw in raw_spans[: request.max_spans]:
-            try:
-                start, end = int(raw["char_start"]), int(raw["char_end"])
-                kind, summary = str(raw["kind"]), str(raw["summary"])
-            except (KeyError, TypeError, ValueError) as error:
-                raise ProviderInvalidResponse("a span was missing required fields") from error
-            if not 0 <= start < end:
-                raise ProviderContractViolation(
-                    f"span [{start}:{end}] is not a range"
-                )
-            spans.append(
-                ExtractedSpan(
-                    kind=kind,
-                    summary=summary,
-                    char_start=start,
-                    char_end=end,
-                    # The model's own number, labelled as the model's own number. A model's
-                    # self-reported confidence is a value it produced, not a measured frequency —
-                    # which is what `PROVIDER_REPORTED` says and `HEURISTIC` would not (ADR-0050).
-                    confidence=self._assess(raw.get("confidence")),
-                )
-            )
+        spans = parse_spans(
+            text, source_text=request.text, max_spans=request.max_spans
+        )
 
         model_name = str(body.get("model") or request.model or self._model)
         return CompletionResult(
-            spans=tuple(spans),
+            spans=spans,
             model=ModelIdentity(
                 provider=self.name,
                 name=model_name,
@@ -191,16 +146,3 @@ class AnthropicProvider:
             },
             provider_request_id=str(body.get("id")) if body.get("id") else None,
         )
-
-    def _assess(self, value: Any) -> Any:
-        if value is None:
-            return UNKNOWN_CONFIDENCE
-        try:
-            return self._normalizer.from_value(
-                int(value), source=ConfidenceSource.PROVIDER_REPORTED
-            )
-        except (TypeError, ValueError):
-            # A confidence field that is not a number is not a confidence. Unknown rather than
-            # coerced: inventing a score at the value that decides the outcome is the failure
-            # ADR-0050 exists to prevent.
-            return UNKNOWN_CONFIDENCE
