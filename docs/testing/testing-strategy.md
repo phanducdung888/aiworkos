@@ -274,3 +274,27 @@ are in the transaction. A patched exception would prove the `except` clause runs
 proves the database and the application agree about what one unit of work is. The suite also asserts,
 across everything it has written, that no outbox row names an Event that does not exist — the failure
 mode a consumer cannot recover from downstream.
+
+## Proposal and approval (Checkpoint 7)
+
+**The action hash has a pinned digest.** `test_action_hash.py` asserts one literal canonical form.
+Everything about "the approval is for this exact action" reduces to that serialisation, and a change
+to it would not fail anything obvious — it would quietly invalidate every stored approval, and the
+symptom would be approvals refusing to execute for no visible reason. The pinned value turns a silent
+data migration into a failing test.
+
+**Approval binding is tested in two independent layers.** First that an ApprovalRecord cannot be
+tampered with at all: the immutability trigger refuses an UPDATE in raw SQL as the table owner.
+Second that even a record which *is* inconsistent — inserted already mismatched, the way a bug in a
+future writer would leave it — is refused at execution by recomputing the hash. Testing only the
+first would leave the BR-AI-18 check itself unexercised; testing only the second would not prove the
+row is protected.
+
+**Rollback is tested in both directions.** A failed execution must leave no Work *and* leave the
+approval still spendable. Asserting only the first would pass against an implementation that also
+lost the approval, which is a different bug wearing the same clean database.
+
+**The registry is tested for what it does not contain.** ADR-0042's claim is that the set of things
+an approved Proposal can ever do is enumerable; a test that only checked the entries present would
+pass just as happily against a registry that had grown a `delete_work` nobody noticed. There is also
+a size assertion, because a registry too large to read on one screen is one nobody audits.

@@ -167,6 +167,32 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ### Open
 
+**Creating Work with an unresolvable `project_id` returns 404.** `WorkService.create` loads the
+Project — it needs the row for visibility computation — and raises `EntityNotFound`, so a body field
+that does not resolve is reported as though the addressed resource were missing. This is the same
+inconsistency found and fixed for assignments in Checkpoint 5.1, still present on this path. Left
+alone deliberately: it is Work Core behaviour that predates this checkpoint and nothing in CP7
+required touching it. Pinned by a comment in `test_execution_atomicity.py`, which asserts the
+rollback property rather than the status code.
+
+**Evidence has no `ai_interaction_id` and Proposal has no link to one.** `produced_by_type` already
+distinguishes `person` from `ai_interaction`, and `produced_by_id` is where the interaction id will
+go, but AIInteraction does not exist — so BR-AI-02's "carries an `ai_interaction_id`" is currently
+satisfied by attribution to a person instead. The extraction checkpoint adds the entity and the
+column; nothing needs to change in the chain's shape.
+
+**`raised_by_ai` is a caller-supplied flag, not a derived fact.** BR-AI-02 and BR-C-03 both key off
+it, and today an API caller could raise a Proposal claiming human origin and skip the
+evidence requirement. That is not currently exploitable — every path through the API *is* a human —
+but it stops being safe the moment an agent has an API credential. The fix belongs with the agent
+runtime, which is where the distinction becomes real.
+
+**Level 2 execution is synchronous and in-request.** Approving and executing are separate endpoints,
+which is what makes the binding checkable, but execution still runs inside the approver's request.
+A queued executor is the natural next step and changes nothing about the model — the ApprovalRecord
+already carries everything needed to run it later, which is why approval and execution were split.
+
+
 **Evidence has a table and no way to create one.** Migration 0009 creates `evidence` with its
 invariants — BR-E-04 structurally (a composite foreign key to the Event in the same organization),
 BR-E-05 and BR-E-14 as a check constraint (verbatim `excerpt` or a `claim_summary`, exactly one),
@@ -194,6 +220,20 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 `test_an_archived_team_can_still_be_given_new_work_today` so that changing it is visible.
 
 ### Resolved
+
+**Nullable JSONB columns compared as JSON `null`, not SQL NULL (2026-09-12, found in Checkpoint
+7).** SQLAlchemy renders a Python `None` into a JSONB column as the JSON value `null` by default, so
+a check constraint written as `edits IS NULL` was false for a row that looked empty in every query.
+`approval_edits_accompany_an_edited_decision` fired on ordinary approvals. Fixed with
+`JSONB(none_as_null=True)` on every nullable JSONB column in the Intelligence models. The class of
+bug is worth remembering: the schema and the ORM disagreed about what emptiness meant, and nothing
+surfaced it until a constraint did.
+
+**Evidence silently dropped a `claim_summary` supplied with a text quote (2026-09-12, found in
+Checkpoint 7).** The service narrowed to the locator's kind and discarded the other half, so a
+caller sending both stored something other than what they sent. Now refused by the request schema
+with the rule named. Storing a quietly different thing from what was asked for is the same class of
+defect as an executor dropping an argument, which is what ADR-0041 exists to prevent.
 
 **Attachment authorization could be bypassed for a restricted Event (2026-09-12, found in
 Checkpoint 6).** `AttachmentService` loaded the Event through `repository.get_event`, which filters
@@ -283,6 +323,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 5 | Frontend (Work surfaces), generated client, L5 component tests, L6 journeys 1/1a/1b/4, Identity read API | ✅ complete · 334 backend + 26 component + 5 journeys |
 | 5.1 | Identity & Organization write side: domain, repositories, services, REST API; W-11 reference validation; ADR-0035/0036/0037; AuthProvider tests | ✅ complete · 429 backend + 38 frontend |
 | 6 | Signal/Capture: Event, EventParticipant, EventAttachment, Evidence foundation; capture API; ObjectStore port; ADR-0038/0039 | ✅ complete · 552 backend + 38 frontend |
+| 7 | Evidence, Commitment, Proposal + ApprovalRecord, Tool Gateway; ADR-0040/0041/0042 | ✅ complete · 748 backend + 38 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

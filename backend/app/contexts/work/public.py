@@ -68,6 +68,7 @@ from app.contexts.work.queries import (
     list_projects,
     list_work,
 )
+from app.contexts.work.references import assert_work_exists
 from app.contexts.work.services import (
     AssignmentService,
     DependencyService,
@@ -80,6 +81,7 @@ from app.platform.errors import DomainRuleViolation, EntityNotFound
 from app.platform.partial import UNSET
 
 __all__ = [
+    "assert_work_exists",
     "UNSET",
     "AssignWork",
     "AssignmentRole",

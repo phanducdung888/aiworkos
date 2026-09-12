@@ -16,6 +16,7 @@ from app.contexts.signal.domain import (
     ParticipantRole,
     Sensitivity,
 )
+from app.contexts.signal.evidence import AttachmentLocator, TextLocator
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -67,3 +68,29 @@ class CompleteAttachment:
 class RequestAttachmentContent:
     event_id: uuid.UUID
     attachment_id: uuid.UUID
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CreateEvidence:
+    """A citation. Exactly one of `excerpt` or `claim_summary`, decided by the locator's kind."""
+
+    event_id: uuid.UUID
+    target_type: str
+    target_id: uuid.UUID
+    assertion: str
+    #: A text span or an attachment reference. Which one it is decides which half of BR-E-05/BR-E-14
+    #: applies, so the caller states it rather than the service guessing from what was filled in.
+    locator: TextLocator | AttachmentLocator
+    excerpt: str | None = None
+    claim_summary: str | None = None
+    confidence: int = 0
+    produced_by_type: str = "person"
+    produced_by_id: uuid.UUID | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class SupersedeEvidence:
+    """BR-E-06. The correction is a new row; this points the old one at it."""
+
+    evidence_id: uuid.UUID
+    replacement: CreateEvidence

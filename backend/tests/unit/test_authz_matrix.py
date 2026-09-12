@@ -69,6 +69,8 @@ def test_viewer_and_auditor_never_receive_write_grants() -> None:
         Action.MANAGE_MEMBERS,
         Action.MANAGE_ROLES,
         Action.ATTACH,
+        Action.APPROVE,
+        Action.SUPERSEDE,
     }
     for (resource, action), cell in MATRIX.items():
         if action not in write_actions:

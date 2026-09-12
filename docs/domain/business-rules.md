@@ -256,6 +256,9 @@ worker, not by a model, and they exist regardless of whether AI is enabled.
 | BR-PR-06 | Edit-and-approve produces an ApprovalRecord whose `approved_action` is the edited action, with the diff retained. The edit is the signal that matters most for evaluation. | INV |
 | BR-PR-07 | A Proposal not reviewed within the proposal window (default 14 days) expires. Expiry is a negative signal for evaluation. | POL |
 | BR-PR-08 | The complete chain Event → Evidence → AIInteraction → Proposal → ApprovalRecord → mutation → audit entry must be traversable in both directions for every AI-originated record (Decision Pack Rule 3). | INV |
+| BR-PR-09 | The approved action is bound by a canonical hash (ADR-0041): JSON with sorted keys, no insignificant whitespace, UUIDs and dates as strings, digested with SHA-256. The Tool Gateway recomputes it at execution and refuses any mismatch, so an approval can never execute an action other than the one approved. Revising a Proposal produces a new action and a new hash, which is why a modified action requires a new approval by construction. | INV |
+| BR-PR-10 | Execution happens exactly once per ApprovalRecord. The record is claimed by a conditional update from `pending`, so a retried execute finds it spent and is refused rather than running the mutation twice. A failed execution rolls the claim back with the mutation, leaving the approval usable. | INV |
+| BR-PR-11 | The Tool Gateway executes only registered tools (ADR-0042). Each entry maps one name and version to one existing application service; there is no generic executor, no field-path applier and no SQL. Deletion, cancellation, membership, roles and outbound messaging have no entry at all (BR-AI-06, BR-AI-23, BR-AI-24), so a Proposal naming one is refused when it is created. | INV |
 
 ## 11a. Reporting and rollup rules
 

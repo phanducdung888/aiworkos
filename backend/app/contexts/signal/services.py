@@ -24,9 +24,11 @@ from app.contexts.signal import authorization, queries, repository
 from app.contexts.signal.commands import (
     CaptureEvent,
     CompleteAttachment,
+    CreateEvidence,
     ParticipantInput,
     RequestAttachmentContent,
     StartAttachment,
+    SupersedeEvidence,
 )
 from app.contexts.signal.domain import (
     AttachmentStatus,
@@ -40,7 +42,16 @@ from app.contexts.signal.domain import (
     validate_capture,
     validate_participant,
 )
-from app.contexts.signal.models import Event, EventAttachment, EventParticipant
+from app.contexts.signal.evidence import (
+    AttachmentLocator,
+    ProducedBy,
+    assert_not_already_superseded,
+    assert_supersedes_a_different_row,
+    validate_attachment_evidence,
+    validate_confidence,
+    validate_text_evidence,
+)
+from app.contexts.signal.models import Event, EventAttachment, EventParticipant, Evidence
 from app.platform.actor import Actor
 from app.platform.audit import record_audit
 from app.platform.authz import Action, Decision, Principal, Relation, ResourceType, authorize
@@ -112,10 +123,19 @@ class _SignalService:
         relations: frozenset[Relation],
         resource_id: uuid.UUID | None = None,
     ) -> Decision:
+        return self._authorize_resource(action, ResourceType.EVENT, relations, resource_id)
+
+    def _authorize_resource(
+        self,
+        action: Action,
+        resource_type: ResourceType,
+        relations: frozenset[Relation],
+        resource_id: uuid.UUID | None = None,
+    ) -> Decision:
         return authorize(
             self._ctx.principal,
             action,
-            authorization.ref(ResourceType.EVENT, self._org_id, relations, resource_id),
+            authorization.ref(resource_type, self._org_id, relations, resource_id),
         )
 
     def _audit(
@@ -491,6 +511,7 @@ class AttachmentService(_SignalService):
 
 __all__ = [
     "AttachmentContent",
+    "EvidenceService",
     "AttachmentService",
     "AttachmentTicket",
     "CaptureResult",
@@ -498,3 +519,168 @@ __all__ = [
     "EventType",
     "ServiceContext",
 ]
+
+
+class EvidenceService(_SignalService):
+    """Creating and superseding citations.
+
+    Every method loads the Event through the read-filtered path, so citing an Event requires being
+    able to read it — a `restricted` Event cannot be quoted into visibility by somebody who was
+    never party to it (BR-E-08).
+    """
+
+    def create(self, command: CreateEvidence) -> Evidence:
+        event = self._load_event(command.event_id)
+        decision = self._authorize_resource(
+            Action.CREATE,
+            ResourceType.EVIDENCE,
+            authorization.event_relations(event, actor_person_id=self._actor_person_id),
+        )
+        evidence = self._insert(event, command, decision=decision)
+        self._emit_evidence("EvidenceCreated", evidence)
+        return evidence
+
+    def supersede(self, command: SupersedeEvidence) -> Evidence:
+        """BR-E-06: a correction is a new row, and the old one points forward to it.
+
+        The order matters. The replacement is written first, so the forward pointer never names a
+        row that does not exist — if the replacement is refused, nothing has been touched and the
+        original still reads as current.
+        """
+        original = repository.get_evidence(
+            self._session, org_id=self._org_id, evidence_id=command.evidence_id
+        )
+        if original is None:
+            raise EntityNotFound("evidence", command.evidence_id)
+        assert_not_already_superseded(original.superseded_by_id)
+
+        event = self._load_event(command.replacement.event_id)
+        decision = self._authorize_resource(
+            Action.SUPERSEDE,
+            ResourceType.EVIDENCE,
+            self._evidence_relations(original),
+            original.id,
+        )
+        replacement = self._insert(event, command.replacement, decision=decision)
+        assert_supersedes_a_different_row(original.id, replacement.id)
+        repository.supersede_evidence(
+            self._session,
+            org_id=self._org_id,
+            evidence_id=original.id,
+            superseded_by_id=replacement.id,
+        )
+        self._audit(
+            action=Action.SUPERSEDE,
+            resource_type=ResourceType.EVIDENCE,
+            resource_id=original.id,
+            before={"superseded_by_id": None},
+            after={"superseded_by_id": str(replacement.id)},
+            decision=decision,
+        )
+        self._emit_evidence("EvidenceSuperseded", replacement)
+        return replacement
+
+    # ------------------------------------------------------------------ internals
+
+    def _insert(
+        self, event: Event, command: CreateEvidence, *, decision: Decision
+    ) -> Evidence:
+        validate_confidence(command.confidence)
+        if isinstance(command.locator, AttachmentLocator):
+            validate_attachment_evidence(
+                claim_summary=command.claim_summary,
+                attachment_ids=frozenset(
+                    row.id
+                    for row in repository.attachments_for(
+                        self._session, org_id=self._org_id, event_id=event.id
+                    )
+                ),
+                locator=command.locator,
+            )
+            excerpt, claim_summary = None, command.claim_summary
+        else:
+            if command.excerpt is None:
+                raise DomainRuleViolation("BR-E-05", "text evidence requires an excerpt")
+            validate_text_evidence(
+                body_text=event.body_text, locator=command.locator, excerpt=command.excerpt
+            )
+            excerpt, claim_summary = command.excerpt, None
+
+        evidence = repository.insert_evidence(
+            self._session,
+            org_id=self._org_id,
+            event_id=event.id,
+            locator=command.locator.as_json(),
+            excerpt=excerpt,
+            claim_summary=claim_summary,
+            target_type=command.target_type,
+            target_id=command.target_id,
+            assertion=command.assertion,
+            confidence=command.confidence,
+            produced_by_type=command.produced_by_type,
+            # Defaults to the acting person. An AI-produced citation names its interaction instead,
+            # which is a field the extraction checkpoint fills rather than this one.
+            produced_by_id=command.produced_by_id or self._actor_person_id,
+        )
+        self._audit(
+            action=Action.CREATE,
+            resource_type=ResourceType.EVIDENCE,
+            resource_id=evidence.id,
+            before=None,
+            after=_evidence_snapshot(evidence),
+            decision=decision,
+        )
+        return evidence
+
+    def _evidence_relations(self, evidence: Evidence) -> frozenset[Relation]:
+        """A member reaches Evidence they produced themselves.
+
+        Produced-by is the relation, not the cited Event: the person who wrote the citation is the
+        one with standing to correct it, and being able to read an Event is not standing to rewrite
+        somebody else's reading of it.
+        """
+        if (
+            evidence.produced_by_type == ProducedBy.PERSON.value
+            and evidence.produced_by_id is not None
+            and evidence.produced_by_id == self._actor_person_id
+        ):
+            return frozenset({Relation.PERSONAL})
+        return frozenset()
+
+    def _emit_evidence(self, event_type: str, evidence: Evidence) -> None:
+        append_domain_event(
+            self._session,
+            org_id=self._org_id,
+            type=event_type,
+            aggregate_type="evidence",
+            aggregate_id=evidence.id,
+            payload={
+                "evidence_id": str(evidence.id),
+                "event_id": str(evidence.event_id),
+                "target_type": evidence.target_type,
+                "target_id": str(evidence.target_id),
+                "assertion": evidence.assertion,
+            },
+            actor=self._ctx.actor,
+        )
+
+
+def _evidence_snapshot(evidence: Evidence) -> dict[str, Any]:
+    """What audit records about a citation.
+
+    The excerpt is included and the Event's `body_text` is not. An excerpt is a short span somebody
+    deliberately quoted — it is the citation itself, and an audit trail that omitted it could not
+    show what was claimed. Copying the whole Event body would be the thing `_snapshot` avoids.
+    """
+    return {
+        "id": str(evidence.id),
+        "event_id": str(evidence.event_id),
+        "locator": evidence.locator,
+        "excerpt": evidence.excerpt,
+        "claim_summary": evidence.claim_summary,
+        "target_type": evidence.target_type,
+        "target_id": str(evidence.target_id),
+        "assertion": evidence.assertion,
+        "confidence": evidence.confidence,
+        "produced_by_type": evidence.produced_by_type,
+    }

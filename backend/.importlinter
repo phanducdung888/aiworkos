@@ -21,16 +21,29 @@ modules =
     app.contexts.identity
     app.contexts.signal
     app.contexts.work
+    app.contexts.commitment
+    app.contexts.intelligence
 # ADR-0001 forbids reaching into another context, not talking to one. A context's `public` module
 # is the published interface and is the one edge that is allowed; everything behind it stays
 # unreachable. Listing the exception here rather than relaxing the contract keeps the difference
 # between "imports the interface" and "imports the internals" a thing CI can still tell apart.
 ignore_imports =
+# ADR-0040. Contexts are ordered and every edge runs down the order, through `public` only:
+#
+#     identity  ->  signal  ->  work  ->  commitment  ->  intelligence
+#
+# Identity depends on nothing. Intelligence has four edges because executing an approved Proposal is
+# precisely the act of reaching across contexts, so the reaching is concentrated in one reviewable
+# place rather than spread wherever somebody found it convenient.
     app.contexts.work.* -> app.contexts.identity.public
-# Signal resolves participants to people, so it asks Identity whether a Person exists — through the
-# same published interface and the same one-way direction. Identity does not know Signal exists, and
-# Signal does not know the Work Core exists: capture is upstream of both.
     app.contexts.signal.* -> app.contexts.identity.public
+    app.contexts.commitment.* -> app.contexts.identity.public
+    app.contexts.commitment.* -> app.contexts.signal.public
+    app.contexts.commitment.* -> app.contexts.work.public
+    app.contexts.intelligence.* -> app.contexts.identity.public
+    app.contexts.intelligence.* -> app.contexts.signal.public
+    app.contexts.intelligence.* -> app.contexts.work.public
+    app.contexts.intelligence.* -> app.contexts.commitment.public
 
 [importlinter:contract:api-purity]
 name = Routers never touch the database or the policy engine directly

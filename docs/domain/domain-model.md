@@ -287,6 +287,12 @@ evaporate.
      └── withdrawn                 └── cancelled
 ```
 
+**Implemented in Checkpoint 7** (migration 0010, `app/contexts/commitment`). Two fields were added:
+`previous_due_date`, so BR-C-07's retained date is readable on the row rather than only
+reconstructable from audit, and `created_by_person_id` for the capturer. A Commitment is not a
+WorkAssignment and is not merged into one — `fulfilling_work_id` links them, and completing the Work
+proposes fulfilment without forcing it (BR-C-08).
+
 `captured` means the AI heard it and nobody has confirmed. `disputed` is a first-class outcome: the
 named committer says they did not promise that. Disputed commitments are retained with their evidence
 because disputes are themselves signal (BR-C-05).
@@ -450,6 +456,17 @@ The reviewable form of an AI write when autonomy policy is `propose`.
   target_id nullable, summary, confidence, status: pending|accepted|accepted_with_edits|rejected|
   expired|superseded, reviewed_by, reviewed_at, rejection_reason)`
 - **ProposedChange**: `(proposal_id, field_path, current_value, proposed_value)`
+
+**Implemented in Checkpoint 7** (migration 0010, `app/contexts/intelligence`). The stored shape adds
+what the approval binding needs and the table above does not name: `action` and `action_hash` (the
+fully resolved tool call and its canonical digest, ADR-0041), `routed_to_person_id` (BR-PR-04 — every
+Proposal has a defined recipient), `supersedes_proposal_id` for revision, and `expires_at` for the
+14-day window. `ai_interaction_id` is absent because AIInteraction does not exist yet; `raised_by_person_id`
+carries attribution until it does.
+
+`ProposedChange` is presentation of the action, never the thing executed. ADR-0042 refuses a generic
+field-path applier, so nothing reads these rows to perform a mutation — if anything did, this table
+would be an arbitrary write surface wearing a reviewer-friendly name.
 
 ### ApprovalRecord
 Required by PQ-3 Level 2. An immutable record that binds a human's authority to an AI-executed

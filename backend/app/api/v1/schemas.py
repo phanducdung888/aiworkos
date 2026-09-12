@@ -16,8 +16,9 @@ import datetime as dt
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.contexts.commitment.public import CommitmentStatus, DuePrecision
 from app.contexts.identity.public import (
     MembershipStatus,
     PersonStatus,
@@ -25,8 +26,12 @@ from app.contexts.identity.public import (
     TeamRole,
     UnitStatus,
 )
+from app.contexts.intelligence.public import Decision as ApprovalDecision
+from app.contexts.intelligence.public import ProposalKind
 from app.contexts.signal.public import (
+    Assertion,
     EventType,
+    EvidenceTarget,
     ParticipantRole,
     Sensitivity,
 )
@@ -807,3 +812,284 @@ class AttachmentContentResource(BaseModel):
     attachment: EventAttachmentResource
     download_url: str
     expires_at: dt.datetime
+
+
+# --------------------------------------------------------------------------- evidence
+
+
+class TextLocatorModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    char_start: int = Field(ge=0)
+    char_end: int = Field(gt=0)
+
+
+class AttachmentLocatorModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    attachment_id: uuid.UUID
+
+
+class EvidenceCreate(BaseModel):
+    """A citation.
+
+    The locator decides which half of the model applies: a text span requires a verbatim `excerpt`
+    checked against the Event (BR-E-05), an attachment requires a `claim_summary` because a PDF has
+    no span to quote (BR-E-14). Supplying both, or neither, is refused.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: uuid.UUID
+    target_type: EvidenceTarget
+    target_id: uuid.UUID
+    assertion: Assertion
+    text_locator: TextLocatorModel | None = None
+    attachment_locator: AttachmentLocatorModel | None = None
+    excerpt: CleanText | None = None
+    claim_summary: CleanText | None = None
+    confidence: int = Field(default=0, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def the_locator_decides_the_claim(self) -> EvidenceCreate:
+        """One locator, and the matching half of the claim.
+
+        A mismatched pair is refused rather than silently narrowed. Dropping a `claim_summary` a
+        caller supplied alongside a text quote would store something other than what was sent, and
+        a citation the caller cannot predict the shape of is not a citation they can rely on.
+        """
+        if (self.text_locator is None) == (self.attachment_locator is None):
+            raise ValueError("exactly one of text_locator or attachment_locator is required")
+        if self.text_locator is not None:
+            if self.excerpt is None:
+                raise ValueError("a text locator requires a verbatim excerpt (BR-E-05)")
+            if self.claim_summary is not None:
+                raise ValueError("a text citation quotes; it does not summarise (BR-E-05)")
+        else:
+            if self.claim_summary is None:
+                raise ValueError("an attachment citation requires a claim summary (BR-E-14)")
+            if self.excerpt is not None:
+                raise ValueError("an attachment has no span to quote (BR-E-14)")
+        return self
+
+
+class EvidenceResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    event_id: uuid.UUID
+    locator: dict[str, Any]
+    excerpt: str | None
+    claim_summary: str | None
+    target_type: str
+    target_id: uuid.UUID
+    assertion: str
+    confidence: int
+    produced_by_type: str
+    produced_by_id: uuid.UUID | None
+    #: BR-E-06. A superseded citation is retained and visible; "we used to believe this" stays
+    #: answerable, which is the point of superseding rather than editing.
+    superseded_by_id: uuid.UUID | None
+    created_at: dt.datetime
+    version: int
+
+
+class EvidenceList(BaseModel):
+    items: list[EvidenceResource]
+
+
+# --------------------------------------------------------------------------- commitment
+
+
+class CommitmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    statement: CleanText = Field(min_length=1)
+    committed_by_person_id: uuid.UUID
+    committed_to_person_id: uuid.UUID | None = None
+    committed_to_team_id: uuid.UUID | None = None
+    due_date: dt.date | None = None
+    due_precision: DuePrecision = DuePrecision.VAGUE
+    fulfilling_work_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
+    origin_event_id: uuid.UUID | None = None
+    confidence: int = Field(default=0, ge=0, le=100)
+
+
+class CommitmentUpdate(BaseModel):
+    """The due date is absent on purpose: moving a deadline is a renegotiation (BR-C-07)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    statement: CleanText | None = Field(default=None, min_length=1)
+    due_precision: DuePrecision | None = None
+    fulfilling_work_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
+
+
+class CommitmentStatusChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: CommitmentStatus
+    #: Required when renegotiating (BR-C-07), meaningless otherwise.
+    new_due_date: dt.date | None = None
+
+
+class CommitmentResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    statement: str
+    committed_by_person_id: uuid.UUID
+    committed_to_person_id: uuid.UUID | None
+    committed_to_team_id: uuid.UUID | None
+    due_date: dt.date | None
+    due_precision: str
+    status: str
+    fulfilling_work_id: uuid.UUID | None
+    project_id: uuid.UUID | None
+    origin_event_id: uuid.UUID | None
+    confidence: int
+    acknowledged_at: dt.datetime | None
+    previous_due_date: dt.date | None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+    version: int
+
+
+class CommitmentList(BaseModel):
+    items: list[CommitmentResource]
+    next_cursor: str | None = None
+
+
+# --------------------------------------------------------------------------- proposal
+
+
+class ProposedChangeModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_path: CleanText = Field(min_length=1)
+    current_value: Any = None
+    proposed_value: Any = None
+
+
+class ProposalCreate(BaseModel):
+    """A reviewable mutation that has not happened.
+
+    `tool` and `arguments` are the action: fully resolved, nothing left to infer at execution. The
+    tool must exist in the Gateway's registry and the arguments must fit it, checked now so that a
+    Proposal nobody could execute never reaches a reviewer (ADR-0042).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: ProposalKind
+    target_type: CleanText = Field(min_length=1)
+    summary: CleanText = Field(min_length=1)
+    tool: CleanText = Field(min_length=1)
+    tool_version: CleanText = Field(min_length=1)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    routed_to_person_id: uuid.UUID
+    target_id: uuid.UUID | None = None
+    reason: CleanText | None = None
+    confidence: int = Field(default=0, ge=0, le=100)
+    source_event_id: uuid.UUID | None = None
+    evidence_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+    changes: list[ProposedChangeModel] = Field(default_factory=list, max_length=100)
+
+
+class ProposalRevise(BaseModel):
+    """BR-PR-02. Produces a new Proposal; the original becomes `superseded`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: CleanText | None = None
+    reason: CleanText | None = None
+    arguments: dict[str, Any] | None = None
+    changes: list[ProposedChangeModel] | None = None
+
+
+class ProposalDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: ApprovalDecision
+    #: BR-PR-06. Present only for `approved_with_edits`; these become the approved action, and
+    #: therefore what the hash is taken over.
+    edited_arguments: dict[str, Any] | None = None
+    rejection_reason: CleanText | None = None
+
+
+class ProposalResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    kind: str
+    target_type: str
+    target_id: uuid.UUID | None
+    summary: str
+    reason: str | None
+    confidence: int
+    action: dict[str, Any]
+    #: The digest execution matches against (ADR-0041). Published so a client can show that what it
+    #: is approving is what it was shown.
+    action_hash: str
+    source_event_id: uuid.UUID | None
+    supersedes_proposal_id: uuid.UUID | None
+    raised_by_person_id: uuid.UUID | None
+    routed_to_person_id: uuid.UUID
+    status: str
+    reviewed_by_person_id: uuid.UUID | None
+    reviewed_at: dt.datetime | None
+    rejection_reason: str | None
+    expires_at: dt.datetime
+    created_at: dt.datetime
+    version: int
+
+
+class ProposedChangeResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    field_path: str
+    current_value: dict[str, Any] | None
+    proposed_value: dict[str, Any] | None
+
+
+class ProposalDetail(ProposalResource):
+    changes: list[ProposedChangeResource] = Field(default_factory=list)
+    evidence_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class ProposalList(BaseModel):
+    items: list[ProposalResource]
+    next_cursor: str | None = None
+
+
+class ApprovalRecordResource(BaseModel):
+    """Immutable except for the execution outcome, which is written once."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    proposal_id: uuid.UUID
+    approver_person_id: uuid.UUID
+    decision: str
+    approved_action: dict[str, Any]
+    approved_action_hash: str
+    edits: dict[str, Any] | None
+    decided_at: dt.datetime
+    execution_status: str
+    resulting_entity_type: str | None
+    resulting_entity_id: uuid.UUID | None
+    executed_at: dt.datetime | None
+    execution_error: str | None
+    version: int
+
+
+class ExecutionResult(BaseModel):
+    approval: ApprovalRecordResource
+    entity_type: str
+    entity_id: uuid.UUID

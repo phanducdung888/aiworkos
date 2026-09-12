@@ -132,29 +132,73 @@ def test_signal_reaches_identity_only_through_its_published_interface() -> None:
         )
 
 
-def test_the_cross_context_exception_list_stays_one_directional() -> None:
-    """Guards the configuration, not just the code.
+#: ADR-0040. The order facts flow: something is observed, somebody decides what to do about it,
+#: somebody promises it, and a proposal to change any of those is reviewed and executed last.
+CONTEXT_ORDER: tuple[str, ...] = (
+    "identity",
+    "signal",
+    "work",
+    "commitment",
+    "intelligence",
+)
 
-    The test above passes if nobody writes the import. This one fails if somebody makes the import
-    *permissible*, which is the change that would happen first and go unnoticed longest.
-    """
+
+def _declared_edges() -> list[tuple[str, str]]:
+    """Every cross-context exception in `.importlinter`, as (importer, imported)."""
     config = (BACKEND_ROOT / ".importlinter").read_text()
-    exceptions = [
-        line.strip()
-        for line in config.splitlines()
-        if "->" in line and not line.strip().startswith("#")
-    ]
-    # Every entry points at a `public` module and every arrow runs the same way: Identity is
-    # upstream of everything, Signal is upstream of the Work Core, and neither of them knows its
-    # consumers exist. A new entry belongs here only with an ADR; an `identity -> *` or a
-    # `work -> signal` entry is not a new exception, it is a different architecture.
-    assert exceptions == [
-        "app.contexts.work.* -> app.contexts.identity.public",
-        "app.contexts.signal.* -> app.contexts.identity.public",
-    ], (
-        f"the cross-context exception list changed to {exceptions}; every entry needs an ADR, and "
-        "an identity -> work entry needs a different architecture"
-    )
+    edges = []
+    for line in config.splitlines():
+        stripped = line.strip()
+        if "->" not in stripped or stripped.startswith("#"):
+            continue
+        source, _, target = stripped.partition("->")
+        edges.append((source.strip(), target.strip()))
+    return edges
+
+
+def test_context_dependencies_form_a_dag() -> None:
+    """Guards the configuration, not just the code (ADR-0040).
+
+    The test below this one passes if nobody writes a backwards import. This one fails if somebody
+    makes one *permissible*, which is the change that would happen first and go unnoticed longest.
+
+    The order is recomputed from the declaration rather than compared against a fixed list, so
+    adding a context means placing it in `CONTEXT_ORDER` — the moment the question is cheapest to
+    answer — instead of appending to a list of blessed strings nobody re-reads.
+    """
+    position = {name: index for index, name in enumerate(CONTEXT_ORDER)}
+
+    for source, target in _declared_edges():
+        assert source.startswith("app.contexts."), f"unexpected exception source: {source}"
+        importer = source.removeprefix("app.contexts.").split(".")[0]
+        assert target.endswith(".public"), (
+            f"{source} -> {target} does not go through a published interface; a context's "
+            "internals stay unreachable (ADR-0001)"
+        )
+        imported = target.removeprefix("app.contexts.").split(".")[0]
+
+        assert importer in position, f"{importer} is not placed in CONTEXT_ORDER"
+        assert imported in position, f"{imported} is not placed in CONTEXT_ORDER"
+        assert position[imported] < position[importer], (
+            f"{importer} -> {imported} runs against the context order "
+            f"{' -> '.join(CONTEXT_ORDER)}; that is not a new exception, it is a different "
+            "architecture (ADR-0040)"
+        )
+
+
+def test_every_declared_edge_is_actually_used() -> None:
+    """An exception nobody needs is permission nobody reviewed.
+
+    `.importlinter` does warn about an unused ignore, but a warning in a passing build is a thing
+    people stop reading. A dependency that was removed should have its exception removed with it.
+    """
+    for source, target in _declared_edges():
+        importer = source.removeprefix("app.contexts.").split(".")[0]
+        used = any(
+            target in _imports(module) or target.removesuffix(".public") in _imports(module)
+            for module in _modules(APP / "contexts" / importer)
+        )
+        assert used, f"{source} -> {target} is declared but nothing imports it"
 
 
 def test_contexts_do_not_import_the_web_framework() -> None:

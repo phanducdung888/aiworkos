@@ -68,6 +68,13 @@ def test_every_published_path_is_one_of_the_five_work_core_aggregates(
         # Signal/Capture. The capture surface and the attachment flow (ADR-0039); no connector
         # endpoints, because a channel adapter ingests through this same path rather than its own.
         "/api/v1/events",
+        # Evidence, Commitment and the Proposal/approval path (CP7). `/approvals` is separate from
+        # `/proposals` because approving and executing are separate acts (ADR-0041): the record is
+        # addressed on its own, once.
+        "/api/v1/evidence",
+        "/api/v1/commitments",
+        "/api/v1/proposals",
+        "/api/v1/approvals",
         "/health",
     )
     unexpected = [p for p in paths if not p.startswith(allowed_prefixes)]

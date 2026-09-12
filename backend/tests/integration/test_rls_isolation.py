@@ -63,6 +63,27 @@ SCOPED_QUERIES = {
     "evidence back to its event": (
         "SELECT count(*) FROM evidence v JOIN event e ON e.id = v.event_id"
     ),
+    # Commitment, Proposal and ApprovalRecord (CP7). A leaked `approval_record` is worse than a
+    # leaked row of business data: it is the record of who authorised what, which is the thing an
+    # auditor reads and the thing a forger would want to write.
+    "commitment": "SELECT count(*) FROM commitment",
+    "commitment statements": "SELECT count(*) FROM commitment WHERE statement IS NOT NULL",
+    "proposal": "SELECT count(*) FROM proposal",
+    "proposal actions": "SELECT count(*) FROM proposal WHERE action IS NOT NULL",
+    "proposal evidence": "SELECT count(*) FROM proposal_evidence",
+    "proposed change": "SELECT count(*) FROM proposed_change",
+    "approval record": "SELECT count(*) FROM approval_record",
+    "approved action hashes": (
+        "SELECT count(*) FROM approval_record WHERE approved_action_hash IS NOT NULL"
+    ),
+    # The provenance chain itself must not cross a tenant boundary at any hop (BR-PR-08).
+    "provenance chain traversal": (
+        "SELECT count(*) FROM approval_record a "
+        "JOIN proposal p ON p.id = a.proposal_id "
+        "JOIN proposal_evidence pe ON pe.proposal_id = p.id "
+        "JOIN evidence v ON v.id = pe.evidence_id "
+        "JOIN event e ON e.id = v.event_id"
+    ),
     # A join is where a forgotten policy hides: every table in the chain must carry its own.
     "identity join traversal": (
         "SELECT count(*) FROM external_identity e "

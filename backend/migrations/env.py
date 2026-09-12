@@ -11,9 +11,12 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import app.contexts.commitment.models  # noqa: F401
+
 # Importing the ORM modules registers their tables on the shared metadata. Autogenerate and the
 # schema-consistency test both depend on this being complete.
 import app.contexts.identity.models  # noqa: F401
+import app.contexts.intelligence.models  # noqa: F401
 import app.contexts.signal.models  # noqa: F401
 import app.contexts.work.models  # noqa: F401
 from app.platform.config import get_settings

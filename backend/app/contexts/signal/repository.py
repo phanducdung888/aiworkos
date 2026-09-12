@@ -278,3 +278,31 @@ def supersede_evidence(
         .where(Evidence.org_id == org_id, Evidence.id == evidence_id)
         .values(superseded_by_id=superseded_by_id)
     )
+
+
+def get_evidence(
+    session: Session, *, org_id: uuid.UUID, evidence_id: uuid.UUID
+) -> Evidence | None:
+    return session.scalars(
+        select(Evidence).where(Evidence.org_id == org_id, Evidence.id == evidence_id)
+    ).one_or_none()
+
+
+def evidence_for_target(
+    session: Session, *, org_id: uuid.UUID, target_type: str, target_id: uuid.UUID
+) -> Sequence[Evidence]:
+    """Every citation for one entity, superseded rows included.
+
+    A superseded citation is not deleted and not hidden: BR-E-06 keeps it so that "we used to
+    believe this because of that" stays answerable, which is the whole point of superseding rather
+    than editing.
+    """
+    return session.scalars(
+        select(Evidence)
+        .where(
+            Evidence.org_id == org_id,
+            Evidence.target_type == target_type,
+            Evidence.target_id == target_id,
+        )
+        .order_by(Evidence.created_at)
+    ).all()

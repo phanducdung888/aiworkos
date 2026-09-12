@@ -13,9 +13,11 @@ and nothing may create Evidence until extraction defines who produces it and und
 from app.contexts.signal.commands import (
     CaptureEvent,
     CompleteAttachment,
+    CreateEvidence,
     ParticipantInput,
     RequestAttachmentContent,
     StartAttachment,
+    SupersedeEvidence,
 )
 from app.contexts.signal.domain import (
     CAPTURABLE_TYPES,
@@ -28,20 +30,47 @@ from app.contexts.signal.domain import (
     may_extract,
     visible_to,
 )
-from app.contexts.signal.models import Event, EventAttachment, EventParticipant
+from app.contexts.signal.evidence import (
+    Assertion,
+    AttachmentLocator,
+    EvidenceTarget,
+    ProducedBy,
+    TextLocator,
+)
+from app.contexts.signal.models import Event, EventAttachment, EventParticipant, Evidence
 from app.contexts.signal.queries import EventFilter, EventPage, list_events
 from app.contexts.signal.queries import get_event as read_event
-from app.contexts.signal.repository import attachments_for, participants_for
+from app.contexts.signal.references import assert_event_exists, assert_evidence_exists
+from app.contexts.signal.repository import (
+    attachments_for,
+    evidence_for_target,
+    get_evidence,
+    participants_for,
+)
 from app.contexts.signal.services import (
     AttachmentContent,
     AttachmentService,
     AttachmentTicket,
     CaptureResult,
     CaptureService,
+    EvidenceService,
     ServiceContext,
 )
 
 __all__ = [
+    "get_evidence",
+    "evidence_for_target",
+    "SupersedeEvidence",
+    "EvidenceService",
+    "Evidence",
+    "CreateEvidence",
+    "Assertion",
+    "AttachmentLocator",
+    "EvidenceTarget",
+    "ProducedBy",
+    "TextLocator",
+    "assert_event_exists",
+    "assert_evidence_exists",
     "CAPTURABLE_TYPES",
     "AttachmentContent",
     "AttachmentService",

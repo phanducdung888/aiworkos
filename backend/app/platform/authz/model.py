@@ -36,6 +36,9 @@ class ResourceType(enum.StrEnum):
     WORK_ASSIGNMENT = "work_assignment"
     DEPENDENCY = "dependency"
     EVENT = "event"
+    EVIDENCE = "evidence"
+    COMMITMENT = "commitment"
+    PROPOSAL = "proposal"
     AUDIT_ENTRY = "audit_entry"
 
 
@@ -54,6 +57,11 @@ class Action(enum.StrEnum):
     #: Attaching a file to an Event. Not a resource of its own: ADR-0039 makes attachment
     #: authorization the Event's authorization, so this action is declared on EVENT.
     ATTACH = "attach"
+    #: Deciding a Proposal. Separate from CHANGE_STATE because approving is not editing a
+    #: status field — it delegates the approver's own authority to an execution (BR-PR-05).
+    APPROVE = "approve"
+    #: BR-E-06. Evidence is never edited; a correction is a new row the old one points to.
+    SUPERSEDE = "supersede"
 
 
 class Grant(enum.StrEnum):

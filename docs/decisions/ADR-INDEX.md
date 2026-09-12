@@ -54,6 +54,9 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0037 | `ExternalIdentity` is its own authorization resource, and confirmation is not self-service | accepted | W-12, PQ-7 |
 | 0038 | Event immutability is a column-scoped database trigger, not a convention | accepted | domain §Event, BR-E-01 |
 | 0039 | Attachment bytes never pass through the API; an ObjectStore port fronts MinIO | accepted | arch §storage, BR-E-14 |
+| 0040 | Context dependency order is a DAG; Intelligence is the only context that reaches across | accepted | arch §4, ADR-0001 |
+| 0041 | Approval binds to a canonical action hash; execution recomputes it | accepted | BR-AI-18, BR-PR-01 |
+| 0042 | The Tool Gateway is a registry of named application-service calls, not a SQL surface | accepted | ai §1, BR-AI-16 |
 
 ---
 
@@ -655,3 +658,121 @@ gain, since authorization happens before the URL is issued either way); trusting
 and checksum (makes the integrity fields decorative); a separate `ATTACHMENT` authorization resource
 (invites the two permissions to drift apart, which is exactly the bug this design makes
 unrepresentable).
+
+### ADR-0040 — Context dependency order is a DAG, and Intelligence is the only context that reaches across
+
+**Context.** Checkpoints 5.1 and 6 each added one cross-context edge and each was easy to justify in
+isolation. Checkpoint 7 adds Commitment and Intelligence, and Intelligence has to call Work Core to
+create Work, Commitment to create a promise, Signal to read the Evidence that justifies both, and
+Identity to check that the person named exists. That is four edges from one context, which is either
+the beginning of a dependency graph nobody can hold in their head or a shape that needs stating.
+
+**Decision.** Contexts are ordered, and every edge runs down the order, through `public` only:
+
+```
+identity  →  signal  →  work  →  commitment  →  intelligence
+```
+
+Each context may import the published interface of any context to its left and none to its right.
+Identity depends on nothing. Intelligence is the only context with several edges, and that is not an
+exception to the rule but what the rule is for: *executing an approved Proposal is precisely the act
+of reaching across contexts*, so the reaching is concentrated in one place where it can be reviewed,
+rather than distributed as a convenience wherever somebody needed it.
+
+The order is not arbitrary. It is the direction facts flow: something is observed (Signal), somebody
+decides what to do about it (Work), somebody promises it (Commitment), and a proposal to change any
+of those is reviewed and executed last (Intelligence). A Commitment references Work because a promise
+can be fulfilled by work; Work does not reference Commitment, because work exists whether or not
+anybody promised it.
+
+**Consequences.** `.importlinter` lists every edge explicitly and `test_context_dependencies_form_a_dag`
+recomputes the order from the configuration and fails on any edge that runs the wrong way — so adding
+a backwards edge fails the build rather than merely being discouraged. A new context has to be placed
+in the order when it is created, which is the moment the question is cheapest to answer.
+
+The cost is real: Work Core cannot ask "is there a Commitment fulfilled by this Work". That query
+belongs to a read model or to Intelligence, and the day it is genuinely needed is the day to build one
+rather than to reverse an edge. Rejected: a shared kernel holding cross-context types (becomes the
+place every context reaches into, which is the coupling with extra steps); events-only communication
+between contexts (the approved-execution path must be synchronous and transactional, because BR-PR-01
+requires the mutation and its ApprovalRecord to agree).
+
+### ADR-0041 — Approval binds to a canonical action hash, and execution recomputes it
+
+**Context.** BR-AI-18 requires that an approved mutation be *the exact action that was approved*, and
+BR-PR-02 requires a Proposal whose target changed to be re-presented rather than applied blindly. The
+failure being prevented is specific: a human reads "assign this to Mai, due Friday", approves it, and
+something between approval and execution — an edit, a race, a retry against a changed row, a bug —
+causes a different mutation to run under that approval. The approval is real, the authority is real,
+and the action is not the one anybody agreed to.
+
+Storing the approved action as JSON and comparing objects at execution time is the obvious approach and
+is not enough. Two JSON documents that differ only in key order or number formatting are the same
+action; two that differ in a nested value are not, and an equality check written by hand tends to
+compare the fields somebody remembered.
+
+**Decision.** Every Proposal carries an `action`: a tool name, a tool version and fully resolved
+arguments. Its canonical form is JSON serialised with sorted keys, no insignificant whitespace, and
+UUIDs and dates as strings; `action_hash` is the SHA-256 of that form. Approving writes an immutable
+ApprovalRecord holding `approved_action` and `approved_action_hash`.
+
+The Tool Gateway recomputes the hash from the approved action at execution time and refuses to run
+unless it matches the record. Two independent things therefore have to agree: the bytes that were
+approved, and the digest taken when they were approved.
+
+Revising a Proposal produces a new action and a new hash, which cannot match any existing
+ApprovalRecord — so a modified action requires a new approval by construction rather than by a check
+somebody has to remember to write. Approving with edits is the same mechanism: the ApprovalRecord holds
+the *edited* action as approved, the diff is retained (BR-PR-06), and the hash is of what the approver
+actually agreed to, never of what was originally proposed.
+
+**Consequences.** "Approval cannot be reused for a different action" becomes a property of the data
+rather than a rule in a service. Execution is idempotent at the record: `execution_status` moves from
+`pending` exactly once under a conditional update, so a retried execute finds the record already
+executed and returns the original outcome instead of running the mutation twice.
+
+The canonicalisation is now load-bearing and has its own tests: a change to how actions are serialised
+would silently invalidate every stored approval. That is the cost, and it is why the format is fixed
+here rather than left to whatever `json.dumps` does by default. Rejected: comparing the action objects
+field by field (compares what the author remembered); hashing the Proposal row (the row carries mutable
+status and review fields, so its digest would change for reasons that have nothing to do with the
+action).
+
+### ADR-0042 — The Tool Gateway is a registry of named application-service calls, not a SQL surface
+
+**Context.** BR-AI-16 says there is no code path by which AI mutates Work Core without an approved
+Proposal, and ADR-0002 says AI has no database access at all. Those are constraints on a component
+that does not exist yet — no LLM, no agent runtime — and the temptation at this checkpoint is to build
+an execution path general enough to be convenient later, which is how a generic "apply this change"
+executor gets written and how arbitrary mutation arrives through the back door.
+
+**Decision.** The Tool Gateway is a closed registry. Each entry maps a tool name and version to one
+function that calls exactly one existing application service, with a typed argument schema. There is no
+generic executor, no field-path applier, no SQL, and no way to name an operation the registry does not
+contain — an unknown tool is a refusal, not a fallback.
+
+Every tool is a *call into an existing service*, never a reimplementation. Creating Work through the
+Gateway runs the same `WorkService.create` a human request runs, so BR-W rules, reference validation
+(ADR-0035), audit and the outbox all happen because they already happen there. A tool that duplicated
+that logic would be a second implementation of the rules, drifting from the first.
+
+Execution is attributed to the approving Person (BR-AI-19), with `executed_via`, `proposal_id` and
+`approval_record_id` on the actor. The approver's own authority is what authorizes the mutation — the
+service authorizes normally, so approving never grants permission the approver lacks (BR-PR-05).
+
+The MVP registry holds only what Checkpoint 7 needs, and the operations BR-AI-06 and BR-AI-23 forbid
+have no entry at all. There is nothing to disable and no flag to get wrong: deletion, cancellation,
+membership, roles and outbound messaging are absent, and a Proposal naming one is refused at creation
+because the tool does not exist.
+
+**Consequences.** The set of things an approved Proposal can ever do is enumerable by reading one file,
+and `test_the_registry_contains_no_forbidden_operation` fails if a future entry names one. Adding a
+capability is deliberate: a registry entry, an argument schema, a matrix row if a new resource is
+involved, and a test.
+
+The limitation is that a Proposal can only ever express what some tool already does, so a genuinely new
+kind of change needs a code change rather than a cleverer payload. That is the intended trade: this
+boundary exists to be narrow, and a boundary that can express anything is not a boundary. Rejected: a
+generic field-path executor driven by `ProposedChange` rows (expressive enough to bypass any rule not
+independently enforced); letting the Gateway open its own transaction and write directly (the second
+mutation path ADR-0002 exists to prevent).

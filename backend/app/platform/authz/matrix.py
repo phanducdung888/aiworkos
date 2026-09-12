@@ -93,6 +93,14 @@ RESOURCE_ACTIONS: dict[ResourceType, frozenset[Action]] = {
     # processing status, participant resolution, retention — belong to pipelines that do not yet
     # exist. Declaring a permission nobody can exercise would be a guess about how they will work.
     R.EVENT: frozenset({A.CREATE, A.READ, A.LIST, A.ATTACH}),
+    R.EVIDENCE: frozenset({A.CREATE, A.READ, A.LIST, A.SUPERSEDE}),
+    # No DELETE and no plain UPDATE. A Commitment moves through BR-C-04's transitions and nothing
+    # else; `withdrawn`, `cancelled` and `disputed` are states, which is what BR-G-04 means by
+    # removal being a lifecycle rather than an operation.
+    R.COMMITMENT: frozenset({A.CREATE, A.READ, A.LIST, A.UPDATE, A.CHANGE_STATE}),
+    # APPROVE covers rejection too: both are the same act of deciding, and splitting them would
+    # invite a role that may reject but not approve, which is a veto rather than a review.
+    R.PROPOSAL: frozenset({A.CREATE, A.READ, A.LIST, A.UPDATE, A.APPROVE}),
 }
 
 MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
@@ -189,6 +197,38 @@ MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
     # change to their record of what happened, so a member reaches only their own captures
     # (ADR-0039 routes every attachment endpoint through the Event's own authorization).
     (R.EVENT, A.ATTACH):             row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
+    # ---------------------------------------------------------------- evidence
+    # Evidence is the citation layer: it says *why* the system believes something. Reading it has to
+    # be as wide as reading the thing it justifies, or a claim becomes unexplainable to the person
+    # it affects. Creating it is narrower, because asserting that an Event supports a claim is an
+    # assertion in its own right.
+    #                                 admin  dept  team  member viewer audit exec
+    (R.EVIDENCE, A.CREATE):          row(ORG,  ORG,  ORG,  ORG,   NO,    NO,   NO),
+    (R.EVIDENCE, A.READ):            row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    (R.EVIDENCE, A.LIST):            row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    # Superseding is a correction of the record, so it is not a member's to make on somebody else's
+    # citation — `PERSONAL` reaches the Evidence they produced themselves.
+    (R.EVIDENCE, A.SUPERSEDE):       row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
+    # ---------------------------------------------------------------- commitment
+    # BR-C-09 names who may change a Commitment's status: the committer, the recipient, or a lead in
+    # their management chain. `PERSONAL` carries the first two and the department and team grants
+    # carry the third; the service supplies which of them holds.
+    (R.COMMITMENT, A.CREATE):        row(ORG,  ORG,  ORG,  ORG,   NO,    NO,   NO),
+    (R.COMMITMENT, A.READ):          row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    (R.COMMITMENT, A.LIST):          row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    (R.COMMITMENT, A.UPDATE):        row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
+    (R.COMMITMENT, A.CHANGE_STATE):  row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
+    # ---------------------------------------------------------------- proposal
+    # BR-PR-04 routes a Proposal to the person with authority over its target, so the person who
+    # can approve is the person who could have made the change themselves. That is also why
+    # approving grants nothing (BR-PR-05): the Tool Gateway executes as the approver and the
+    # service authorizes them normally, so a grant here is permission to *decide*, not to act.
+    (R.PROPOSAL, A.CREATE):          row(ORG,  ORG,  ORG,  ORG,   NO,    NO,   NO),
+    (R.PROPOSAL, A.READ):            row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    (R.PROPOSAL, A.LIST):            row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    # Revising is the proposer tidying their own proposal before anybody decides it.
+    (R.PROPOSAL, A.UPDATE):          row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
+    (R.PROPOSAL, A.APPROVE):         row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
     (R.AUDIT_ENTRY, A.READ): row(ORG, NO, NO, NO, NO, ORG, NO),
     (R.AUDIT_ENTRY, A.LIST): row(ORG, NO, NO, NO, NO, ORG, NO),
 }
