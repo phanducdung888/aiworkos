@@ -1430,6 +1430,14 @@ filter rather than a bespoke `/commitments/{id}/provenance`.
 **Consequences.** Every hop is an endpoint that already existed, authorized by the decision that
 already governed it, and no column was added to hold a copy of something derivable.
 
+**`source` is not where the AI is recorded, and that is the same decision.** Work created from an
+approved Proposal carries `source = human`. `validate_work_creation` refuses `Source.AI` outright —
+AI-originated work exists as a Proposal until somebody approves it, and on approval the mutation is
+*the approver's act* (BR-AI-19), attributed to them. So `source` answers "was this typed, imported,
+or machine-generated without review", and the AI's involvement is answered by the chain above. It
+reads like a defect and is not one; `test_the_source_column_says_a_person_made_it_and_that_is_deliberate`
+exists so nobody "corrects" it into a second, contradictory record of the same fact.
+
 **A known artefact, deliberately left.** Evidence is created during analysis, before the entity it
 justifies exists, so `evidence.target_id` holds a placeholder UUID that points at nothing. Evidence
 is immutable except `superseded_by_id` (BR-E-06, trigger-enforced), so retargeting it after

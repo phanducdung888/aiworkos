@@ -24,6 +24,7 @@ import {
   useProposal,
   useProposals,
   useQueueApproval,
+  useWorkItem,
 } from '@/api/hooks'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { Field } from '@/components/Field'
@@ -227,11 +228,6 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
  */
 function Outcome({ proposalId }: { proposalId: string }) {
   const approval = useApprovalFor(proposalId, true)
-  const commitment = useCommitment(
-    approval.data?.resulting_entity_type === 'commitment'
-      ? approval.data.resulting_entity_id
-      : null,
-  )
 
   if (approval.isPending) return <Loading label="the approval" />
   if (approval.isError) return <ErrorState error={approval.error} />
@@ -256,15 +252,60 @@ function Outcome({ proposalId }: { proposalId: string }) {
           Still waiting. The action is authorised and queued; nothing has run it yet.
         </p>
       ) : null}
-      {commitment.data ? (
-        <p>
-          Created a commitment:{' '}
-          <Link to={`/commitments/${commitment.data.id}`} data-testid="created-commitment">
-            {commitment.data.statement}
-          </Link>{' '}
-          ({commitment.data.status})
-        </p>
-      ) : null}
+      <Created
+        entityType={record.resulting_entity_type}
+        entityId={record.resulting_entity_id}
+      />
     </section>
+  )
+}
+
+/**
+ * What the execution actually produced, named and linked.
+ *
+ * Reads the type off the ApprovalRecord rather than off the Proposal: the Proposal says what was
+ * *asked for*, and the approval says what was *done*. They agree today and the record is the one
+ * that knows, so a tool that ever produces something other than it proposed is reported honestly
+ * instead of mislabelled.
+ */
+function Created({
+  entityType,
+  entityId,
+}: {
+  entityType: string | null
+  entityId: string | null
+}) {
+  const commitment = useCommitment(entityType === 'commitment' ? entityId : null)
+  const work = useWorkItem(entityType === 'work' ? (entityId ?? '') : '')
+
+  if (!entityId || !entityType) return null
+  if (commitment.data) {
+    return (
+      <p>
+        Created a commitment:{' '}
+        <Link to={`/commitments/${commitment.data.id}`} data-testid="created-commitment">
+          {commitment.data.statement}
+        </Link>{' '}
+        ({commitment.data.status})
+      </p>
+    )
+  }
+  if (work.data) {
+    return (
+      <p>
+        Created work:{' '}
+        <Link to={`/work/${work.data.id}`} data-testid="created-work">
+          {work.data.title}
+        </Link>{' '}
+        ({work.data.status})
+      </p>
+    )
+  }
+  // Executed, and this client does not have a surface for what it made. Say so rather than
+  // rendering nothing, which reads as "the approval produced no result".
+  return (
+    <p data-testid="created-other">
+      Created a {entityType} ({entityId}).
+    </p>
   )
 }

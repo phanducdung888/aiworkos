@@ -24,7 +24,8 @@ import {
   useProducedBy,
   useProposal,
 } from '@/api/hooks'
-import { ErrorState, Loading } from '@/components/States'
+import { ApiProblem } from '@/api/problem'
+import { Loading } from '@/components/States'
 
 const formatted = (iso: string): string => new Date(iso).toLocaleString()
 
@@ -46,7 +47,7 @@ export function Provenance({
   const produced = useProducedBy(entityId)
 
   if (produced.isPending) return <Loading label="where this came from" />
-  if (produced.isError) return <ErrorState error={produced.error} />
+  if (produced.isError) return <Unavailable error={produced.error} />
   if (produced.data === null) {
     return (
       <section aria-labelledby="provenance-heading">
@@ -66,7 +67,7 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
   const interaction = useAiInteraction(evidence.data?.produced_by_id)
 
   if (proposal.isPending) return <Loading label="where this came from" />
-  if (proposal.isError) return <ErrorState error={proposal.error} />
+  if (proposal.isError) return <Unavailable error={proposal.error} />
 
   const action = proposal.data.action as {
     tool?: string
@@ -146,6 +147,30 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
           )}
         </li>
       </ol>
+    </section>
+  )
+}
+/**
+ * Provenance that could not be read, said quietly.
+ *
+ * Deliberately not an `alert` and deliberately not `ErrorState`. This panel explains an entity that
+ * is on the screen and fine; a failure to load the explanation is a gap in what we can tell the
+ * reader, not a failure of the thing they are looking at. Shouting it would compete with the page's
+ * own errors and would imply the record itself is broken.
+ *
+ * Permission is still named, because "you may not see this" and "we could not look" are different
+ * facts and only one of them is worth asking somebody about.
+ */
+function Unavailable({ error }: { error: unknown }) {
+  const forbidden = error instanceof ApiProblem && error.isForbidden
+  return (
+    <section aria-labelledby="provenance-heading">
+      <h2 id="provenance-heading">Where this came from</h2>
+      <p data-testid="provenance-unavailable">
+        {forbidden
+          ? 'You do not have permission to see where this came from.'
+          : 'Where this came from could not be loaded.'}
+      </p>
     </section>
   )
 }

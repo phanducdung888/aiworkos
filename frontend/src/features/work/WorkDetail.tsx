@@ -23,6 +23,8 @@ import {
 import type { Work, WorkStatus } from '@/api/hooks'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { PersonPicker } from '@/components/PersonPicker'
+import { Provenance } from '@/components/Provenance'
+import { usePeople } from '@/api/hooks'
 
 /** BR-W-03. The client offers exactly the edges the domain declares — no more, and no fewer. */
 const TRANSITIONS: Record<string, WorkStatus[]> = {
@@ -38,6 +40,7 @@ const TRANSITIONS: Record<string, WorkStatus[]> = {
 export function WorkDetail() {
   const { workId = '' } = useParams()
   const work = useWorkItem(workId)
+  const people = usePeople()
 
   if (work.isPending) return <Loading label="this work item" />
   if (work.isError) return <ErrorState error={work.error} retry={() => void work.refetch()} />
@@ -62,6 +65,13 @@ export function WorkDetail() {
       <StatusControls work={item} />
       <Assignments work={item} />
       <Blockers workId={item.id} />
+      {/* "Why does this exist?" — the same walk a Commitment gets, because the chain has the same
+          shape whatever sits at the end of it (ADR-0056). Work captured by hand says so. */}
+      <Provenance
+        entityId={item.id}
+        people={people.data}
+        createdByHand="Captured directly by a person. No AI proposed it."
+      />
     </article>
   )
 }

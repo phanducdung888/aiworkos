@@ -12,6 +12,7 @@ export const PROPOSAL = '55555555-5555-4555-8555-555555555555'
 export const EVIDENCE = '88888888-8888-4888-8888-888888888888'
 export const APPROVAL = '99999999-9999-4999-8999-999999999999'
 export const COMMITMENT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+export const WORK = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 export const INTERACTION = '77777777-7777-4777-8777-777777777777'
 
 export const EXCERPT = 'I will send the revised quote by Friday'
@@ -179,5 +180,78 @@ export const provenanceOf = (entityId: string = COMMITMENT) => [
   { match: `GET /api/v1/proposals/${PROPOSAL}/approval`, body: anApproval({ resulting_entity_id: entityId }) },
   { match: `GET /api/v1/evidence/${EVIDENCE}`, body: anEvidence() },
   { match: `GET /api/v1/events/${EVENT}`, body: anEvent() },
+  { match: `GET /api/v1/ai-interactions/${INTERACTION}`, body: anInteraction() },
+]
+/** A Work item as the AI path leaves it: no owner, no project, no deadline (ADR-0029, BR-W-15). */
+export const aWorkItem = (overrides: Record<string, unknown> = {}) => ({
+  id: WORK,
+  org_id: ORG,
+  project_id: null,
+  milestone_id: null,
+  parent_work_id: null,
+  title: 'check whether the delivery date still works',
+  description: null,
+  type: 'task',
+  status: 'todo',
+  priority: 'normal',
+  due_date: null,
+  blocked_reason: null,
+  started_at: null,
+  completed_at: null,
+  visibility: 'team',
+  source: 'human',
+  created_by_person_id: null,
+  created_at: '2026-09-12T09:05:10Z',
+  updated_at: '2026-09-12T09:05:10Z',
+  version: 1,
+  ...overrides,
+})
+
+/** The same walk, ending at a Work item rather than a promise. */
+export const workProvenance = () => [
+  {
+    match: 'GET /api/v1/proposals',
+    body: {
+      items: [
+        aProposal({
+          target_type: 'work',
+          summary: 'check whether the delivery date still works',
+          action: {
+            tool: 'create_work',
+            tool_version: 'v1',
+            arguments: { title: 'check whether the delivery date still works' },
+          },
+        }),
+      ],
+      next_cursor: null,
+    },
+  },
+  {
+    match: `GET /api/v1/proposals/${PROPOSAL}`,
+    body: aProposal({
+      target_type: 'work',
+      action: {
+        tool: 'create_work',
+        tool_version: 'v1',
+        arguments: { title: 'check whether the delivery date still works' },
+      },
+    }),
+  },
+  {
+    match: `GET /api/v1/proposals/${PROPOSAL}/approval`,
+    body: anApproval({ resulting_entity_type: 'work', resulting_entity_id: WORK }),
+  },
+  {
+    match: `GET /api/v1/evidence/${EVIDENCE}`,
+    body: anEvidence({
+      target_type: 'work',
+      target_id: WORK,
+      excerpt: 'check whether the delivery date still works',
+    }),
+  },
+  {
+    match: `GET /api/v1/events/${EVENT}`,
+    body: anEvent({ body_text: 'Could you check whether the delivery date still works?' }),
+  },
   { match: `GET /api/v1/ai-interactions/${INTERACTION}`, body: anInteraction() },
 ]

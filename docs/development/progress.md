@@ -520,6 +520,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 13 | OpenAI provider, vendor-neutral span parsing, span-offset realignment fix | ✅ complete · 1020 backend + 38 frontend |
 | 14 | External identity resolution (PQ-7), commitment duplicate routing, capture/proposal/approval UI; ADR-0054 | ✅ complete · 1049 backend + 61 frontend |
 | 15 | Deadline reading (quote, never compute), canonical provenance walk, commitment list/detail and lifecycle UI; ADR-0055/0056 | ✅ complete · 1103 backend + 74 frontend |
+| 16 | Work brought to the same standard: provenance panel on Work, created-entity links, the four blanks the AI may not fill asserted | ✅ complete · 1109 backend + 81 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

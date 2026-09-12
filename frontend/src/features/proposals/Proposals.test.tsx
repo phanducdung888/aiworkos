@@ -358,3 +358,73 @@ describe('ProposalDetail', () => {
     expect(await axe(container)).toHaveNoViolations()
   })
 })
+describe('ProposalDetail for work', () => {
+  const WORK = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+
+  const workProposal = () =>
+    aProposal({
+      target_type: 'work',
+      summary: 'check whether the delivery date still works',
+      action: {
+        tool: 'create_work',
+        tool_version: 'v1',
+        arguments: { title: 'check whether the delivery date still works' },
+      },
+    })
+
+  const workRoutes = [
+    { match: `GET /api/v1/proposals/${PROPOSAL}`, body: workProposal() },
+    evidence,
+    sourceEvent,
+    { match: `POST /api/v1/proposals/${PROPOSAL}/decision`, status: 201, body: anApproval({ resulting_entity_type: 'work', resulting_entity_id: WORK }) },
+    queue,
+    { match: `GET /api/v1/proposals/${PROPOSAL}/approval`, body: anApproval({ resulting_entity_type: 'work', resulting_entity_id: WORK }) },
+    {
+      match: `GET /api/v1/work/${WORK}`,
+      body: {
+        id: WORK,
+        org_id: '11111111-1111-4111-8111-111111111111',
+        project_id: null,
+        milestone_id: null,
+        parent_work_id: null,
+        title: 'check whether the delivery date still works',
+        description: null,
+        type: 'task',
+        status: 'todo',
+        priority: 'normal',
+        due_date: null,
+        blocked_reason: null,
+        started_at: null,
+        completed_at: null,
+        visibility: 'team',
+        source: 'human',
+        created_by_person_id: null,
+        created_at: '2026-09-12T09:05:10Z',
+        updated_at: '2026-09-12T09:05:10Z',
+        version: 1,
+      },
+    },
+  ]
+
+  it('links to the work item an approval produced, not only to a commitment', async () => {
+    // CP16. Before this, approving a Work proposal showed an execution status and then nothing —
+    // the thing the approval created had no way back into the product.
+    stubApi(workRoutes)
+    renderDetail()
+
+    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+
+    expect(await screen.findByTestId('created-work')).toHaveAttribute('href', `/work/${WORK}`)
+    expect(screen.getByTestId('created-work')).toHaveTextContent('delivery date')
+  })
+
+  it('shows a work proposal with no project, owner or deadline in it', async () => {
+    stubApi(workRoutes)
+    renderDetail()
+
+    const action = await screen.findByTestId('action')
+    expect(action).toHaveTextContent('create_work')
+    expect(action).not.toHaveTextContent('project_id')
+    expect(action).not.toHaveTextContent('due_date')
+  })
+})
