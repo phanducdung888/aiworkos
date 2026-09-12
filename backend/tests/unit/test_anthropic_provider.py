@@ -20,7 +20,6 @@ import httpx
 import pytest
 
 from app.agent.providers.anthropic import AnthropicProvider
-from app.agent.providers.confidence import ConfidenceBand, ConfidenceSource
 from app.agent.providers.errors import (
     ProviderAuthenticationFailure,
     ProviderContractViolation,
@@ -30,6 +29,7 @@ from app.agent.providers.errors import (
     ProviderUnavailable,
 )
 from app.agent.providers.port import CompletionRequest, FinishReason
+from app.platform.agentkit.confidence import ConfidenceBand, ConfidenceSource
 
 TEXT = "Thanks for the call. I will send the revised quote on Friday."
 

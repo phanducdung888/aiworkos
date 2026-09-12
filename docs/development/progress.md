@@ -167,6 +167,25 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ### Open
 
+**OpenClaw: SPIKE FURTHER (ADR-0053).** Not adopted and not rejected — the repository holds no
+verified API documentation, so there is nothing to adopt against and nothing establishing it is
+unsuitable. Six questions must be answered by a spike first; the one that decides it is whether
+OpenClaw can present two distinct identities, because ADR-0027 requires the channel adapter and the
+capability runtime to authenticate separately. Worth separating for whoever runs it: the **channel
+adapter** role has clear value and a narrow blast radius; the **capability runtime** role is the
+contested one, and the two can be decided independently.
+
+**The intent kind vocabulary is three entries.** `CREATE_WORK`, `CREATE_COMMITMENT`, `ASSIGN_WORK`.
+An agent cannot express anything else, which is correct today and is a ceiling: adding a capability
+means teaching `IntentValidator` about it, and that is deliberate friction rather than a gap.
+
+**Commitment degradation is a heuristic about shape, not about content.** A promise with no resolved
+speaker becomes Work. That preserves the observation and drops the unevidenced attribution, and it
+is a judgement — a reviewer sees a Work item where a human might have recorded a commitment against
+a name they could infer from context the system cannot see. Visible in the Proposal's reason, and
+worth revisiting once real extraction volume exists.
+
+
 **A failed provider run leaves no AIInteraction row.** The runtime marks the interaction `failed`
 before re-raising, and `scoped_session` then rolls the request back — deliberately, because a
 service that kept an audit entry for a mutation that failed would be lying. So a provider outage is
@@ -294,6 +313,23 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 `test_an_archived_team_can_still_be_given_new_work_today` so that changing it is visible.
 
 ### Resolved
+
+**A control existed and was never called (closed in CP11).** `assert_within_agent_authority` held
+BR-AI-08 and BR-AI-23, was unit-tested, and nothing invoked it for two checkpoints — ADR-0047
+described it as "applied last" and it was applied nowhere. It is now on the intent path, and
+`test_every_declared_control_is_actually_invoked` asks the question that was never asked: not "is
+this correct" but "is this called".
+
+**Model output could name a Person (closed in CP11).** `span.attributes` could supply
+`committed_by_person_id`, and when it did not, the runtime defaulted to the *delegating human* — so
+an extracted promise was attributed to whoever ran the analysis. An agent is now never given a
+person id at all: it points at participants the Event resolved, or the intent is refused (BR-AI-34,
+ADR-0052).
+
+**The agent constructed its own Proposals (closed in CP11).** Every control on that path lived
+inside the component the controls existed to constrain. An agent now emits `ToolIntent`s and
+WorkOS decides what becomes a Proposal — which is also the boundary an external agent would enter
+through.
 
 **Confidence was a bare number with no provenance (closed in CP10).** `HIGH = 85` and
 `MIN_CONFIDENCE = 60` were integers chosen so the fake provider crossed the threshold. A threshold
@@ -454,6 +490,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 8 | AgentRuntime, AIInteraction, agent authority, queued execution; ADR-0043/0044/0045 | ✅ complete · 808 backend + 38 frontend |
 | 9 | Capability policy, job isolation, single execution path, find_similar; ADR-0046/0047/0048 | ✅ complete · 843 backend + 38 frontend |
 | 10 | Provider contract, confidence semantics, execution window; ADR-0049/0050/0051 | ✅ complete · 930 backend + 38 frontend |
+| 11 | Agent Contract / ToolIntent, IntentValidator, G1+G2 fixes; ADR-0052/0053 | ✅ complete · 957 backend + 38 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

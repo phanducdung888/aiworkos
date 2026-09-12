@@ -22,11 +22,6 @@ from typing import Any
 
 import httpx
 
-from app.agent.providers.confidence import (
-    UNKNOWN_CONFIDENCE,
-    ConfidenceNormalizer,
-    ConfidenceSource,
-)
 from app.agent.providers.errors import (
     ProviderAuthenticationFailure,
     ProviderContractViolation,
@@ -41,6 +36,11 @@ from app.agent.providers.port import (
     ExtractedSpan,
     FinishReason,
     ModelIdentity,
+)
+from app.platform.agentkit.confidence import (
+    UNKNOWN_CONFIDENCE,
+    ConfidenceNormalizer,
+    ConfidenceSource,
 )
 
 API_URL = "https://api.anthropic.com/v1/messages"

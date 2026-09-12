@@ -25,6 +25,13 @@ from app.contexts.intelligence.domain import (
     execution_deadline,
 )
 from app.contexts.intelligence.gateway import REGISTRY, REGISTRY_VERSION, Tool
+from app.contexts.intelligence.intents import (
+    IntentRefused,
+    IntentValidator,
+    ResolvedParticipant,
+    ValidatedIntent,
+    ValidationOutcome,
+)
 from app.contexts.intelligence.interactions import (
     FORBIDDEN_KEYS,
     StartInteraction,
@@ -77,6 +84,11 @@ from app.contexts.intelligence.services import (
 )
 
 __all__ = [
+    "ValidationOutcome",
+    "ValidatedIntent",
+    "ResolvedParticipant",
+    "IntentValidator",
+    "IntentRefused",
     "execution_deadline",
     "EXECUTION_WINDOW",
     "set_capability_mode",

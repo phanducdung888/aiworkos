@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.providers.confidence import (
+from app.platform.agentkit.confidence import (
     BAND_FLOOR,
     UNKNOWN_CONFIDENCE,
     ConfidenceAssessment,

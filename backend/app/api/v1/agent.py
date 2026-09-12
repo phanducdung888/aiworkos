@@ -27,7 +27,11 @@ import app.contexts.signal.public as signal
 import app.contexts.work.public as work
 from app.agent.providers.errors import ProviderError
 from app.agent.providers.fake import FakeProvider
-from app.agent.runtime import AgentRuntime
+from app.agent.runtime import (
+    DEFAULT_CONFIDENCE_POLICY,
+    AgentRuntime,
+    SubmissionResult,
+)
 from app.api.v1.schemas import (
     PROBLEM_RESPONSES,
     AIInteractionDetail,
@@ -40,6 +44,8 @@ from app.api.v1.schemas import (
     ToolCallResource,
 )
 from app.platform.actor import Actor
+from app.platform.agentkit.confidence import ConfidencePolicy
+from app.platform.agentkit.contract import AgentAnalysis, IntentKind, PersonReference
 from app.platform.authz import Action, Principal, ResourceType, authorize
 from app.platform.authz.agent import AgentCapability, AgentIdentity, AgentPrincipal
 from app.platform.authz.model import ResourceRef
@@ -99,11 +105,16 @@ class _RuntimeServices:
         session: SessionDep,
         principal: Principal,
         store: ObjectStoreDep,
+        agent_principal: AgentPrincipal,
+        confidence_policy: ConfidencePolicy,
     ) -> None:
         self._session = session
         self._principal = principal
         self._store = store
-        self._sequence = 0
+        # Held here, not passed to the runtime: the agent must not be able to read the policy it
+        # is constrained by, let alone influence it (ADR-0052).
+        self._agent_principal = agent_principal
+        self._confidence_policy = confidence_policy
 
     def record_interaction(self, **fields: Any) -> uuid.UUID:
         return intelligence.start_interaction(
@@ -144,8 +155,137 @@ class _RuntimeServices:
             title=title,
         )
 
-    def create_evidence(
-        self, actor: Actor, command: signal.CreateEvidence
+    def resolved_participants(self, event_id: uuid.UUID) -> tuple[PersonReference, ...]:
+        """The people this Event already resolved, as references the agent may point at.
+
+        Only `participant_id` and `role` cross to the agent — never a `person_id`. An agent cannot
+        name a Person because it is never given one, which is how BR-AI-34 stops being a rule
+        somebody has to remember (ADR-0052).
+        """
+        return tuple(
+            PersonReference(participant_id=row.id, role=row.role)
+            for row in signal.participants_for(
+                self._session, org_id=self._principal.org_id, event_id=event_id
+            )
+        )
+
+    def submit_analysis(
+        self,
+        actor: Actor,
+        event: signal.Event,
+        analysis: AgentAnalysis,
+        *,
+        routed_to_person_id: uuid.UUID,
+    ) -> SubmissionResult:
+        """Validate the agent's intents, then raise Proposals for the ones that survive.
+
+        This is the composition point for the whole boundary: the validator lives in Intelligence
+        where the agent cannot reach it, and the Evidence and Proposal services are called from
+        here rather than from the runtime.
+        """
+        validator = intelligence.IntentValidator(
+            self._agent_principal,
+            participants=self._resolved(event.id),
+            confidence_policy=self._confidence_policy,
+            body_length=len(event.body_text or ""),
+        )
+        outcome = validator.validate(analysis)
+
+        sequence = 0
+        for intent, reason in outcome.refused:
+            sequence += 1
+            # A refusal is the authority model working and is the row worth reading. Recorded
+            # before anything is written, so a run that refuses everything still explains itself.
+            self.record_tool_call(
+                ai_interaction_id=actor.ai_interaction_id,
+                sequence=sequence,
+                tool_name=intent.kind.value,
+                tool_version="v1",
+                arguments_redacted={"keys": sorted(intent.arguments)},
+                authorization_result="denied",
+                outcome="refused",
+                error=reason[:2000],
+            )
+
+        evidence_ids: list[uuid.UUID] = []
+        proposal_ids: list[uuid.UUID] = []
+        duplicates = 0
+        for accepted in outcome.accepted:
+            sequence += 1
+            # BR-AI-05, on the WorkOS side of the boundary now: the agent does not get to decide
+            # whether it looked.
+            similar = self.find_similar_work(accepted.summary)
+            self.record_tool_call(
+                ai_interaction_id=actor.ai_interaction_id,
+                sequence=sequence,
+                tool_name="find_similar_work",
+                tool_version="v1",
+                arguments_redacted={"keys": ["title"]},
+                authorization_result="allowed",
+                outcome="succeeded",
+            )
+            sequence += 1
+            if similar:
+                self.record_tool_call(
+                    ai_interaction_id=actor.ai_interaction_id,
+                    sequence=sequence,
+                    tool_name=accepted.tool,
+                    tool_version="v1",
+                    arguments_redacted={
+                        "keys": sorted(accepted.arguments),
+                        "similar_to": [str(row.id) for row in similar[:3]],
+                    },
+                    authorization_result="allowed",
+                    outcome="refused",
+                    error="similar work already exists (BR-AI-05)",
+                )
+                duplicates += 1
+                continue
+
+            evidence = self._create_evidence(actor, event, accepted)
+            evidence_ids.append(evidence.id)
+            proposal = self._raise_proposal(
+                actor, event, accepted, evidence.id, routed_to_person_id
+            )
+            proposal_ids.append(proposal.id)
+            self.record_tool_call(
+                ai_interaction_id=actor.ai_interaction_id,
+                sequence=sequence,
+                tool_name=accepted.tool,
+                tool_version="v1",
+                arguments_redacted={"keys": sorted(accepted.arguments)},
+                authorization_result="allowed",
+                # The Proposal was raised; the tool has not run and will not until somebody
+                # approves it.
+                outcome="not_attempted",
+                target_entity_type=accepted.target_type,
+            )
+
+        return SubmissionResult(
+            evidence_ids=tuple(evidence_ids),
+            proposal_ids=tuple(proposal_ids),
+            refused=len(outcome.refused),
+            unresolved_attribution=sum(
+                1 for _, reason in outcome.refused if "BR-AI-34" in reason
+            ),
+            duplicates_skipped=duplicates,
+        )
+
+    def _resolved(
+        self, event_id: uuid.UUID
+    ) -> tuple[intelligence.ResolvedParticipant, ...]:
+        """The same participants, with their person ids — for the validator, not for the agent."""
+        return tuple(
+            intelligence.ResolvedParticipant(
+                participant_id=row.id, person_id=row.person_id, role=row.role
+            )
+            for row in signal.participants_for(
+                self._session, org_id=self._principal.org_id, event_id=event_id
+            )
+        )
+
+    def _create_evidence(
+        self, actor: Actor, event: signal.Event, accepted: Any
     ) -> signal.Evidence:
         return signal.EvidenceService(
             signal.ServiceContext(
@@ -154,16 +294,56 @@ class _RuntimeServices:
                 actor=actor,
                 object_store=self._store,
             )
-        ).create(command)
+        ).create(
+            signal.CreateEvidence(
+                event_id=event.id,
+                target_type=accepted.target_type,
+                target_id=uuid.uuid4(),
+                assertion="creates",
+                locator=signal.TextLocator(
+                    char_start=accepted.char_start, char_end=accepted.char_end
+                ),
+                # Verbatim, sliced from the Event itself rather than from the agent's summary:
+                # BR-E-05 checks it against the source and a paraphrase would be refused.
+                excerpt=(event.body_text or "")[
+                    accepted.char_start : accepted.char_end
+                ],
+                confidence=accepted.confidence,
+            )
+        )
 
-    def raise_proposal(
-        self, actor: Actor, command: intelligence.RaiseProposal
+    def _raise_proposal(
+        self,
+        actor: Actor,
+        event: signal.Event,
+        accepted: Any,
+        evidence_id: uuid.UUID,
+        routed_to_person_id: uuid.UUID,
     ) -> intelligence.Proposal:
+        arguments = dict(accepted.arguments)
+        if accepted.kind is IntentKind.CREATE_COMMITMENT:
+            # BR-C-03. The citation travels into the action, so the Commitment that eventually
+            # executes can show where the promise was made.
+            arguments["evidence_ids"] = [str(evidence_id)]
         return intelligence.ProposalService(
             intelligence.ServiceContext(
                 session=self._session, principal=self._principal, actor=actor
             )
-        ).raise_proposal(command)
+        ).raise_proposal(
+            intelligence.RaiseProposal(
+                kind=intelligence.ProposalKind.CREATE,
+                target_type=accepted.target_type,
+                summary=accepted.summary,
+                reason=accepted.rationale,
+                tool=accepted.tool,
+                tool_version="v1",
+                arguments=arguments,
+                routed_to_person_id=routed_to_person_id,
+                confidence=accepted.confidence,
+                source_event_id=event.id,
+                evidence_ids=(evidence_id,),
+            )
+        )
 
 
 @router.post(
@@ -210,8 +390,10 @@ def analyze_event(
         policy=intelligence.load_capability_policy(session, org_id=principal.org_id),
     )
     try:
-        result = AgentRuntime(_provider_for(request)).analyze_event(
-            _RuntimeServices(session, principal, store),
+            result = AgentRuntime(_provider_for(request)).analyze_event(
+            _RuntimeServices(
+                session, principal, store, agent_principal, DEFAULT_CONFIDENCE_POLICY
+            ),
             agent_principal,
             event_id,
             routed_to_person_id=actor.person_id,

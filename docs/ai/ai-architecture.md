@@ -629,3 +629,50 @@ structurally: **multi-turn state** is accommodated by an opaque `conversation_id
 which a provider may use for its own caching. The runtime remains the owner of context and nothing
 downstream reads a provider's memory as truth, so a provider needing session continuity does not
 force the port to change.
+
+---
+
+## 19. Agent Contract (Checkpoint 11)
+
+### 19.1 The boundary
+
+```
+agent            →  ToolIntent    →  IntentValidator  →  Proposal
+(reasons)           (a request)      (WorkOS decides)    (a human decides)
+```
+
+An agent produces `ToolIntent`s and nothing else. It has no `create_evidence`, no `raise_proposal`
+and no tool name — it names a *kind*, and WorkOS resolves that to a tool. `IntentValidator` lives in
+the Intelligence context, which `app/agent` cannot import, so the component being constrained cannot
+reach the constraint.
+
+The shared vocabulary — `ToolIntent`, `AgentContract`, `ConfidenceAssessment` — lives in
+`app/platform/agentkit`, below both. The first attempt put it in `app/agent` and the layer contract
+refused it immediately: a contract owned by one party is not a contract.
+
+### 19.2 Five refusals
+
+1. the kind does not resolve to a registered tool (ADR-0042);
+2. capability ∩ policy does not reach it (ADR-0047);
+3. `assert_within_agent_authority` refuses the action or resource (BR-AI-08, BR-AI-23);
+4. an argument is not on the allow-list, or a Person is not a resolved participant (BR-AI-34);
+5. confidence is below policy (BR-AI-09).
+
+Refusals are collected, not fatal — one bad intent does not discard the good ones — and each is
+written as a `tool_call` with `denied`, because a refusal is the authority model working.
+
+### 19.3 Person attribution
+
+An agent is never given a `person_id`. It receives `PersonReference(participant_id, role)` for
+people the Event **already resolved**, and can point at nothing else. When a promise names nobody
+resolvable, the intent degrades from a Commitment to Work: the observation is real and actionable,
+and *who promised* is not evidenced. Work needs no owner (BR-W-07).
+
+Before this, the runtime defaulted the committer to the delegating human — so an extracted promise
+was attributed to whoever ran the analysis. That is worse than guessing: it is systematically wrong
+in a direction that looks plausible.
+
+### 19.4 An external agent
+
+Enters at `AgentContract` with no additional trust. It can produce intents, and intents are data.
+Nothing about the validator, the policy, the registry or the approval path changes for one.

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.agent.providers.confidence import ConfidenceBand, ConfidenceSource
 from app.agent.providers.errors import (
     ProviderAuthenticationFailure,
     ProviderContractViolation,
@@ -39,6 +38,7 @@ from app.agent.providers.port import (
     FinishReason,
     LLMProvider,
 )
+from app.platform.agentkit.confidence import ConfidenceBand, ConfidenceSource
 
 PROMISE = "Thanks for the call. I will send the revised quote on Friday."
 

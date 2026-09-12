@@ -362,3 +362,19 @@ about derivation.
 **Every route to the deadline is a separate test.** Queued before and run after, retried after,
 delivered twice with the second late. They all end at the same `UPDATE`, and testing them
 separately is how a future change that moves the check out of that statement gets caught.
+
+## Controls must be invoked (Checkpoint 11)
+
+`assert_within_agent_authority` shipped in Checkpoint 9 holding BR-AI-08 and BR-AI-23, had unit
+tests proving it behaved correctly, and was called by nothing for two checkpoints. Every test passed
+the whole time.
+
+**"Is it correct" and "is it called" are different questions.** The first was asked and answered;
+the second was never asked. `test_every_declared_control_is_actually_invoked` now asks it for a named
+list of controls, and `test_the_forbidden_check_is_actually_invoked` patches the guard and asserts
+the validator reached it — an assertion about the call, not about the function.
+
+The same distinction shows up in `test_the_agent_layer_cannot_raise_a_proposal_directly`, which
+walks the AST rather than searching text: a docstring explaining that the runtime no longer calls
+`raise_proposal` is prose about the constraint, and a test that cannot tell it from a call would
+punish the comment that documents the rule.

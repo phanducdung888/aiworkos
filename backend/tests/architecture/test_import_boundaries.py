@@ -183,6 +183,11 @@ def test_context_dependencies_form_a_dag() -> None:
     position = {name: index for index, name in enumerate(CONTEXT_ORDER)}
 
     for source, target in _declared_edges():
+        if target.startswith("app.platform."):
+            # A layer edge, not a context edge. `app.platform.agentkit` is shared vocabulary below
+            # everything, so importing it runs down the layers and has nothing to do with the
+            # order contexts sit in.
+            continue
         assert source.startswith("app.contexts."), f"unexpected exception source: {source}"
         importer = source.removeprefix("app.contexts.").split(".")[0]
         assert target.endswith(".public"), (
@@ -207,6 +212,14 @@ def test_every_declared_edge_is_actually_used() -> None:
     people stop reading. A dependency that was removed should have its exception removed with it.
     """
     for source, target in _declared_edges():
+        if target.startswith("app.platform."):
+            root = source.removeprefix("app.").split(".")[0]
+            assert any(
+                target.removesuffix(".*") in _imports(module)
+                or target.rsplit(".", 1)[0] in _imports(module)
+                for module in _modules(APP / root)
+            ), f"{source} -> {target} is declared but nothing imports it"
+            continue
         importer = source.removeprefix("app.contexts.").split(".")[0]
         used = any(
             target in _imports(module) or target.removesuffix(".public") in _imports(module)
@@ -303,6 +316,15 @@ def test_the_agent_layer_reaches_contexts_only_through_public_interfaces() -> No
         )
 
 
+#: The one thing a provider may import from `platform`: shared value types (ADR-0052).
+#:
+#: `app.platform.agentkit` is pure data — confidence and intent vocabulary that both an agent and
+#: WorkOS speak, sitting below both because it belongs to neither. A provider expressing a
+#: confidence is not a provider reaching into the application, and naming the exception keeps
+#: everything else under `platform` refused outright.
+PROVIDER_ALLOWED_PLATFORM = ("app.platform.agentkit",)
+
+
 def test_llm_providers_know_nothing_about_the_domain() -> None:
     """A provider adapter talks to a model and returns structured output.
 
@@ -314,6 +336,7 @@ def test_llm_providers_know_nothing_about_the_domain() -> None:
             i
             for i in _imports(module)
             if i.startswith(("app.contexts", "app.platform", "sqlalchemy", "psycopg"))
+            and not i.startswith(PROVIDER_ALLOWED_PLATFORM)
         }
         assert not offending, (
             f"{module.relative_to(BACKEND_ROOT)} imports {sorted(offending)}; a provider knows "
@@ -434,6 +457,7 @@ def test_provider_adapters_import_no_application_code() -> None:
             i
             for i in _imports(module)
             if i.startswith(("app.contexts", "app.platform", "sqlalchemy", "psycopg"))
+            and not i.startswith(PROVIDER_ALLOWED_PLATFORM)
         }
         assert not offending, (
             f"{module.relative_to(BACKEND_ROOT)} imports {sorted(offending)}; a provider knows "
@@ -492,4 +516,78 @@ def test_confidence_thresholds_live_in_one_module() -> None:
         assert "MIN_CONFIDENCE" not in source, (
             f"{module.relative_to(BACKEND_ROOT)} defines its own confidence threshold; the policy "
             "lives in app/agent/providers/confidence.py"
+        )
+
+
+#: Controls that must be *called* somewhere in production code, not merely defined.
+#:
+#: This list exists because of a specific failure. `assert_within_agent_authority` shipped in
+#: Checkpoint 9 holding BR-AI-08 and BR-AI-23, had unit tests proving it behaved correctly, and was
+#: invoked by nothing for two checkpoints. Every test passed the whole time. A control that is
+#: correct and unreachable is indistinguishable from one that does not exist, and "is it correct"
+#: and "is it called" are different questions that need asking separately.
+INVOKED_CONTROLS = (
+    "assert_within_agent_authority",
+    "assert_action_matches",
+    "assert_within_execution_window",
+    "assert_not_executed",
+    "assert_capturable",
+    "may_extract",
+)
+
+
+@pytest.mark.parametrize("control", INVOKED_CONTROLS)
+def test_every_declared_control_is_actually_invoked(control: str) -> None:
+    """A control nobody calls is a comment with a test suite."""
+    callers = [
+        module.relative_to(BACKEND_ROOT)
+        for module in _modules(APP)
+        if f"{control}(" in module.read_text()
+        and f"def {control}(" not in module.read_text()
+    ]
+    assert callers, (
+        f"{control} is defined and never called; a control that is correct and unreachable is "
+        "indistinguishable from one that does not exist"
+    )
+
+
+def test_the_agent_layer_cannot_reach_the_intent_validator() -> None:
+    """ADR-0052. The component being constrained must not be able to reach the constraint.
+
+    `IntentValidator` lives in the Intelligence context precisely so that `app/agent` cannot import
+    it. An agent that could call its own validator could also decide not to.
+    """
+    for module in _modules(APP / "agent"):
+        for imported in _imports(module):
+            assert "intents" not in imported.rsplit(".", 1)[-1], (
+                f"{module.relative_to(BACKEND_ROOT)} imports {imported}; the validator is not the "
+                "agent's to reach"
+            )
+
+
+def _referenced_names(module: Path) -> set[str]:
+    """Every identifier a module actually uses, from the AST.
+
+    Not a text search: a docstring explaining that the runtime no longer calls `raise_proposal` is
+    prose about the constraint, and a test that cannot tell it from a call would punish the comment
+    that documents the rule.
+    """
+    tree = ast.parse(module.read_text())
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+    return names
+
+
+def test_the_agent_layer_cannot_raise_a_proposal_directly() -> None:
+    """An agent emits intents. Turning one into a Proposal is WorkOS's decision (ADR-0052)."""
+    forbidden = {"RaiseProposal", "raise_proposal", "CreateEvidence", "EvidenceService"}
+    for module in _modules(APP / "agent"):
+        used = _referenced_names(module) & forbidden
+        assert not used, (
+            f"{module.relative_to(BACKEND_ROOT)} uses {sorted(used)}; an agent produces "
+            "ToolIntents and nothing else"
         )

@@ -35,18 +35,26 @@ def set_policy(api: TestClient, headers: dict[str, str], **over: object) -> obje
     return api.put("/api/v1/agent-policy", json=payload, headers=headers)
 
 
-def an_event(api: TestClient, headers: dict[str, str]) -> dict:
-    response = api.post(
-        "/api/v1/events",
-        json={
-            "type": "EXTERNAL_MESSAGE",
-            "occurred_at": NOW.isoformat(),
-            "body_text": PROMISE,
-            "source_system": "openclaw.whatsapp",
-            "source_ref": f"m-{uuid.uuid4().hex[:10]}",
-        },
-        headers=headers,
-    )
+def an_event(
+    api: TestClient, headers: dict[str, str], speaker: uuid.UUID | None = None
+) -> dict:
+    """An Event, optionally naming who spoke.
+
+    The speaker matters since CP11: an agent may only attribute a commitment to somebody the Event
+    already resolved (BR-AI-34, ADR-0052). Without one, a commitment span degrades to Work — which
+    is correct, and means a test about *commitment* policy has to supply a participant or it is
+    quietly testing the Work path instead.
+    """
+    payload: dict[str, object] = {
+        "type": "EXTERNAL_MESSAGE",
+        "occurred_at": NOW.isoformat(),
+        "body_text": PROMISE,
+        "source_system": "openclaw.whatsapp",
+        "source_ref": f"m-{uuid.uuid4().hex[:10]}",
+    }
+    if speaker is not None:
+        payload["participants"] = [{"role": "speaker", "person_id": str(speaker)}]
+    response = api.post("/api/v1/events", json=payload, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -92,14 +100,23 @@ def test_an_agent_proposes_nothing_without_a_policy(
 
 
 def test_a_policy_for_one_entity_does_not_enable_another(
-    api: TestClient, as_admin: dict[str, str], roles: None
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
 ) -> None:
+    """Commitment is enabled; Work is not. The span is a promise by a named speaker, so it stays a
+    commitment — and the refusal is the policy, not the mapping."""
+    assert set_policy(api, as_admin, entity_type="commitment").status_code == 200
+    event = an_event(api, as_admin, speaker=work_org.member)
+    result = api.post(f"/api/v1/events/{event['id']}/analyze", headers=as_admin).json()
+    assert result["proposal_ids"], "commitment is enabled and the speaker is resolved"
+
+    # Now the other way round: only Work enabled, and a span that resolves to a commitment.
+    assert set_policy(api, as_admin, entity_type="commitment", mode="off").status_code == 200
     assert set_policy(api, as_admin, entity_type="work").status_code == 200
-    result = api.post(
-        f"/api/v1/events/{an_event(api, as_admin)['id']}/analyze", headers=as_admin
+    second = api.post(
+        f"/api/v1/events/{an_event(api, as_admin, speaker=work_org.member)['id']}/analyze",
+        headers=as_admin,
     ).json()
-    # The fake provider finds commitment language in this text, and commitment is not enabled.
-    assert result["proposal_ids"] == []
+    assert second["proposal_ids"] == []
 
 
 def test_an_explicit_off_denies(
@@ -118,14 +135,37 @@ def test_an_explicit_off_denies(
 
 
 def test_a_granted_policy_lets_the_agent_propose(
-    api: TestClient, as_admin: dict[str, str], roles: None
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg
 ) -> None:
     """The control. Without it, a policy that denied everything would pass every test above."""
     assert set_policy(api, as_admin, entity_type="commitment").status_code == 200
+    event = an_event(api, as_admin, speaker=work_org.member)
+    result = api.post(f"/api/v1/events/{event['id']}/analyze", headers=as_admin).json()
+    assert result["proposal_ids"], "an enabled capability should produce a proposal"
+
+
+def test_an_unattributable_promise_becomes_work_not_a_commitment(
+    api: TestClient, as_admin: dict[str, str], roles: None
+) -> None:
+    """BR-AI-34, ADR-0052. The observation survives; the unevidenced attribution does not.
+
+    The text says somebody will send a quote, and no participant is resolved. Claiming *who*
+    promised would be a guess — and the runtime used to fill it with whoever ran the analysis,
+    which is worse than guessing because it is systematically wrong in a plausible direction.
+
+    Work needs no owner (BR-W-07), so the useful half is kept and the unevidenced half is dropped.
+    """
+    assert set_policy(api, as_admin, entity_type="work").status_code == 200
     result = api.post(
         f"/api/v1/events/{an_event(api, as_admin)['id']}/analyze", headers=as_admin
     ).json()
-    assert result["proposal_ids"], "an enabled capability should produce a proposal"
+    assert result["proposal_ids"], "the observation is still actionable"
+
+    proposal = api.get(
+        f"/api/v1/proposals/{result['proposal_ids'][0]}", headers=as_admin
+    ).json()
+    assert proposal["target_type"] == "work"
+    assert "committed_by_person_id" not in proposal["action"]["arguments"]
 
 
 # --------------------------------------------------------------------------- authorization

@@ -19,12 +19,6 @@ from __future__ import annotations
 import dataclasses
 import re
 
-from app.agent.providers.confidence import (
-    UNKNOWN_CONFIDENCE,
-    ConfidenceAssessment,
-    ConfidenceNormalizer,
-    ConfidenceSource,
-)
 from app.agent.providers.errors import (
     ProviderError,
     ProviderInvalidResponse,
@@ -36,6 +30,12 @@ from app.agent.providers.port import (
     ExtractedSpan,
     FinishReason,
     ModelIdentity,
+)
+from app.platform.agentkit.confidence import (
+    UNKNOWN_CONFIDENCE,
+    ConfidenceAssessment,
+    ConfidenceNormalizer,
+    ConfidenceSource,
 )
 
 #: Phrases that introduce a promise in the kind of message this system ingests. Crude on purpose —

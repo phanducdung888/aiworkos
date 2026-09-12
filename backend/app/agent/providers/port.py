@@ -25,7 +25,7 @@ import dataclasses
 import enum
 from typing import Any, Protocol
 
-from app.agent.providers.confidence import ConfidenceAssessment
+from app.platform.agentkit.confidence import ConfidenceAssessment
 
 
 class FinishReason(enum.StrEnum):

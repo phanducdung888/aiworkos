@@ -66,6 +66,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0049 | The provider contract is typed, and a provider has no authority | accepted | ai §12, ADR-0045 |
 | 0050 | Confidence carries its source; an unmeasured confidence is UNKNOWN | accepted | BR-AI-09 |
 | 0051 | The execution deadline is derived from the approval, not stored | accepted | BR-AI-22, ADR-0041 |
+| 0052 | An agent produces ToolIntents; WorkOS decides what becomes a Proposal | accepted | ADR-0042, BR-AI-16 |
+| 0053 | OpenClaw: spike further, do not integrate | accepted | A-3, ADR-0027 |
 
 ---
 
@@ -1157,3 +1159,125 @@ Rejected: an `approval_expires_at` column (mutable state duplicating a derivable
 immutability trigger would have to be relaxed to backfill it); a periodic expiry sweep (correctness
 that depends on a job running is correctness that pages somebody at 3am); checking expiry at enqueue
 only (the gap between queueing and running is exactly where the deadline passes).
+
+### ADR-0052 — An agent produces ToolIntents; WorkOS decides what becomes a Proposal
+
+**Context.** Until now `AgentRuntime` was both the thing that reasons and the thing that decides
+which tool to call. It mapped a span kind to a tool name from a dict it owned, built the arguments
+itself, and called `raise_proposal`. That was acceptable while the only agent was code WorkOS wrote,
+and it leaves nowhere to stand the moment an agent is not.
+
+Three things were wrong with it, and only the third is about external agents.
+
+*A control that exists and is never called.* `assert_within_agent_authority` holds BR-AI-08 and
+BR-AI-23 — an agent may never touch membership, roles or approval — and nothing in the system
+invoked it. ADR-0047 described it as "applied last and not policy-configurable"; it was applied
+nowhere. Today that is harmless because no forbidden tool is registered, which is exactly how such a
+gap survives: the thing it guards has not been built yet.
+
+*Model output reaching an argument unchecked.* `span.attributes` could supply
+`committed_by_person_id`, and when it did not, the runtime defaulted to the *delegating human* — so
+a commitment extracted from a message could be attributed to whoever happened to run the analysis.
+BR-AI-34 forbids guessing a Person; defaulting to the analyst is worse than guessing, because it is
+systematically wrong in a direction that looks plausible.
+
+*No boundary an untrusted agent could be put behind.* There was no typed thing to validate, because
+the agent constructed the Proposal directly.
+
+**Decision.** An agent produces a `ToolIntent` and nothing else. An intent is a *request to consider*
+a tool call: the tool name, the arguments, the evidence it rests on, and the confidence behind it. It
+is not an execution, not a Proposal, and not a decision. `IntentValidator` — inside WorkOS, in the
+Intelligence context, unreachable from `app/agent` — is the only thing that turns one into a
+Proposal, and it refuses on five independent grounds:
+
+1. the tool is not in the registry (ADR-0042);
+2. the agent's capability ∩ the organization's policy does not reach it (ADR-0047);
+3. `assert_within_agent_authority` refuses the action or resource outright;
+4. an argument is not on that tool's allow-list, or a Person reference is not a resolved
+   participant of the source Event (BR-AI-34);
+5. the confidence does not meet the policy (BR-AI-09, ADR-0050).
+
+**Person references are allow-listed against the Event, not validated for existence.** A person id
+that exists in the organization is not evidence that *this* person made *this* promise. The only
+Person an agent may name is one already resolved as a participant of the Event it is reading — and
+when none is, the correct outcome is no Proposal, recorded as an unresolved attribution. A promise
+the system attributes to the wrong colleague is worse than a promise it failed to notice.
+
+**The tool loop stays WorkOS-controlled.** The agent says what it thinks should happen; WorkOS
+decides whether that is expressible, permitted and evidenced, and a human decides whether it should
+occur. An external agent enters at exactly this boundary with no additional trust: it can produce
+intents, and intents are data.
+
+**Consequences.** Every control now sits on one path with a typed input, and
+`test_every_agent_control_is_invoked` asserts they are *called* rather than merely present — the
+regression that produced this ADR. The agent layer loses the ability to name a tool the validator
+does not accept, which is the point.
+
+The cost is a hop: an agent that wants to do something must express it as an intent, and adding a
+capability means teaching the validator about it. That is the intended friction. Rejected: keeping
+the runtime's direct path and adding checks inside it (the checks would live in the component they
+constrain, which is what went wrong); validating only at Proposal creation (too late to refuse an
+argument the agent should never have been able to supply, and it would put agent-specific rules into
+a service humans also use).
+
+### ADR-0053 — OpenClaw: spike further, do not integrate
+
+**Context.** OpenClaw has been named since Decision Pack v1.0 in two roles: the WhatsApp channel
+adapter and the capability runtime. ADR-0027 required them to be two ports with two identities and
+recorded that **"if OpenClaw cannot present two distinct identities, that is a reportable conflict,
+not something to work around."** The architecture's own risk register, A-3, says the contract is
+still unspecified and calls for a spike before Phase 3.
+
+That was written before this system had a working agent runtime. It now has one, which changes what
+adopting OpenClaw would be *for*, and makes the question answerable on evidence rather than on plan.
+
+**What this repository knows about OpenClaw: nothing verifiable.** There is no API documentation, no
+SDK, no request or response shape, no statement of its authentication model. Everything recorded is
+intent about where it would sit, not fact about what it does.
+
+**Decision. SPIKE FURTHER.** Not adopt, because there is nothing to adopt against. Not reject,
+because nothing establishes it is unsuitable. Writing an adapter now would mean inventing the API it
+adapts, and a seam shaped by imagination rather than by the thing it has to fit is worse than no
+seam — it looks like progress and constrains the real integration.
+
+**What the spike must answer, before ADOPT or REJECT is possible:**
+
+1. **Two identities, or one?** ADR-0027 requires the channel adapter and the capability runtime to
+   authenticate separately. If OpenClaw presents one identity for both, a compromised WhatsApp
+   channel reaches tool permissions, and the answer is REJECT for the runtime role regardless of
+   everything else.
+2. **Who owns the tool loop?** This system requires WorkOS to decide which tools exist and when they
+   run (ADR-0042, ADR-0052). A runtime that insists on driving its own loop can only be used as a
+   producer of intents, never as an executor. That is compatible; it is also much less than
+   "capability runtime" implies.
+3. **Can it run with no database access?** ADR-0002 and ADR-0045 give the agent layer none. A runtime
+   that expects to read business state directly is not deployable here.
+4. **Does it return verifiable spans?** BR-E-05 needs character offsets into the source text. A
+   runtime that returns only summaries cannot produce Evidence this system will accept.
+5. **What does it report about the model that answered?** ADR-0049 requires the resolved model, not
+   the requested one.
+6. **How is session state held?** `conversation_id` is opaque here and the runtime owns context
+   (ADR-0049). A component that becomes a source of truth about business context breaks that.
+
+**Comparison, on what is known today.**
+
+| | Native AgentRuntime | General agent framework | OpenClaw |
+|---|---|---|---|
+| Architecture fit | Exact — built to these boundaries | Usually owns the tool loop; adaptable at cost | Unknown |
+| Security | Enforced by import contracts and tests | Framework-dependent; typically broad | Unknown; A-3 flags the two-role blur |
+| Tool execution | WorkOS registry only | Framework registry, usually open | Unknown |
+| Multi-turn | Opaque `conversation_id`, runtime owns context | Native, often stateful | Unknown |
+| Provenance | Event → Evidence → Interaction → Proposal → Approval | Bolt-on | Unknown |
+| Reliability | One process, one queue | More moving parts | Unknown |
+| Operational cost | None beyond what exists | A dependency and its upgrades | A service, a network boundary, credentials |
+| Value over current | — | Multi-step reasoning we do not need at Level 1 | Unknown; the *channel* role has clear value |
+
+**Consequences.** CP11 integrates nothing. The `ToolIntent` boundary from ADR-0052 is what an
+external runtime would enter through if the spike succeeds, and it was worth building for reasons
+that have nothing to do with OpenClaw. `test_openclaw_is_not_on_any_path` keeps the name out of
+`app/`.
+
+Worth separating for whoever runs the spike: OpenClaw's **channel adapter** role has obvious value
+and a narrow blast radius — it ingests untrusted text through an ingestion-only identity (ADR-0027)
+and holds no tool permissions. Its **capability runtime** role is the contested one. The two can be
+decided independently and probably should be.
