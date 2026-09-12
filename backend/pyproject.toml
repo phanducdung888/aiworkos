@@ -39,6 +39,7 @@ markers = [
     "integration: requires a live PostgreSQL",
     "architecture: asserts an architectural invariant",
     "schemathesis: property-based checks over the generated OpenAPI document",
+    "smoke: talks to a real external provider; skipped unless RUN_REAL_PROVIDER_TESTS=1",
 ]
 filterwarnings = ["error::DeprecationWarning:app.*"]
 

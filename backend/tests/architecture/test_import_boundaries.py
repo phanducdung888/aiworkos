@@ -591,3 +591,54 @@ def test_the_agent_layer_cannot_raise_a_proposal_directly() -> None:
             f"{module.relative_to(BACKEND_ROOT)} uses {sorted(used)}; an agent produces "
             "ToolIntents and nothing else"
         )
+
+
+def test_the_runtime_satisfies_the_agent_contract() -> None:
+    """ADR-0052. The in-house runtime is an implementation of the boundary, not an exception to it.
+
+    Checkpoint 11 declared `AgentContract` as what an external agent would implement and left
+    nothing implementing it — including the runtime this repository ships. A protocol nobody
+    satisfies is a shape nobody has checked, and the first implementation would have discovered
+    whatever was wrong with it.
+    """
+    import inspect
+
+    from app.agent.runtime import AgentRuntime
+    from app.platform.agentkit import AgentContract
+
+    for name, expected in inspect.getmembers(
+        AgentContract, predicate=inspect.isfunction
+    ):
+        if name.startswith("_"):
+            continue
+        actual = getattr(AgentRuntime, name, None)
+        assert actual is not None, f"AgentRuntime does not implement {name}"
+        assert inspect.signature(actual).parameters.keys() == (
+            inspect.signature(expected).parameters.keys()
+        ), f"AgentRuntime.{name} does not match the contract's signature"
+
+    assert isinstance(getattr(AgentRuntime, "name", None), str), (
+        "AgentRuntime must expose a `name` for `ai_interaction.runtime`"
+    )
+
+
+def test_smoke_tests_are_skipped_without_an_explicit_opt_in() -> None:
+    """CI stays offline. A smoke test that runs accidentally bills somebody and fails a build for
+    reasons nobody can reproduce."""
+    source = (BACKEND_ROOT / "tests" / "smoke" / "test_real_provider.py").read_text()
+    assert "RUN_REAL_PROVIDER_TESTS" in source
+    assert "skipif" in source
+    assert 'os.environ.get("ANTHROPIC_API_KEY", "")' in source, (
+        "the credential must come from the environment and have no default"
+    )
+
+
+def test_no_credential_appears_in_the_repository() -> None:
+    """A key committed once is a key that has to be rotated, found in a mirror, and explained."""
+    import re
+
+    pattern = re.compile(r"sk-ant-[A-Za-z0-9_-]{8,}")
+    for path in list(APP.rglob("*.py")) + list((BACKEND_ROOT / "tests").rglob("*.py")):
+        assert not pattern.search(path.read_text()), (
+            f"{path.relative_to(BACKEND_ROOT)} appears to contain an API key"
+        )

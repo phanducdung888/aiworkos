@@ -177,6 +177,59 @@ class AgentRuntime:
         self._confidence = confidence_policy or DEFAULT_CONFIDENCE_POLICY
         self._model = model
 
+    def analyze(
+        self, text: str, *, participants: tuple[PersonReference, ...] = ()
+    ) -> AgentAnalysis:
+        """Read text, return intents. This is `AgentContract` (ADR-0052).
+
+        Deliberately knows nothing about Events, sessions or interactions: it takes text and gives
+        back opinions. That is what makes it the thing an external agent would also implement, and
+        it is why `analyze_event` — which reads an Event, records an interaction and submits the
+        result — is a separate method built on top of it rather than the other way round.
+
+        Nothing here mutates anything. There is no session to mutate with.
+        """
+        result = self._provider.complete(
+            CompletionRequest(
+                prompt_id="extract.commitments",
+                prompt_version=self._prompt_version,
+                instruction=EXTRACTION_INSTRUCTION,
+                # The text is data. Any instruction inside it is ignored (BR-AI-10).
+                text=text,
+                model=self._model,
+                max_spans=MAX_PROPOSALS,
+            )
+        )
+        self._assert_spans_fit_text(text, result)
+        return self._intents_from(spans=result.spans, participants=participants)
+
+    def analyze_with_result(
+        self, text: str, *, participants: tuple[PersonReference, ...] = ()
+    ) -> tuple[AgentAnalysis, CompletionResult]:
+        """`analyze`, plus what the provider reported about itself.
+
+        The completion carries the model that answered, the finish reason and the token counts —
+        provenance the caller records on the AIInteraction and the smoke test asserts against.
+        Returned separately rather than folded into `AgentAnalysis` because an analysis is the
+        agent's opinion and this is the provider's metadata; an external agent implementing
+        `AgentContract` owes the first and cannot be asked for the second.
+        """
+        result = self._provider.complete(
+            CompletionRequest(
+                prompt_id="extract.commitments",
+                prompt_version=self._prompt_version,
+                instruction=EXTRACTION_INSTRUCTION,
+                text=text,
+                model=self._model,
+                max_spans=MAX_PROPOSALS,
+            )
+        )
+        self._assert_spans_fit_text(text, result)
+        return (
+            self._intents_from(spans=result.spans, participants=participants),
+            result,
+        )
+
     def analyze_event(
         self,
         services: RuntimeServices,
@@ -234,21 +287,8 @@ class AgentRuntime:
         )
 
         try:
-            result = self._provider.complete(
-                CompletionRequest(
-                    prompt_id="extract.commitments",
-                    prompt_version=self._prompt_version,
-                    instruction=EXTRACTION_INSTRUCTION,
-                    # The body is data. Any instruction inside it is ignored (BR-AI-10).
-                    text=event.body_text or "",
-                    model=self._model,
-                    max_spans=MAX_PROPOSALS,
-                )
-            )
-            self._assert_spans_fit(event, result)
-            analysis = self._intents_from(
-                event=event,
-                spans=result.spans,
+            analysis, result = self.analyze_with_result(
+                event.body_text or "",
                 participants=services.resolved_participants(event.id),
             )
             submission = services.submit_analysis(
@@ -333,7 +373,6 @@ class AgentRuntime:
     def _intents_from(
         self,
         *,
-        event: signal.Event,
         spans: tuple[ExtractedSpan, ...],
         participants: tuple[PersonReference, ...],
     ) -> AgentAnalysis:
@@ -425,14 +464,14 @@ class AgentRuntime:
         speakers = [p for p in participants if p.role in ("speaker", "organiser")]
         return (speakers[0],) if speakers else ()
 
-    def _assert_spans_fit(self, event: signal.Event, result: CompletionResult) -> None:
+    def _assert_spans_fit_text(self, text: str, result: CompletionResult) -> None:
         """Every span must index into the text we sent (ADR-0049).
 
         Checked here rather than trusted, and raised as a contract violation rather than silently
-        dropped. A provider returning a span outside the body is broken, and BR-E-05 would refuse
+        dropped. A provider returning a span outside the text is broken, and BR-E-05 would refuse
         the resulting Evidence anyway — catching it at the boundary names the right culprit.
         """
-        body = event.body_text or ""
+        body = text
         for span in result.spans:
             if not 0 <= span.char_start < span.char_end <= len(body):
                 raise ProviderContractViolation(
