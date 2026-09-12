@@ -28,18 +28,19 @@ from app.contexts.work.public import (
     WorkStatus,
     WorkType,
 )
+from app.platform.http.validation import CleanText
 
 
 class WorkCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str = Field(min_length=1)
+    title: CleanText = Field(min_length=1)
     # Every one of these is optional, and that is the product decision rather than laxity
     # (ADR-0029, BR-W-07, BR-W-15). No API path may require a Project or an assignment.
     project_id: uuid.UUID | None = None
     milestone_id: uuid.UUID | None = None
     parent_work_id: uuid.UUID | None = None
-    description: str | None = None
+    description: CleanText | None = None
     type: WorkType = WorkType.TASK
     priority: WorkPriority = WorkPriority.NORMAL
     due_date: dt.date | None = None
@@ -51,8 +52,8 @@ class WorkCreate(BaseModel):
 class WorkUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    title: str | None = Field(default=None, min_length=1)
-    description: str | None = None
+    title: CleanText | None = Field(default=None, min_length=1)
+    description: CleanText | None = None
     type: WorkType | None = None
     priority: WorkPriority | None = None
     due_date: dt.date | None = None
@@ -67,7 +68,7 @@ class WorkStatusChange(BaseModel):
     target: WorkStatus
     #: Required when moving to `blocked` unless an active blocking dependency already exists
     #: (BR-W-04). The service decides; this only carries it.
-    blocked_reason: str | None = None
+    blocked_reason: CleanText | None = None
 
 
 class AssignmentCreate(BaseModel):
@@ -157,13 +158,13 @@ __all__ = [
 class ProjectCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1)
+    name: CleanText = Field(min_length=1)
     #: BR-P-01: one of these two is required. Which one is the domain's rule to state, not the
     #: schema's, so both are optional here and the service refuses the empty pair with a rule id.
     owning_team_id: uuid.UUID | None = None
     department_id: uuid.UUID | None = None
-    description: str | None = None
-    objective: str | None = None
+    description: CleanText | None = None
+    objective: CleanText | None = None
     lead_person_id: uuid.UUID | None = None
     sponsor_person_id: uuid.UUID | None = None
     start_date: dt.date | None = None
@@ -174,9 +175,9 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = Field(default=None, min_length=1)
-    description: str | None = None
-    objective: str | None = None
+    name: CleanText | None = Field(default=None, min_length=1)
+    description: CleanText | None = None
+    objective: CleanText | None = None
     owning_team_id: uuid.UUID | None = None
     department_id: uuid.UUID | None = None
     lead_person_id: uuid.UUID | None = None
@@ -226,9 +227,9 @@ class ProjectList(BaseModel):
 class MilestoneCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(min_length=1)
-    description: str | None = None
-    acceptance_criteria: str | None = None
+    name: CleanText = Field(min_length=1)
+    description: CleanText | None = None
+    acceptance_criteria: CleanText | None = None
     target_date: dt.date | None = None
     order_index: int = 0
 
@@ -236,9 +237,9 @@ class MilestoneCreate(BaseModel):
 class MilestoneUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = Field(default=None, min_length=1)
-    description: str | None = None
-    acceptance_criteria: str | None = None
+    name: CleanText | None = Field(default=None, min_length=1)
+    description: CleanText | None = None
+    acceptance_criteria: CleanText | None = None
     target_date: dt.date | None = None
     order_index: int | None = None
 
@@ -285,7 +286,7 @@ class DependencyCreateRequest(BaseModel):
     blocked_type: Literal["work", "milestone"]
     blocked_id: uuid.UUID
     kind: DependencyKind = DependencyKind.BLOCKS
-    rationale: str | None = None
+    rationale: CleanText | None = None
 
 
 class DependencyResource(BaseModel):

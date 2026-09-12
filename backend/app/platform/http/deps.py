@@ -31,6 +31,7 @@ from app.platform.auth import TokenError, TokenVerifier, build_verifier
 from app.platform.authz import Principal
 from app.platform.db import session_factory, set_org_context
 from app.platform.http.errors import AuthenticationRequired
+from app.platform.http.validation import CleanText
 from app.platform.principal import parse_organization_header, resolve_principal
 
 
@@ -112,8 +113,10 @@ def current_actor(
 
 
 #: Optional on every POST. Absent means "behave exactly as before", which is what keeps this from
-#: being a breaking change to a client that has never heard of it.
-IdempotencyKeyDep = Annotated[str | None, Header(alias="Idempotency-Key")]
+#: being a breaking change to a client that has never heard of it. `CleanText` because the key is
+#: persisted in a text column exactly like a body field, and arrived at the same 500 when it held a
+#: NUL byte.
+IdempotencyKeyDep = Annotated[CleanText | None, Header(alias="Idempotency-Key")]
 
 SessionDep = Annotated[Session, Depends(scoped_session)]
 PrincipalDep = Annotated[Principal, Depends(current_principal)]
