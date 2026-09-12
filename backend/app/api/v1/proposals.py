@@ -153,6 +153,7 @@ def list_all_proposals(
     target_id: uuid.UUID | None = None,
     routed_to_person_id: uuid.UUID | None = None,
     source_event_id: uuid.UUID | None = None,
+    resulting_entity_id: uuid.UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
 ) -> ProposalList:
@@ -166,6 +167,7 @@ def list_all_proposals(
             target_id=target_id,
             routed_to_person_id=routed_to_person_id,
             source_event_id=source_event_id,
+            resulting_entity_id=resulting_entity_id,
         ),
         limit=clamp_limit(limit),
         cursor=decode_cursor(cursor) if cursor else None,

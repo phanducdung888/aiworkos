@@ -73,6 +73,9 @@ from app.contexts.identity.repository import (
     external_identities as external_identity_rows,
 )
 from app.contexts.identity.repository import (
+    get_organization,
+)
+from app.contexts.identity.repository import (
     role_assignments_for as role_rows,
 )
 from app.contexts.identity.repository import (
@@ -136,6 +139,7 @@ __all__ = [
     "assert_team_exists",
     "departments_led_by",
     "external_identity_rows",
+    "get_organization",
     "role_rows",
     "team_member_rows",
     "get_department",

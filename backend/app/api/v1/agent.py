@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import APIRouter, Query, Request, Response, status
 
 import app.contexts.commitment.public as commitment
+import app.contexts.identity.public as identity
 import app.contexts.intelligence.public as intelligence
 import app.contexts.signal.public as signal
 import app.contexts.work.public as work
@@ -219,7 +220,14 @@ class _RuntimeServices:
             self._agent_principal,
             participants=self._resolved(event.id),
             confidence_policy=self._confidence_policy,
-            body_length=len(event.body_text or ""),
+            # The Event as WorkOS knows it. `occurred_at` anchors every deadline the validator
+            # reads, so re-analysing an old message produces the dates it produced the first time
+            # rather than dates relative to whenever the re-run happened (ADR-0055).
+            source=intelligence.SourceEvent(
+                body_text=event.body_text or "",
+                occurred_at=event.occurred_at,
+                timezone=self._organization_timezone(),
+            ),
         )
         outcome = validator.validate(analysis)
 
@@ -327,6 +335,11 @@ class _RuntimeServices:
                 )
             ]
         return "find_similar_work", [row.id for row in self.find_similar_work(accepted.summary)]
+
+    def _organization_timezone(self) -> str:
+        """The calendar "Friday" is read against. Falls back to UTC, which is the column default."""
+        organization = identity.get_organization(self._session, org_id=self._principal.org_id)
+        return organization.timezone if organization is not None else "UTC"
 
     def _resolved(
         self, event_id: uuid.UUID

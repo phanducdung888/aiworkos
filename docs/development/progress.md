@@ -314,6 +314,18 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 
 ### Resolved
 
+**Commitments had no deadlines (closed in CP15, ADR-0055).** `due_date` and `due_precision` were
+on the agent's allow-list, accepted by the Tool Gateway and present on the table, and nothing
+populated any of it — the extraction schema never asked. Asking the model for a date was the
+wrong fix: it has no clock and would answer anyway. The model now quotes the deadline phrase and
+WorkOS reads it against the Event's `occurred_at` and the organization's timezone, declining
+far more often than it answers. The agent may no longer supply a date or a precision at all.
+
+**Provenance was one-directional (closed in CP15, ADR-0056).** BR-PR-08 wants the chain walkable
+both ways and there was no route from a Commitment back to its Proposal. Fixed with one optional
+filter — `GET /proposals?resulting_entity_id=` — through `ApprovalRecord`, the only row in the
+chain execution is allowed to write. No column was added to hold a copy of something derivable.
+
 **PQ-7 — external identity resolution (closed in CP14, ADR-0054).** Resolution is lookup-only
 by `(org_id, source_system, external_id)`; it creates no `ExternalIdentity`, no Person, and
 infers nothing from names. Attribution requires `confirmed_at IS NOT NULL AND confidence >= 90`,
@@ -507,6 +519,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 12 | Real-provider smoke tests, opt-in and skipped by default; `AgentContract` implemented | ✅ complete · 992 backend + 38 frontend |
 | 13 | OpenAI provider, vendor-neutral span parsing, span-offset realignment fix | ✅ complete · 1020 backend + 38 frontend |
 | 14 | External identity resolution (PQ-7), commitment duplicate routing, capture/proposal/approval UI; ADR-0054 | ✅ complete · 1049 backend + 61 frontend |
+| 15 | Deadline reading (quote, never compute), canonical provenance walk, commitment list/detail and lifecycle UI; ADR-0055/0056 | ✅ complete · 1103 backend + 74 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application
@@ -631,3 +644,38 @@ anything to violate them.
 | 2026-09-11 | Checkpoint 2 implemented: migrations 0003–0005, Work Core schema, pure domain layer, read models. 151 tests green. Person-tenancy contradiction resolved as a documentation correction in `security-model.md` §2 | `backend/` |
 | 2026-09-11 | Checkpoint 1 implemented: migrations 0001–0002, authorization matrix, RLS, audit, outbox | `backend/` |
 | 2026-09-11 | Resolution Pack v1.1 applied: C-1, M-1 and N-3 resolved; ADR-0032 accepted; ADR-0033 and ADR-0034 added; ADR-0029 extended with no-synthetic-Project and partitioned reporting. **Phase 1 declared ready.** New questions raised: N-4, M-10 | `docs/decisions/resolution-pack-v1.1.md` |
+## Measurements
+
+Recorded so the next person does not have to re-derive them, and so an index is added because
+something is slow rather than because an index seemed prudent.
+
+### Commitment duplicate search (CP15, unindexed `commitment.statement`)
+
+Trigram similarity filtered by `(org_id, committed_by_person_id, status)`, median of five runs on
+the development database:
+
+| standing commitments *for one person* | median |
+|---|---|
+| 1,000 | 16 ms |
+| 10,000 | 143 ms |
+| 50,000 | 727 ms |
+
+Linear, as a sequential scan computing `similarity()` per row must be. The filter is per *committer*
+— a person makes a few hundred promises a year, so 1,000 is already an implausible pilot-scale
+ceiling and 16 ms is noise beside the provider call that precedes it in the same request.
+
+**Index deferred.** `ix_commitment_statement_trgm` becomes worth a migration at roughly 5,000
+standing commitments per committer (~70 ms), or if the committer filter is ever relaxed. Neither is
+true, so CP15 added no migration for it.
+
+### Future signals available from data that already exists
+
+Noted while building CP15–CP17, not implemented, and not a commitment to implement:
+
+- **Risk**: an `open` commitment whose `due_date` is near and whose fulfilling Work is `blocked`
+  is a deterministic at-risk signal needing no new context.
+- **Bottleneck**: a Person holding several `open` commitments due in one week, or a Work item
+  blocking several others, are both single queries over existing columns.
+- **Health**: the ratio of `fulfilled` to `missed` per person or team is already computable; it
+  needs a decision about what it would be *used for* before it is worth surfacing.
+- **Decision**: nothing in the schema records one. This is the one that genuinely needs a context.

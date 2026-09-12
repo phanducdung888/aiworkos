@@ -12,12 +12,14 @@ asserting it *works*, and only one of them would have caught that.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from unittest.mock import patch
 
 from app.contexts.intelligence.intents import (
     IntentValidator,
     ResolvedParticipant,
+    SourceEvent,
 )
 from app.platform.agentkit import (
     AgentAnalysis,
@@ -42,6 +44,13 @@ from app.platform.authz.agent import (
 from app.platform.authz.model import Action
 
 BODY_LENGTH = 200
+
+#: A Saturday, so "by Friday" and "next Monday" land in different weeks.
+OCCURRED_AT = dt.datetime(2026, 9, 12, 9, 0, tzinfo=dt.UTC)
+
+#: Long enough for every span these tests cite, and real text so a quoted deadline can be checked
+#: against the words it was supposedly taken from.
+BODY = "Send the revised quote by Friday. " + ("x" * (BODY_LENGTH - 34))
 NORMALIZER = ConfidenceNormalizer()
 PARTICIPANT = uuid.uuid4()
 PERSON = uuid.uuid4()
@@ -74,6 +83,9 @@ def a_validator(
     *,
     participants: tuple[ResolvedParticipant, ...] | None = None,
     minimum: ConfidenceBand = ConfidenceBand.MEDIUM,
+    body: str = BODY,
+    occurred_at: dt.datetime = OCCURRED_AT,
+    timezone: str = "UTC",
 ) -> IntentValidator:
     return IntentValidator(
         principal or a_principal(),
@@ -87,7 +99,7 @@ def a_validator(
             )
         ),
         confidence_policy=ConfidencePolicy(minimum_band=minimum),
-        body_length=BODY_LENGTH,
+        source=SourceEvent(body_text=body, occurred_at=occurred_at, timezone=timezone),
     )
 
 
@@ -324,3 +336,191 @@ class TestIntentIsNotExecution:
             if attribute.startswith("_"):
                 continue
             assert not callable(getattr(accepted, attribute))
+
+
+#: A commitment quoting its own deadline, as the runtime would build it.
+BY_FRIDAY = {"statement": "Send the revised quote by Friday", "due_phrase": "by Friday"}
+
+
+class TestDeadlines:
+    """ADR-0055. The agent quotes; WorkOS reads the quote against the Event's own clock.
+
+    The narrowing is the point: `due_date` and `due_precision` used to be things an agent was
+    allowed to supply and never did. Now it may not, and what it may supply instead is checked
+    against the words it cited.
+    """
+
+    def validator(self, **over: object) -> IntentValidator:
+        """A validator whose organization has actually enabled commitment extraction."""
+        return a_validator(a_principal(("commitment", "create")), **over)  # type: ignore[arg-type]
+
+    def a_commitment(self, **over: object) -> ToolIntent:
+        fields: dict[str, object] = {
+            "kind": IntentKind.CREATE_COMMITMENT,
+            "summary": "Send the revised quote by Friday",
+            "arguments": {"statement": "Send the revised quote by Friday"},
+            # The span covers "Send the revised quote by Friday." in BODY.
+            "evidence": EvidenceSpan(char_start=0, char_end=33),
+            "people": (PersonReference(participant_id=PARTICIPANT, role="speaker"),),
+        }
+        fields.update(over)
+        return an_intent(**fields)
+
+    def test_a_quoted_deadline_becomes_a_date_and_a_precision(self) -> None:
+        accepted = outcome(
+            self.validator(),
+            self.a_commitment(
+                arguments=BY_FRIDAY,
+            ),
+        ).accepted[0]
+        # Saturday 12 September 2026 + "by Friday" = the 18th, at week precision.
+        assert accepted.arguments["due_date"] == "2026-09-18"
+        assert accepted.arguments["due_precision"] == "week"
+        assert "due_phrase" not in accepted.arguments, (
+            "the quote is read here and does not travel into the action"
+        )
+
+    def test_an_agent_may_not_supply_a_date(self) -> None:
+        """The whole rule in one assertion: dates are computed in WorkOS or not at all."""
+        result = outcome(
+            self.validator(),
+            self.a_commitment(
+                arguments={"statement": "Send the revised quote", "due_date": "2026-09-18"}
+            ),
+        )
+        assert result.accepted == ()
+        assert "BR-AI-17" in result.refused[0][1]
+
+    def test_an_agent_may_not_supply_a_precision_either(self) -> None:
+        result = outcome(
+            self.validator(),
+            self.a_commitment(
+                arguments={"statement": "Send the revised quote", "due_precision": "exact"}
+            ),
+        )
+        assert result.accepted == ()
+        assert "BR-AI-17" in result.refused[0][1]
+
+    def test_no_deadline_means_vague_and_no_date(self) -> None:
+        accepted = outcome(self.validator(), self.a_commitment()).accepted[0]
+        assert accepted.arguments["due_precision"] == "vague"
+        assert "due_date" not in accepted.arguments
+
+    def test_a_deadline_beside_the_span_in_the_same_sentence_is_read(self) -> None:
+        """The shape a real model actually returns, and the reason the window is the sentence.
+
+        GPT-4o cites the *action* — "send the revised quote" — and leaves the deadline next to it.
+        Requiring the phrase inside the span passed every stubbed test in this file and would have
+        dropped almost every deadline in production; this is that defect, pinned.
+        """
+        body = "Hi Mai. I will send the revised quote by Friday once finance signs off. Thanks."
+        accepted = outcome(
+            self.validator(body=body),
+            self.a_commitment(
+                # Exactly the span the real model returned: the verb phrase, nothing around it.
+                evidence=EvidenceSpan(char_start=15, char_end=37),
+                arguments={"statement": "send the revised quote", "due_phrase": "by Friday"},
+            ),
+        ).accepted[0]
+        assert body[15:37] == "send the revised quote"
+        assert accepted.arguments["due_date"] == "2026-09-18"
+        assert accepted.arguments["due_precision"] == "week"
+
+    def test_a_deadline_from_another_sentence_is_not_read(self) -> None:
+        """BR-E-05's discipline applied to the deadline: a citation is checked, not believed.
+
+        "By Friday" is in this message and belongs to somebody else's promise. A deadline does not
+        travel between sentences just because both are in the same message.
+        """
+        body = "Mai will publish the notes by Friday. I will send the revised quote. Thanks."
+        accepted = outcome(
+            self.validator(body=body),
+            self.a_commitment(
+                evidence=EvidenceSpan(char_start=38, char_end=67),
+                arguments={"statement": "I will send the revised quote", "due_phrase": "by Friday"},
+            ),
+        ).accepted[0]
+        assert body[38:67] == "I will send the revised quote"
+        assert accepted.arguments["due_precision"] == "vague"
+        assert "due_date" not in accepted.arguments
+
+    def test_a_phrase_that_is_nowhere_in_the_message_is_not_read(self) -> None:
+        accepted = outcome(
+            self.validator(),
+            self.a_commitment(
+                arguments={"statement": "Send the revised quote", "due_phrase": "by Tuesday"}
+            ),
+        ).accepted[0]
+        assert accepted.arguments["due_precision"] == "vague"
+
+    def test_an_unreadable_quote_degrades_rather_than_refusing_the_promise(self) -> None:
+        """BR-AI-17. A promise whose deadline could not be read is still a promise."""
+        body = "Send the revised quote before the meeting. " + ("x" * 100)
+        accepted = outcome(
+            self.validator(body=body),
+            self.a_commitment(
+                evidence=EvidenceSpan(char_start=0, char_end=41),
+                arguments={
+                    "statement": "Send the revised quote before the meeting",
+                    "due_phrase": "before the meeting",
+                },
+            ),
+        ).accepted[0]
+        assert accepted.arguments["due_precision"] == "vague"
+        assert "due_date" not in accepted.arguments
+
+    def test_a_non_string_quote_is_not_read(self) -> None:
+        accepted = outcome(
+            self.validator(),
+            self.a_commitment(
+                arguments={"statement": "Send the revised quote by Friday", "due_phrase": 7}
+            ),
+        ).accepted[0]
+        assert accepted.arguments["due_precision"] == "vague"
+
+    def test_the_anchor_is_the_event_and_not_the_clock(self) -> None:
+        """Re-analysing an old message must produce the dates it produced the first time."""
+        older = self.validator(occurred_at=dt.datetime(2026, 8, 1, 9, 0, tzinfo=dt.UTC))
+        accepted = outcome(
+            older,
+            self.a_commitment(
+                arguments=BY_FRIDAY,
+            ),
+        ).accepted[0]
+        # 1 August 2026 is a Saturday; the coming Friday is the 7th, not September's.
+        assert accepted.arguments["due_date"] == "2026-08-07"
+
+    def test_the_organisation_timezone_decides_which_day_it_was(self) -> None:
+        """23:00 UTC on Friday is already Saturday in Hanoi, and "by Friday" means a week later."""
+        late = dt.datetime(2026, 9, 11, 23, 0, tzinfo=dt.UTC)
+        in_utc = outcome(
+            self.validator(occurred_at=late, timezone="UTC"),
+            self.a_commitment(
+                arguments=BY_FRIDAY,
+            ),
+        ).accepted[0]
+        in_hanoi = outcome(
+            self.validator(occurred_at=late, timezone="Asia/Ho_Chi_Minh"),
+            self.a_commitment(
+                arguments=BY_FRIDAY,
+            ),
+        ).accepted[0]
+        assert in_utc.arguments["due_date"] == "2026-09-11"
+        assert in_hanoi.arguments["due_date"] == "2026-09-18"
+
+    def test_an_unknown_timezone_falls_back_rather_than_failing(self) -> None:
+        """A misconfigured organization is not a reason to refuse somebody's promise."""
+        accepted = outcome(
+            self.validator(timezone="Mars/Olympus_Mons"),
+            self.a_commitment(
+                arguments=BY_FRIDAY,
+            ),
+        ).accepted[0]
+        assert accepted.arguments["due_date"] == "2026-09-18"
+
+    def test_work_never_carries_a_deadline_argument(self) -> None:
+        """CREATE_WORK lost `due_date` too: nothing populated it and nothing ever read it."""
+        dated = {"title": "x", "due_date": "2026-09-18"}
+        result = outcome(a_validator(), an_intent(arguments=dated))
+        assert result.accepted == ()
+        assert "BR-AI-17" in result.refused[0][1]

@@ -29,6 +29,7 @@ from app.contexts.intelligence.intents import (
     IntentRefused,
     IntentValidator,
     ResolvedParticipant,
+    SourceEvent,
     ValidatedIntent,
     ValidationOutcome,
 )
@@ -87,6 +88,7 @@ __all__ = [
     "ValidationOutcome",
     "ValidatedIntent",
     "ResolvedParticipant",
+    "SourceEvent",
     "IntentValidator",
     "IntentRefused",
     "execution_deadline",

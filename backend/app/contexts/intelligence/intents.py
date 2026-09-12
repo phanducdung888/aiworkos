@@ -23,9 +23,12 @@ and it is treated as such the whole way through.
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 import uuid
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import app.contexts.commitment.public as commitment
 from app.contexts.intelligence import gateway
 from app.platform.agentkit.confidence import ConfidencePolicy
 from app.platform.agentkit.contract import AgentAnalysis, IntentKind, ToolIntent
@@ -62,9 +65,14 @@ _RESOLUTION: dict[IntentKind, tuple[str, str, Action, ResourceType]] = {
 #: An allow-list rather than a denylist, and it holds no identifier of any kind. Everything an agent
 #: can put here is text or a date it extracted; anything that names an entity goes through
 #: `people`, where it is a reference into the Event rather than a value the agent chose.
+#: `due_phrase` rather than `due_date` on a commitment is ADR-0055, and it is a narrowing: an agent
+#: may quote the words that name a deadline and may no longer supply a date or a precision. The
+#: quote is checked against the cited span and read by `commitment.read_due_phrase` against the
+#: Event's own `occurred_at`, so the same message always yields the same date and no model ever
+#: performs the arithmetic.
 _ALLOWED_ARGUMENTS: dict[IntentKind, frozenset[str]] = {
-    IntentKind.CREATE_WORK: frozenset({"title", "description", "due_date"}),
-    IntentKind.CREATE_COMMITMENT: frozenset({"statement", "due_date", "due_precision"}),
+    IntentKind.CREATE_WORK: frozenset({"title", "description"}),
+    IntentKind.CREATE_COMMITMENT: frozenset({"statement", "due_phrase"}),
     IntentKind.ASSIGN_WORK: frozenset({"role"}),
 }
 
@@ -73,6 +81,9 @@ _ALLOWED_ARGUMENTS: dict[IntentKind, frozenset[str]] = {
 #: A commitment with no identified committer is not a commitment somebody made — it is a sentence
 #: the model read. BR-C-01 requires a committer and BR-AI-34 forbids guessing one, so the only
 #: correct outcome when nobody resolves is no Proposal, counted as an unresolved attribution.
+#: Where one sentence stops and the next begins, for the deadline window above.
+_SENTENCE_ENDS: tuple[str, ...] = (".", "!", "?", "\n")
+
 _REQUIRES_PERSON: dict[IntentKind, str] = {
     IntentKind.CREATE_COMMITMENT: "committed_by_person_id",
     IntentKind.ASSIGN_WORK: "person_id",
@@ -119,6 +130,35 @@ class ValidationOutcome:
     refused: tuple[tuple[ToolIntent, str], ...] = ()
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class SourceEvent:
+    """The Event an intent claims to have read, as WorkOS knows it — not as the agent describes it.
+
+    Supplied by the composition point rather than fetched here: the validator answers questions
+    about facts it is given, which is what keeps it free of I/O and testable without a database.
+
+    `occurred_at` is the temporal anchor for every deadline this validator reads. Never "now":
+    re-analysing a three-day-old message must produce the same dates it produced the first time,
+    and an anchor that moves would make that impossible (ADR-0055).
+    """
+
+    body_text: str
+    occurred_at: dt.datetime
+    #: The organization's timezone. "Friday" is a different day in Hanoi and in Los Angeles, and
+    #: `occurred_at` is stored in UTC, so a date read without one is right by luck.
+    timezone: str = "UTC"
+
+    @property
+    def local_date(self) -> dt.date:
+        try:
+            zone = ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            # A timezone the platform does not know is a configuration defect, not a reason to
+            # refuse a promise. UTC is the column's own default and is the honest fallback.
+            zone = ZoneInfo("UTC")
+        return self.occurred_at.astimezone(zone).date()
+
+
 class IntentValidator:
     """The only path from an agent's opinion to a Proposal."""
 
@@ -128,12 +168,13 @@ class IntentValidator:
         *,
         participants: tuple[ResolvedParticipant, ...],
         confidence_policy: ConfidencePolicy,
-        body_length: int,
+        source: SourceEvent,
     ) -> None:
         self._principal = principal
         self._participants = {p.participant_id: p for p in participants}
         self._confidence = confidence_policy
-        self._body_length = body_length
+        self._source = source
+        self._body_length = len(source.body_text)
 
     def validate(self, analysis: AgentAnalysis) -> ValidationOutcome:
         accepted: list[ValidatedIntent] = []
@@ -225,10 +266,60 @@ class IntentValidator:
                 raise IntentRefused("BR-AI-17", f"{key} must be a scalar")
 
         arguments: dict[str, Any] = dict(intent.arguments)
+        if intent.kind is IntentKind.CREATE_COMMITMENT:
+            arguments.update(self._read_deadline(intent, arguments.pop("due_phrase", None)))
         required = _REQUIRES_PERSON.get(intent.kind)
         if required is not None:
             arguments[required] = str(self._resolve_person(intent))
         return arguments
+
+    def _read_deadline(self, intent: ToolIntent, phrase: object) -> dict[str, Any]:
+        """Turn the agent's quotation into a date, or into no date at all (ADR-0055).
+
+        Two checks before the domain is asked anything, and both refuse by degrading rather than by
+        rejecting the intent. A promise whose deadline could not be read is still a promise, and
+        losing it because the model quoted badly would be BR-AI-17 applied backwards.
+
+        First: the quote must appear in the **sentence the intent cited**. An agent quoting words
+        from elsewhere in the message — or from nowhere — has not shown that *this* promise carries
+        *that* deadline, and BR-E-05's discipline is that a citation is checked against the source
+        rather than believed.
+
+        The sentence rather than the span itself, and that is a correction rather than a looseness.
+        Real models return the *action* as the span — "send the revised quote" — and leave the
+        deadline beside it: "I will send the revised quote **by Friday** once finance signs off."
+        Requiring the phrase inside the span passed every stubbed test and would have dropped
+        almost every real deadline. A deadline attaches to the clause it sits in, so the clause is
+        the right window: wide enough for how people write, narrow enough that a date from another
+        sentence cannot travel to this promise.
+
+        Then `commitment.read_due_phrase` decides, against the Event's own `occurred_at`. It is the
+        only thing here that knows what "next week" means, and it declines far more often than it
+        answers.
+        """
+        if not isinstance(phrase, str):
+            return {"due_precision": commitment.DuePrecision.VAGUE.value}
+        if phrase.lower() not in self._cited_sentence(intent).lower():
+            return {"due_precision": commitment.DuePrecision.VAGUE.value}
+        reading = commitment.read_due_phrase(phrase, reference=self._source.local_date)
+        resolved: dict[str, Any] = {"due_precision": reading.precision.value}
+        if reading.date is not None:
+            resolved["due_date"] = reading.date.isoformat()
+        return resolved
+
+    def _cited_sentence(self, intent: ToolIntent) -> str:
+        """The sentence containing the cited span, from the source text rather than from the agent.
+
+        Boundaries are the obvious ones and nothing cleverer: `.!?` and a newline. A run-on message
+        with no punctuation yields the whole body, which is the widest this ever gets and is still
+        the source text rather than anything the agent supplied.
+        """
+        body = self._source.body_text
+        start, end = intent.evidence.char_start, intent.evidence.char_end
+        left = max(body.rfind(mark, 0, start) for mark in _SENTENCE_ENDS)
+        after = [body.find(mark, end) for mark in _SENTENCE_ENDS]
+        right = min((position for position in after if position != -1), default=len(body))
+        return body[left + 1 : right + 1]
 
     def _resolve_person(self, intent: ToolIntent) -> uuid.UUID:
         """BR-AI-34. The only Person an agent may name is one the Event already resolved.

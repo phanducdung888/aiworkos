@@ -10,7 +10,7 @@ import { useMe } from '@/api/hooks'
 import { useAuth } from '@/auth/AuthProvider'
 import { ErrorState, Loading } from '@/components/States'
 import { Capture } from '@/features/capture/Capture'
-import { CommitmentDetail } from '@/features/commitments/CommitmentDetail'
+import { CommitmentDetail, CommitmentList } from '@/features/commitments/Commitments'
 import { ProposalDetail, ProposalList } from '@/features/proposals/Proposals'
 import { CreateWork } from '@/features/work/CreateWork'
 import { WorkDetail } from '@/features/work/WorkDetail'
@@ -58,6 +58,7 @@ export function App() {
           <NavLink to="/work">Work</NavLink>
           <NavLink to="/work/new">New work</NavLink>
           <NavLink to="/capture">Capture message</NavLink>
+          <NavLink to="/commitments">Commitments</NavLink>
           <NavLink to="/proposals">Proposals</NavLink>
           {canManageProjects ? <NavLink to="/projects">Projects</NavLink> : null}
         </nav>
@@ -77,6 +78,7 @@ export function App() {
           <Route path="/capture" element={<Capture />} />
           <Route path="/proposals" element={<ProposalList />} />
           <Route path="/proposals/:proposalId" element={<ProposalDetail />} />
+          <Route path="/commitments" element={<CommitmentList />} />
           <Route path="/commitments/:commitmentId" element={<CommitmentDetail />} />
           <Route path="/projects" element={<ProjectList />} />
           <Route path="/projects/:projectId" element={<ProjectDetail />} />

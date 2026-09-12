@@ -44,6 +44,18 @@ from app.platform.agentkit.confidence import (
 _COMMITMENT = re.compile(r"\b(?:I|we)\s+(?:will|'ll|shall)\s+[^.!?\n]+", re.IGNORECASE)
 _ACTION = re.compile(r"\b(?:please|can you|could you)\s+[^.!?\n]+", re.IGNORECASE)
 
+#: The words a model would quote when asked for a deadline phrase (ADR-0055).
+#:
+#: Crude like everything else here, and deliberately *wider* than what `read_due_phrase` accepts:
+#: the fake stands in for a model, and a model quoting something the domain then declines to read
+#: is the common case worth exercising rather than one to design away.
+_DUE_PHRASE = re.compile(
+    r"\b(?:by|before|on|due)\s+(?:the\s+)?(?:next\s+|this\s+|end\s+of\s+(?:the\s+)?)?"
+    r"(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month|\d{4}-\d{2}-\d{2})"
+    r"|\bnext\s+week\b|\bthis\s+week\b|\btomorrow\b|\btoday\b",
+    re.IGNORECASE,
+)
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FakeScenario:
@@ -101,15 +113,22 @@ class FakeProvider:
             for match in pattern.finditer(request.text):
                 if len(spans) >= request.max_spans:
                     break
+                quoted = match.group(0).strip()
+                deadline = _DUE_PHRASE.search(quoted)
                 spans.append(
                     ExtractedSpan(
                         kind=kind,
-                        summary=match.group(0).strip(),
+                        summary=quoted,
                         char_start=match.start(),
                         # The span is the matched text exactly, so the excerpt built from it is
                         # verbatim by construction rather than by the caller trimming carefully.
                         char_end=match.start() + len(match.group(0).rstrip()),
                         confidence=assessment,
+                        # Quoted from inside the span, never computed. A fake that returned a date
+                        # would make the one rule ADR-0055 is about untestable.
+                        attributes=(
+                            {"due_phrase": deadline.group(0)} if deadline is not None else {}
+                        ),
                     )
                 )
 

@@ -17652,6 +17652,7 @@ export interface operations {
                 target_id?: string | null;
                 routed_to_person_id?: string | null;
                 source_event_id?: string | null;
+                resulting_entity_id?: string | null;
                 limit?: number;
                 cursor?: string | null;
             };

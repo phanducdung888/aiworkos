@@ -1,0 +1,194 @@
+"""Reading a quoted deadline, and the many times it declines to (ADR-0055, BR-C-05).
+
+The rule this file exists to hold: **the system never invents a date.** A model quotes the words
+that name a deadline; `read_due_phrase` turns those words into a date only when they name one
+unambiguously, against the day the promise was made. Everything else is `vague` with no date —
+which is a complete answer, not a failure, because a date nobody set produces a missed-deadline
+alert about a deadline that never existed.
+
+Every case below fixes the reference day explicitly. A test that used today's date would pass on a
+Tuesday and fail on a Sunday, which is exactly the class of defect this design removes from
+production.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+
+import pytest
+
+from app.contexts.commitment.domain import (
+    MAX_DUE_PHRASE,
+    DuePrecision,
+    read_due_phrase,
+)
+
+#: Saturday 12 September 2026. Chosen so "by Friday" (the 18th) and "next Monday" (the 21st) land
+#: in different weeks, and so the end of the week (the 13th) is tomorrow.
+SATURDAY = dt.date(2026, 9, 12)
+WEDNESDAY = dt.date(2026, 9, 16)
+
+
+#: What "we could not place this deadline" looks like as a pair.
+NOTHING = (None, DuePrecision.VAGUE)
+
+
+def read(phrase: str | None, reference: dt.date = SATURDAY) -> tuple[dt.date | None, DuePrecision]:
+    """The reading as a pair, because every assertion below is about both halves at once."""
+    reading = read_due_phrase(phrase, reference=reference)
+    assert reading == NOTHING or reading.date is not None or reading.precision is (
+        DuePrecision.VAGUE
+    )
+    return reading.date, reading.precision
+
+
+class TestExact:
+    """Only three things are exact: a calendar date, today, and tomorrow."""
+
+    def test_an_iso_date(self) -> None:
+        assert read("on 2026-09-18") == (dt.date(2026, 9, 18), DuePrecision.EXACT)
+
+    def test_today(self) -> None:
+        assert read("today") == (SATURDAY, DuePrecision.EXACT)
+
+    def test_tomorrow(self) -> None:
+        assert read("tomorrow") == (dt.date(2026, 9, 13), DuePrecision.EXACT)
+
+    def test_a_well_formed_string_that_is_not_a_day(self) -> None:
+        """2026-02-30 parses as a pattern and is not a date, so it is not a deadline."""
+        assert read("by 2026-02-30") == NOTHING
+
+
+class TestWeekdays:
+    """A named weekday is `week`, not `exact` — the domain's own example is "by Friday"."""
+
+    def test_the_coming_weekday(self) -> None:
+        assert read("by Friday") == (dt.date(2026, 9, 18), DuePrecision.WEEK)
+
+    def test_today_counts_as_that_weekday(self) -> None:
+        """"Saturday" said on a Saturday is today. A promise about the end of today is ordinary."""
+        assert read("by Saturday") == (SATURDAY, DuePrecision.WEEK)
+
+    def test_next_weekday_skips_this_week(self) -> None:
+        # Monday the 14th is this coming Monday; "next Monday" is the 21st. The other reading
+        # would quietly bring a deadline forward by a week.
+        assert read("next Monday") == (dt.date(2026, 9, 21), DuePrecision.WEEK)
+
+    def test_next_beats_the_bare_weekday(self) -> None:
+        assert read("next Friday") == (dt.date(2026, 9, 25), DuePrecision.WEEK)
+
+    def test_case_and_spacing_do_not_matter(self) -> None:
+        assert read("  BY   FRIDAY  ") == read("by friday")
+
+
+class TestWeeksAndMonths:
+    def test_end_of_this_week_is_sunday(self) -> None:
+        assert read("end of the week") == (dt.date(2026, 9, 13), DuePrecision.WEEK)
+
+    def test_next_week_is_the_sunday_after(self) -> None:
+        assert read("next week") == (dt.date(2026, 9, 20), DuePrecision.WEEK)
+
+    def test_sometime_next_week_is_still_next_week(self) -> None:
+        """Bounded, not exact. The vagueness is in the precision, not in dropping the date."""
+        assert read("sometime next week") == (dt.date(2026, 9, 20), DuePrecision.WEEK)
+
+    def test_end_of_the_month(self) -> None:
+        assert read("by the end of the month") == (dt.date(2026, 9, 30), DuePrecision.MONTH)
+
+    def test_next_month_is_the_end_of_the_next_one(self) -> None:
+        assert read("next month") == (dt.date(2026, 10, 31), DuePrecision.MONTH)
+
+    def test_month_end_arithmetic_survives_february(self) -> None:
+        assert read("end of the month", dt.date(2028, 2, 3)) == (
+            dt.date(2028, 2, 29),
+            DuePrecision.MONTH,
+        )
+
+    def test_next_month_from_december(self) -> None:
+        assert read("next month", dt.date(2026, 12, 20)) == (
+            dt.date(2027, 1, 31),
+            DuePrecision.MONTH,
+        )
+
+
+class TestDeclining:
+    """The important half. Each of these is a real deadline the system cannot place."""
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "before the meeting",
+            "soon",
+            "as soon as possible",
+            "when finance signs off",
+            "in a couple of days",
+            "shortly",
+            "",
+            "   ",
+        ],
+    )
+    def test_an_unplaceable_phrase_yields_no_date(self, phrase: str) -> None:
+        assert read(phrase) == NOTHING
+
+    def test_no_phrase_at_all(self) -> None:
+        assert read(None) == NOTHING
+
+    def test_a_date_before_the_promise_is_refused(self) -> None:
+        """Far likelier a date the message mentioned than a deadline somebody set in the past."""
+        assert read("by 2020-01-01") == NOTHING
+
+    def test_a_long_quote_is_not_a_deadline_phrase(self) -> None:
+        """Where negation hides. "I will not manage this by Friday" contains "by Friday"."""
+        sentence = "I will not manage this by Friday because finance has not signed off"
+        assert len(sentence) > MAX_DUE_PHRASE
+        assert read(sentence) == NOTHING
+
+    def test_the_length_limit_is_the_only_thing_between_those(self) -> None:
+        # The same words, short enough to be a deadline phrase, do resolve. Stated so the limit is
+        # visibly the control rather than an accident of the corpus.
+        assert read("by Friday")[0] is not None
+
+
+class TestDeterminism:
+    """Same message, same answer — on every run, in every process, forever."""
+
+    def test_the_same_words_in_a_later_week_mean_a_later_day(self) -> None:
+        # Both of these are "the coming Friday"; which Friday that is depends entirely on when the
+        # promise was made, which is the whole reason `occurred_at` is the anchor.
+        assert read("by Friday", SATURDAY) == (dt.date(2026, 9, 18), DuePrecision.WEEK)
+        assert read("by Friday", dt.date(2026, 9, 19)) == (
+            dt.date(2026, 9, 25),
+            DuePrecision.WEEK,
+        )
+
+    def test_days_inside_one_week_agree(self) -> None:
+        """Wednesday and the Saturday before it both look forward to the same Friday."""
+        assert read("by Friday", WEDNESDAY) == read("by Friday", SATURDAY)
+
+    def test_repeated_reads_agree(self) -> None:
+        assert [read("next week") for _ in range(5)].count(read("next week")) == 5
+
+    def test_every_resolved_date_is_on_or_after_the_promise(self) -> None:
+        for phrase in (
+            "today",
+            "tomorrow",
+            "by Monday",
+            "by Sunday",
+            "next week",
+            "next month",
+            "end of the month",
+        ):
+            for reference in (SATURDAY, WEDNESDAY, dt.date(2026, 12, 31)):
+                date, _precision = read(phrase, reference)
+                assert date is None or date >= reference, phrase
+
+
+class TestPrecisionAgreesWithTheDomain:
+    def test_a_precision_other_than_vague_always_carries_a_date(self) -> None:
+        """BR-C-01 refuses the other combination, so producing it would be a latent 422."""
+        for phrase in ("today", "by Friday", "next week", "next month", "nonsense at all"):
+            date, precision = read(phrase)
+            if precision is not DuePrecision.VAGUE:
+                assert date is not None, phrase
+            else:
+                assert date is None, phrase

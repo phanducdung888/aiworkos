@@ -34,6 +34,8 @@ export type Decision = Schemas['Decision']
 export type ProposalStatus = Schemas['ProposalStatus']
 export type Evidence = Schemas['EvidenceResource']
 export type Commitment = Schemas['CommitmentResource']
+export type CommitmentStatus = Schemas['CommitmentStatus']
+export type AIInteraction = Schemas['AIInteractionDetail']
 /**
  * The enums, taken from the request schemas rather than the response ones.
  *
@@ -61,6 +63,10 @@ export const keys = {
   evidence: (id: string) => ['evidence', id] as const,
   approval: (id: string) => ['approvals', id] as const,
   commitment: (id: string) => ['commitments', id] as const,
+  commitments: (filters: CommitmentFilters) => ['commitments', 'list', filters] as const,
+  overdue: ['commitments', 'overdue'] as const,
+  producedBy: (entityId: string) => ['proposals', 'produced', entityId] as const,
+  interaction: (id: string) => ['ai-interactions', id] as const,
 }
 
 export interface WorkFilters {
@@ -382,6 +388,7 @@ const POLL_LIMIT = 30
 export function useApprovalFor(
   proposalId: string,
   enabled: boolean,
+  { poll = true }: { poll?: boolean } = {},
 ): UseQueryResult<ApprovalRecord> {
   return useQuery({
     queryKey: keys.approval(proposalId),
@@ -392,7 +399,10 @@ export function useApprovalFor(
         }),
       ),
     enabled: enabled && Boolean(proposalId),
+    // A 404 here is an answer, not a failure: a pending proposal has no approval yet.
+    retry: false,
     refetchInterval: (query) => {
+      if (!poll) return false
       const status = query.state.data?.execution_status
       const outstanding = status === undefined || status === 'pending' || status === 'running'
       return outstanding && query.state.dataUpdateCount < POLL_LIMIT ? POLL_MS : false
@@ -473,5 +483,87 @@ export function useQueueApproval(): UseMutationResult<unknown, Error, { approval
         params: { path: { approval_id: approvalId } },
       }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['approvals'] }),
+  })
+}
+// --------------------------------------------------------------------------- commitments
+
+export interface CommitmentFilters {
+  status?: CommitmentStatus
+  committed_by_person_id?: string
+  committed_to_person_id?: string
+}
+
+export function useCommitments(filters: CommitmentFilters = {}): UseQueryResult<Commitment[]> {
+  return useQuery({
+    queryKey: keys.commitments(filters),
+    queryFn: async () =>
+      unwrap(await api.GET('/api/v1/commitments', { params: { query: { ...filters, limit: 200 } } }))
+        .items,
+  })
+}
+
+/**
+ * BR-C-06 as a question. Nothing is written by asking it.
+ *
+ * Vague-precision promises are absent by rule — a deadline nobody set cannot be missed — which is
+ * why reading a date out of the message at all is worth doing (ADR-0055).
+ */
+export function useOverdueCommitments(): UseQueryResult<Commitment[]> {
+  return useQuery({
+    queryKey: keys.overdue,
+    queryFn: async () => unwrap(await api.GET('/api/v1/commitments/overdue/today', {})).items,
+  })
+}
+
+export function useChangeCommitmentStatus(): UseMutationResult<
+  Commitment,
+  Error,
+  { commitment: Commitment; target: CommitmentStatus; new_due_date?: string }
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ commitment, target, new_due_date }) =>
+      unwrap(
+        await api.POST('/api/v1/commitments/{commitment_id}/status', {
+          params: { path: { commitment_id: commitment.id } },
+          // The version the reader saw. BR-C-04 is about a transition from a state, and a decision
+          // made against a state that has since changed is about the wrong row.
+          headers: ifMatch(commitment.version),
+          body: { target, new_due_date: new_due_date ?? null },
+        }),
+      ),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['commitments'] }),
+  })
+}
+
+// --------------------------------------------------------------------------- provenance
+//
+// ADR-0056: the chain is walked, never copied. Entity -> Proposal -> Approval -> Evidence -> Event,
+// each hop an endpoint that already existed.
+
+/** The Proposal whose approved execution produced this entity, if one did. */
+export function useProducedBy(entityId: string): UseQueryResult<Proposal | null> {
+  return useQuery({
+    queryKey: keys.producedBy(entityId),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/proposals', {
+          params: { query: { resulting_entity_id: entityId, limit: 1 } },
+        }),
+      ).items[0] ?? null,
+    enabled: Boolean(entityId),
+  })
+}
+
+export function useAiInteraction(id: string | null | undefined): UseQueryResult<AIInteraction> {
+  return useQuery({
+    queryKey: keys.interaction(id ?? ''),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/ai-interactions/{interaction_id}', {
+          params: { path: { interaction_id: id as string } },
+        }),
+      ),
+    enabled: Boolean(id),
   })
 }

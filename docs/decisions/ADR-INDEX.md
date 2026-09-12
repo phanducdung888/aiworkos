@@ -69,6 +69,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0052 | An agent produces ToolIntents; WorkOS decides what becomes a Proposal | accepted | ADR-0042, BR-AI-16 |
 | 0053 | OpenClaw: spike further, do not integrate | accepted | A-3, ADR-0027 |
 | 0054 | External identity resolution is lookup-only and attribution is threshold-gated | accepted | PQ-7, BR-I-06, BR-AI-34 |
+| 0055 | The model quotes a deadline phrase; WorkOS reads it against the Event | accepted | BR-C-05, BR-AI-17 |
+| 0056 | Provenance is a walk, not a denormalised column | accepted | BR-PR-08, ADR-0041 |
 
 ---
 
@@ -1341,3 +1343,98 @@ so two people could match one participant and the tie-break would be invented); 
 `ExternalIdentity` on first sight of an unknown number (self-confirming provenance — the system would
 be vouching for a mapping nobody checked); letting the agent propose the mapping (BR-AI-34 exists to
 prevent precisely that).
+
+
+### ADR-0055 — The model quotes a deadline phrase; WorkOS reads it against the Event
+
+**Context.** Commitments were being created with no deadline. `due_date` and `due_precision` were on
+the agent's argument allow-list, the Tool Gateway accepted them, the Commitment table had the
+columns — and nothing ever populated any of it, because the extraction schema never asked for a
+date and the runtime never produced one. A promise with no date is invisible to BR-C-06, which is
+most of what a commitment is *for*.
+
+The obvious fix is to ask the model for a date. It is also the wrong one. "By Friday" is only a date
+relative to a day the model does not know: it has no reliable clock, no idea when the message was
+sent, and no knowledge of the organization's calendar — and it will produce a confident date anyway.
+A date computed from the wrong "today" is worse than no date, because it is indistinguishable from a
+date somebody agreed to.
+
+**Decision.** The model **quotes**; WorkOS **reads the quote**.
+
+- The span schema gains an optional `due_phrase`: the words in the message that name the deadline,
+  copied verbatim, or null. Additive — `ExtractedSpan.attributes` already existed for exactly this,
+  and a provider answering the older schema omits the key and is unaffected.
+- `IntentValidator` checks the quote appears **inside the span the intent cited** — BR-E-05's
+  discipline applied to the deadline. A quote from elsewhere in the message has not shown that
+  *this* promise carries *that* deadline.
+- `commitment.read_due_phrase` — pure, closed, in the context that owns `DuePrecision` — turns the
+  phrase into a date against the Event's **`occurred_at`** and the **organization's timezone**.
+- The agent's allow-list loses `due_date` and `due_precision` entirely. It may quote; it may not
+  compute. `CREATE_WORK` loses `due_date` on the same grounds: nothing populated it either.
+
+**What is read, and what is declined.** Only a calendar date, "today" and "tomorrow" are `exact`. A
+named weekday is `week` — "by Friday" is a week's promise with a Friday in it, which is the reading
+the domain has always described, and understating precision costs nothing because `week` is still
+auto-missable. "Next week" and "end of the month" are bounded at `week` and `month`. **Everything
+else returns no date at all**: "before the meeting", "soon", "when finance signs off". A phrase
+longer than 40 characters is refused outright — that is where negation hides ("I will *not* manage
+this by Friday" contains "by Friday") — and a date earlier than the day the promise was made is
+refused as far likelier a quotation than a deadline.
+
+**Consequences.** The same Event yields the same date on every run, in every process, forever:
+re-analysing a three-day-old message cannot acquire a newer deadline, because the anchor is a column
+and not a clock. The model's one job here is quoting, which is what models are reliably good at, and
+the arithmetic is done by code that can be unit-tested against a fixed calendar — 33 cases, most of
+them about declining.
+
+The cost is recall: a deadline phrased outside the table produces a `vague` promise. That is the
+intended direction. Rejected: asking the model for an ISO date (it would answer, from the wrong
+today); passing "today" into the prompt (the model would still do the arithmetic, and unverifiably);
+a natural-language date parser (a large dependency whose failure mode is a confident wrong date,
+which is the failure mode being designed out).
+
+### ADR-0056 — Provenance is a walk, not a denormalised column
+
+**Context.** "Why does WorkOS believe this commitment exists?" has to be answerable from the
+Commitment. It was not: given a Commitment id there was no route back to the Proposal that produced
+it, so the chain was traversable forwards and not backwards, which BR-PR-08 requires in both
+directions.
+
+Two shortcuts suggest themselves and both are wrong. Adding `ai_interaction_id` and `evidence_ids`
+columns to Commitment denormalises a relationship that already exists and creates a second truth
+about it. Writing the created entity back onto `proposal.target_id` would mean editing a row the
+immutability trigger freezes on purpose — `target_id` is part of *what was proposed*, and a CREATE
+Proposal targets nothing because nothing existed when it was raised.
+
+**Decision. The canonical chain is this, and it is walked rather than copied:**
+
+```
+Commitment ──(resulting_entity_id)── ApprovalRecord ──(proposal_id)── Proposal
+                                            │                             │
+                                      approver, hash                 evidence_ids
+                                                                          │
+                                                                      Evidence ──(event_id)── Event
+                                                                          │
+                                                                 (produced_by_id) AIInteraction
+```
+
+`ApprovalRecord` is the hinge, and it is the right one: it is the only row in the chain that
+execution is permitted to write (`resulting_entity_id` is on its mutable allow-list, `proposal.*`
+is not), and it is the row that records the human act the whole chain exists to evidence.
+
+The one thing CP15 adds is the filter that makes the first hop expressible:
+`GET /api/v1/proposals?resulting_entity_id=…`, one optional query parameter on an existing endpoint,
+scoped on both sides of the join. It serves Work and Commitment identically, which is why it is a
+filter rather than a bespoke `/commitments/{id}/provenance`.
+
+**Consequences.** Every hop is an endpoint that already existed, authorized by the decision that
+already governed it, and no column was added to hold a copy of something derivable.
+
+**A known artefact, deliberately left.** Evidence is created during analysis, before the entity it
+justifies exists, so `evidence.target_id` holds a placeholder UUID that points at nothing. Evidence
+is immutable except `superseded_by_id` (BR-E-06, trigger-enforced), so retargeting it after
+execution would mean widening an immutability rule to fix a field nothing reads — the chain above
+runs through `proposal.evidence_ids`, not through `evidence.target_id`. Recorded here so the next
+reader knows it is a decision rather than an oversight. Making `target_id` nullable is the honest
+long-term fix and is a migration that changes a NOT NULL on a table with an immutability trigger;
+it belongs to whichever checkpoint has a second reason to touch that table.

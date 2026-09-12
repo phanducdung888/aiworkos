@@ -38,7 +38,13 @@ from app.platform.agentkit.confidence import (
 SCHEMA_INSTRUCTION = (
     'Return JSON only: {"spans": [{"kind": "commitment"|"work", '
     '"summary": string, "char_start": int, "char_end": int, '
-    '"confidence": int 0-100}]}. char_start and char_end must index the supplied text exactly. '
+    '"confidence": int 0-100, "due_phrase": string|null}]}. '
+    "char_start and char_end must index the supplied text exactly. "
+    # The model quotes; it never calculates (ADR-0055). Asking for a date would be asking for
+    # arithmetic against a "today" the model does not know, and it would answer anyway.
+    'due_phrase must be copied verbatim from the text, short, and only the words naming the '
+    'deadline ("by Friday", "next week"). Use null when no deadline is stated. '
+    "Never a date you worked out yourself. "
     "Return an empty list rather than guessing."
 )
 
@@ -149,6 +155,23 @@ def parse_spans(
                 char_start=start,
                 char_end=end,
                 confidence=assess_confidence(raw.get("confidence")),
+                attributes=_attributes(raw),
             )
         )
     return tuple(spans)
+def _attributes(raw: dict[str, Any]) -> dict[str, Any]:
+    """Optional structured details, carried without being understood (ADR-0055).
+
+    Additive by construction: a provider that answers the older schema omits the key and gets an
+    empty dict, which is what every existing caller already handles. Nothing here interprets the
+    value — `due_phrase` is a quotation on its way to WorkOS, and reading it is a domain decision
+    made somewhere an untrusted answer cannot reach.
+
+    A non-string, or a string of whitespace, is dropped rather than passed on. The absence of a
+    deadline and an unreadable one are the same outcome downstream, and dropping it here means the
+    validator's input is always either a quote or nothing.
+    """
+    phrase = raw.get("due_phrase")
+    if isinstance(phrase, str) and phrase.strip():
+        return {"due_phrase": phrase.strip()}
+    return {}

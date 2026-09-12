@@ -13,7 +13,7 @@ import datetime as dt
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.contexts.intelligence import repository
@@ -31,6 +31,14 @@ class ProposalFilter:
     target_id: uuid.UUID | None = None
     routed_to_person_id: uuid.UUID | None = None
     source_event_id: uuid.UUID | None = None
+    #: The entity an approved Proposal actually produced (ADR-0056).
+    #:
+    #: Not `target_id`: a CREATE Proposal targets nothing, because nothing existed when it was
+    #: raised, and `target_id` is frozen by the immutability trigger precisely so that what was
+    #: proposed cannot be edited afterwards. The link from the created entity back to its Proposal
+    #: therefore lives on the ApprovalRecord, which is the row execution is allowed to write, and
+    #: this filter is how the chain is walked backwards.
+    resulting_entity_id: uuid.UUID | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -72,6 +80,18 @@ def list_proposals(
         )
     if narrowed.source_event_id is not None:
         statement = statement.where(Proposal.source_event_id == narrowed.source_event_id)
+    if narrowed.resulting_entity_id is not None:
+        # Scoped on both sides of the join. RLS already confines `approval_record` to this
+        # organization and the application scopes it anyway, for the reason every query here does
+        # (BR-G-01a): two independent controls, neither of which excuses dropping the other.
+        statement = statement.where(
+            Proposal.id.in_(
+                select(ApprovalRecord.proposal_id).where(
+                    ApprovalRecord.org_id == principal.org_id,
+                    ApprovalRecord.resulting_entity_id == narrowed.resulting_entity_id,
+                )
+            )
+        )
     if cursor is not None:
         statement = statement.where(
             or_(

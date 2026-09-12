@@ -444,10 +444,19 @@ class AgentRuntime:
         Nothing is invented to make an intent look complete, and no identifier appears here at all
         — the validator's allow-list refuses one, and there is nothing for the runtime to put in it
         that would not be a guess.
+
+        `due_phrase` is carried, never read (ADR-0055). It is the model's own quotation of the
+        words that name a deadline; turning those words into a date is a domain decision made in
+        WorkOS against the Event's `occurred_at`, and an agent that resolved it here would be
+        supplying a date — which the validator's allow-list no longer permits it to do.
         """
-        if kind is IntentKind.CREATE_COMMITMENT:
-            return {"statement": span.summary}
-        return {"title": span.summary}
+        if kind is not IntentKind.CREATE_COMMITMENT:
+            return {"title": span.summary}
+        arguments: dict[str, Any] = {"statement": span.summary}
+        phrase = span.attributes.get("due_phrase")
+        if isinstance(phrase, str) and phrase.strip():
+            arguments["due_phrase"] = phrase.strip()
+        return arguments
 
     def _people_for(
         self, kind: IntentKind, participants: tuple[PersonReference, ...]
