@@ -642,3 +642,113 @@ def test_no_credential_appears_in_the_repository() -> None:
         assert not pattern.search(path.read_text()), (
             f"{path.relative_to(BACKEND_ROOT)} appears to contain an API key"
         )
+def _calls_inside(module: Path, function: str) -> set[str]:
+    """Every function or method *called* inside a named function, however deeply nested.
+
+    The AST again rather than a text search, for the reason `_referenced_names` gives: a docstring
+    that names the rule is prose about the rule, and a test that cannot tell prose from a call
+    rewards deleting the comment.
+    """
+    tree = ast.parse(module.read_text(), filename=str(module))
+    target: ast.AST | None = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == function:
+            target = node
+            break
+    assert target is not None, f"{module.name} has no function named {function}"
+    called: set[str] = set()
+    for node in ast.walk(target):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                called.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                called.add(node.func.attr)
+    return called
+
+
+def test_may_attribute_is_invoked_on_the_resolution_path() -> None:
+    """BR-I-06 and ADR-0054 — the regression this repository keeps producing.
+
+    `may_attribute` was written in Checkpoint 5, unit-tested, exported, and never called by
+    anything for nine checkpoints. A rule that no path reaches is documentation, and the tests that
+    covered it proved only that the documentation was internally consistent.
+
+    So this asserts the *path*, link by link: capture resolves its participants, resolution asks
+    Identity, and Identity asks the rule. Breaking any link fails here rather than silently
+    reverting attribution to "whatever the caller claimed".
+    """
+    identity_queries = APP / "contexts" / "identity" / "queries.py"
+    assert "may_attribute" in _calls_inside(identity_queries, "resolve_attribution"), (
+        "resolve_attribution decides attribution without asking may_attribute (BR-I-06)"
+    )
+
+    signal_services = APP / "contexts" / "signal" / "services.py"
+    assert "resolve_attribution" in _calls_inside(signal_services, "_resolve_participants"), (
+        "participant resolution does not go through Identity's published decision (ADR-0054)"
+    )
+    assert "_resolve_participants" in _calls_inside(signal_services, "capture"), (
+        "capture persists participants without resolving them; the rule is off the path again"
+    )
+
+
+def test_identity_resolution_never_creates_anything() -> None:
+    """ADR-0054: lookup-only. A resolver that can write is a resolver that can vouch for itself."""
+    forbidden = {
+        "insert_external_identity",
+        "update_external_identity",
+        "CreateExternalIdentity",
+        "CreatePerson",
+        "ExternalIdentityService",
+        "PersonService",
+    }
+    for module, function in (
+        (APP / "contexts" / "identity" / "queries.py", "resolve_attribution"),
+        (APP / "contexts" / "signal" / "services.py", "_resolve_participants"),
+    ):
+        used = _calls_inside(module, function) & forbidden
+        assert not used, (
+            f"{module.name}:{function} calls {sorted(used)}; resolution reads and never creates"
+        )
+
+
+def test_the_agent_layer_cannot_name_a_committer_or_resolve_an_identity() -> None:
+    """ADR-0054 restated where it can fail. The LLM never sees or selects a `person_id`.
+
+    `routed_to_person_id` and `principal.person_id` are deliberately absent from this list: both are
+    the *delegating human*, which the runtime must know to record who asked. What it may never do
+    is name the person a promise is attributed to, or reach the mapping that would tell it.
+    """
+    forbidden = {
+        "committed_by_person_id",
+        "resolve_attribution",
+        "AttributedIdentity",
+        "ExternalIdentity",
+        "may_attribute",
+    }
+    for module in _modules(APP / "agent"):
+        used = _referenced_names(module) & forbidden
+        assert not used, (
+            f"{module.relative_to(BACKEND_ROOT)} uses {sorted(used)}; attribution is decided in "
+            "WorkOS and never by the agent (BR-AI-34, ADR-0054)"
+        )
+
+
+def test_a_commitment_is_never_deduplicated_against_work_titles() -> None:
+    """BR-AI-05 asks whether *this* already exists, and a promise is not a Work item.
+
+    Until CP14 every accepted intent was checked against Work titles, commitments included. The
+    defect was invisible because the check "passed": it returned a list, the audit row said a
+    search happened, and nothing recorded that the wrong corpus had been searched.
+    """
+    agent_router = APP / "api" / "v1" / "agent.py"
+    routed = _calls_inside(agent_router, "_duplicate_search")
+    assert "find_similar_commitments" in routed, (
+        "no commitment-scoped duplicate search on the routing path"
+    )
+    assert "find_similar_work" in routed, "Work intents lost their duplicate search"
+
+    source = agent_router.read_text()
+    body = source[source.index("def submit_analysis") : source.index("def _duplicate_search")]
+    assert "find_similar_work" not in body, (
+        "submit_analysis still searches Work directly; the corpus must be chosen by intent kind"
+    )

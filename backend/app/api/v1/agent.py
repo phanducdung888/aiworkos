@@ -22,6 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request, Response, status
 
+import app.contexts.commitment.public as commitment
 import app.contexts.intelligence.public as intelligence
 import app.contexts.signal.public as signal
 import app.contexts.work.public as work
@@ -78,6 +79,21 @@ AGENTS: dict[str, AgentIdentity] = {
 #: organization shared one hard-coded set, so turning extraction off for one customer was a
 #: deployment. The policy is now rows in `agent_capability_policy`, read per request, and an
 #: organization with no rows denies everything (ADR-0047).
+
+
+#: What each duplicate search is recorded as having been given. Redacted like every other
+#: `tool_call` argument set: the keys, never the values (BR-AI-31).
+_DUPLICATE_SEARCH_KEYS: dict[str, list[str]] = {
+    "find_similar_work": ["title"],
+    "find_similar_commitments": ["statement", "committed_by_person_id"],
+}
+
+#: Said in the language of the thing that already exists. "Similar work already exists" on a
+#: commitment refusal was how the category error stayed invisible for three checkpoints.
+_DUPLICATE_REFUSAL: dict[str, str] = {
+    "find_similar_work": "similar work already exists",
+    "find_similar_commitments": "this person has already made a similar commitment",
+}
 
 
 def _provider_for(request: Request) -> Any:
@@ -155,6 +171,22 @@ class _RuntimeServices:
             title=title,
         )
 
+    def find_similar_commitments(
+        self, statement: str, committed_by_person_id: uuid.UUID
+    ) -> list[commitment.SimilarCommitment]:
+        """BR-AI-05 for a promise, which is a different question from BR-AI-05 for a job.
+
+        Scoped to the committer, because "has this already been promised" is only answerable about
+        somebody. Commitment read visibility is organization-wide by that context's own decision,
+        so there is no corpus here the delegating person could not already list.
+        """
+        return commitment.find_similar_commitments(
+            self._session,
+            self._principal,
+            statement=statement,
+            committed_by_person_id=committed_by_person_id,
+        )
+
     def resolved_participants(self, event_id: uuid.UUID) -> tuple[PersonReference, ...]:
         """The people this Event already resolved, as references the agent may point at.
 
@@ -212,20 +244,22 @@ class _RuntimeServices:
         duplicates = 0
         for accepted in outcome.accepted:
             sequence += 1
-            # BR-AI-05, on the WorkOS side of the boundary now: the agent does not get to decide
-            # whether it looked.
-            similar = self.find_similar_work(accepted.summary)
+            # BR-AI-05, on the WorkOS side of the boundary: the agent does not get to decide
+            # whether it looked. *What* it looks in is decided by what the intent would create —
+            # a promise is not a duplicate because a Work item is worded alike, which is what this
+            # used to conclude.
+            search, similar_ids = self._duplicate_search(accepted)
             self.record_tool_call(
                 ai_interaction_id=actor.ai_interaction_id,
                 sequence=sequence,
-                tool_name="find_similar_work",
+                tool_name=search,
                 tool_version="v1",
-                arguments_redacted={"keys": ["title"]},
+                arguments_redacted={"keys": _DUPLICATE_SEARCH_KEYS[search]},
                 authorization_result="allowed",
                 outcome="succeeded",
             )
             sequence += 1
-            if similar:
+            if similar_ids:
                 self.record_tool_call(
                     ai_interaction_id=actor.ai_interaction_id,
                     sequence=sequence,
@@ -233,11 +267,11 @@ class _RuntimeServices:
                     tool_version="v1",
                     arguments_redacted={
                         "keys": sorted(accepted.arguments),
-                        "similar_to": [str(row.id) for row in similar[:3]],
+                        "similar_to": [str(row) for row in similar_ids[:3]],
                     },
                     authorization_result="allowed",
                     outcome="refused",
-                    error="similar work already exists (BR-AI-05)",
+                    error=f"{_DUPLICATE_REFUSAL[search]} (BR-AI-05)",
                 )
                 duplicates += 1
                 continue
@@ -270,6 +304,29 @@ class _RuntimeServices:
             ),
             duplicates_skipped=duplicates,
         )
+
+    def _duplicate_search(self, accepted: Any) -> tuple[str, list[uuid.UUID]]:
+        """Which corpus answers "does this already exist" for this intent, and what it found.
+
+        Returns the search's registry name as well as its hits, because the `tool_call` row has to
+        record *which* question was asked. An audit that says "looked for duplicates" without
+        saying where is not evidence that BR-AI-05 was satisfied.
+
+        A commitment is searched among that person's standing promises and never among Work titles.
+        Anything that is neither is searched as Work, which is the conservative default: an unknown
+        intent kind gets a duplicate check rather than a free pass.
+        """
+        if accepted.kind is IntentKind.CREATE_COMMITMENT:
+            # Put there by the validator from a resolved participant, never by the agent
+            # (BR-AI-34): an intent that reached here without one does not exist.
+            committer = accepted.arguments["committed_by_person_id"]
+            return "find_similar_commitments", [
+                row.id
+                for row in self.find_similar_commitments(
+                    accepted.summary, uuid.UUID(str(committer))
+                )
+            ]
+        return "find_similar_work", [row.id for row in self.find_similar_work(accepted.summary)]
 
     def _resolved(
         self, event_id: uuid.UUID
@@ -325,6 +382,10 @@ class _RuntimeServices:
             # BR-C-03. The citation travels into the action, so the Commitment that eventually
             # executes can show where the promise was made.
             arguments["evidence_ids"] = [str(evidence_id)]
+            # And the message it was made in. Added here rather than allow-listed for the agent
+            # (BR-AI-34, ADR-0052): WorkOS knows which Event it handed the runtime, and an agent
+            # that could name a source Event could cite a conversation it never read.
+            arguments["origin_event_id"] = str(event.id)
         return intelligence.ProposalService(
             intelligence.ServiceContext(
                 session=self._session, principal=self._principal, actor=actor

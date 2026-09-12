@@ -250,7 +250,12 @@ class CaptureService(_SignalService):
             source_ref=command.source_ref,
             origin_domain_event_id=command.origin_domain_event_id,
         )
-        for participant in command.participants:
+        # Resolution runs *before* validation so the rules apply to what is actually persisted,
+        # and before anything reads the Event so the agent can never see an unresolved handle
+        # become resolved underneath it (ADR-0054).
+        participants = self._resolve_participants(command)
+
+        for participant in participants:
             validate_participant(
                 person_id=participant.person_id,
                 external_handle=participant.external_handle,
@@ -259,7 +264,7 @@ class CaptureService(_SignalService):
         # Through the published interface, never by reading Identity's tables (ADR-0035). A
         # participant naming somebody who is not in this organization is a bad reference, and the
         # caller is told which field rather than being handed a foreign key violation.
-        for index, participant in enumerate(command.participants):
+        for index, participant in enumerate(participants):
             if participant.person_id is not None:
                 identity.assert_person_exists(
                     self._session,
@@ -311,7 +316,7 @@ class CaptureService(_SignalService):
             sensitivity=command.sensitivity.value,
             captured_by_person_id=self._actor_person_id,
         )
-        self._add_participants(event, command.participants)
+        self._add_participants(event, participants)
 
         self._audit(
             action=Action.CREATE,
@@ -340,6 +345,53 @@ class CaptureService(_SignalService):
             },
         )
         return CaptureResult(event=event, created=True, revision_of=outcome.revision_of)
+
+    def _resolve_participants(
+        self, command: CaptureEvent
+    ) -> tuple[ParticipantInput, ...]:
+        """Fill in the Person behind a bare channel handle, where the mapping earns it.
+
+        ADR-0054, and the point at which BR-I-06 stops being a rule nobody calls. Deterministic:
+        one lookup by `(source_system, external_id)`, no name matching, nothing created. The
+        decision belongs to Identity — `resolve_attribution` asks `may_attribute` and answers with
+        a Person or with nobody — so the threshold cannot drift to a second definition here.
+
+        A caller-supplied `person_id` is left exactly as it is. A human naming a colleague is an
+        assertion this service has no business overruling, and re-deriving it would mean a
+        confirmed mapping could silently disagree with the person who filed the Event.
+
+        When nothing resolves, the participant is returned untouched: the handle is preserved,
+        `person_id` stays `None`, and every conservative behaviour downstream — BR-AI-34's refusal
+        to name an unresolved speaker, the degradation of an unattributable commitment to Work —
+        applies unchanged.
+        """
+        if not command.participants:
+            return ()
+        resolved: list[ParticipantInput] = []
+        for participant in command.participants:
+            handle = (participant.external_handle or "").strip()
+            if participant.person_id is not None or not handle:
+                resolved.append(participant)
+                continue
+            attribution = identity.resolve_attribution(
+                self._session,
+                org_id=self._org_id,
+                source_system=command.source_system,
+                external_id=handle,
+            )
+            if attribution is None:
+                resolved.append(participant)
+                continue
+            resolved.append(
+                dataclasses.replace(
+                    participant,
+                    person_id=attribution.person_id,
+                    # The mapping's own confidence, not a number invented here. What the row says
+                    # about itself is the only honest description of how this was resolved.
+                    match_confidence=attribution.confidence,
+                )
+            )
+        return tuple(resolved)
 
     def _add_participants(
         self, event: Event, participants: tuple[ParticipantInput, ...]

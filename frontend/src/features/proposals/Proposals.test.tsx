@@ -1,0 +1,360 @@
+/**
+ * The review surface, and the promises it makes to a person who is about to authorise a write.
+ *
+ * The load-bearing tests here are the two about *exactness*: the action is shown argument by
+ * argument, and the Evidence is shown verbatim. An approval screen that summarised either would
+ * break the property `action_hash` exists to guarantee — that what the approver read is what the
+ * worker runs (ADR-0041).
+ */
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it } from 'vitest'
+import { axe } from 'vitest-axe'
+import { ProposalDetail, ProposalList, band } from './Proposals'
+import { problem, renderSurface, stubApi } from '@/test/harness'
+
+const PROPOSAL = '55555555-5555-4555-8555-555555555555'
+const EVENT = '33333333-3333-4333-8333-333333333333'
+const EVIDENCE = '88888888-8888-4888-8888-888888888888'
+const APPROVAL = '99999999-9999-4999-8999-999999999999'
+const COMMITMENT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+const MEMBER = '44444444-4444-4444-8444-444444444444'
+
+const EXCERPT = 'I will send the revised quote on Friday'
+
+const aProposal = (overrides: Record<string, unknown> = {}) => ({
+  id: PROPOSAL,
+  org_id: '11111111-1111-4111-8111-111111111111',
+  kind: 'create',
+  target_type: 'commitment',
+  target_id: null,
+  summary: EXCERPT,
+  reason: 'A promise was made in this message.',
+  status: 'pending',
+  action: {
+    tool: 'create_commitment',
+    tool_version: 'v1',
+    arguments: {
+      statement: EXCERPT,
+      committed_by_person_id: MEMBER,
+      evidence_ids: [EVIDENCE],
+      origin_event_id: EVENT,
+    },
+  },
+  action_hash: 'c0ffee',
+  confidence: 85,
+  evidence_ids: [EVIDENCE],
+  source_event_id: EVENT,
+  routed_to_person_id: MEMBER,
+  raised_by_person_id: null,
+  reviewed_by_person_id: null,
+  reviewed_at: null,
+  rejection_reason: null,
+  supersedes_proposal_id: null,
+  changes: [],
+  expires_at: '2026-09-13T09:00:00Z',
+  created_at: '2026-09-12T09:00:00Z',
+  version: 1,
+  ...overrides,
+})
+
+const detail = (overrides: Record<string, unknown> = {}) => ({
+  match: `GET /api/v1/proposals/${PROPOSAL}`,
+  body: aProposal(overrides),
+})
+
+const evidence = {
+  match: `GET /api/v1/evidence/${EVIDENCE}`,
+  body: {
+    id: EVIDENCE,
+    org_id: '11111111-1111-4111-8111-111111111111',
+    event_id: EVENT,
+    target_type: 'commitment',
+    target_id: COMMITMENT,
+    assertion: 'creates',
+    locator: { char_start: 0, char_end: EXCERPT.length },
+    excerpt: EXCERPT,
+    claim_summary: null,
+    confidence: 85,
+    produced_by_type: 'ai_interaction',
+    produced_by_id: '77777777-7777-4777-8777-777777777777',
+    superseded_by_id: null,
+    version: 1,
+    created_at: '2026-09-12T09:00:00Z',
+  },
+}
+
+const sourceEvent = {
+  match: `GET /api/v1/events/${EVENT}`,
+  body: {
+    id: EVENT,
+    org_id: '11111111-1111-4111-8111-111111111111',
+    type: 'EXTERNAL_MESSAGE',
+    origin: 'external',
+    source_system: 'openclaw.whatsapp',
+    source_ref: null,
+    sender_external_id: null,
+    channel: null,
+    title: null,
+    body_text: `${EXCERPT}.`,
+    content_hash: 'abc',
+    occurred_at: '2026-09-12T09:00:00Z',
+    observed_at: '2026-09-12T09:00:00Z',
+    sensitivity: 'normal',
+    processing_status: 'captured',
+    revision_of_event_id: null,
+    captured_by_person_id: null,
+    participant_count: 1,
+    participants: [],
+    attachments: [],
+    created_at: '2026-09-12T09:00:00Z',
+    version: 1,
+  },
+}
+
+const anApproval = (overrides: Record<string, unknown> = {}) => ({
+  id: APPROVAL,
+  org_id: '11111111-1111-4111-8111-111111111111',
+  proposal_id: PROPOSAL,
+  approver_person_id: MEMBER,
+  decision: 'approved',
+  approved_action: aProposal().action,
+  approved_action_hash: 'c0ffee',
+  edits: null,
+  decided_at: '2026-09-12T09:05:00Z',
+  execution_expires_at: '2026-09-13T09:05:00Z',
+  execution_status: 'executed',
+  executed_at: '2026-09-12T09:05:10Z',
+  execution_error: null,
+  resulting_entity_type: 'commitment',
+  resulting_entity_id: COMMITMENT,
+  version: 1,
+  ...overrides,
+})
+
+const decision = (overrides: Record<string, unknown> = {}) => ({
+  match: `POST /api/v1/proposals/${PROPOSAL}/decision`,
+  status: 201,
+  body: anApproval(overrides),
+})
+
+const queue = { match: `POST /api/v1/approvals/${APPROVAL}/queue`, status: 202, body: {} }
+
+const approvalFor = (overrides: Record<string, unknown> = {}) => ({
+  match: `GET /api/v1/proposals/${PROPOSAL}/approval`,
+  body: anApproval(overrides),
+})
+
+const commitment = {
+  match: `GET /api/v1/commitments/${COMMITMENT}`,
+  body: {
+    id: COMMITMENT,
+    org_id: '11111111-1111-4111-8111-111111111111',
+    statement: EXCERPT,
+    committed_by_person_id: MEMBER,
+    committed_to_person_id: null,
+    committed_to_team_id: null,
+    due_date: null,
+    due_precision: 'vague',
+    status: 'captured',
+    fulfilling_work_id: null,
+    project_id: null,
+    origin_event_id: EVENT,
+    confidence: 85,
+    acknowledged_at: null,
+    previous_due_date: null,
+    created_at: '2026-09-12T09:05:10Z',
+    updated_at: '2026-09-12T09:05:10Z',
+    version: 1,
+  },
+}
+
+const renderDetail = () =>
+  renderSurface(<ProposalDetail />, {
+    route: `/proposals/${PROPOSAL}`,
+    path: '/proposals/:proposalId',
+  })
+
+describe('band', () => {
+  it('reads the same floors the backend publishes (ADR-0050)', () => {
+    expect(band(85)).toBe('high')
+    expect(band(84)).toBe('medium')
+    expect(band(60)).toBe('medium')
+    expect(band(59)).toBe('low')
+    // Not "low with a score of nothing": an unassessable reading is its own state.
+    expect(band(0)).toBe('unknown')
+  })
+})
+
+describe('ProposalList', () => {
+  it('lists what is waiting and says nothing has been created', async () => {
+    stubApi([{ match: 'GET /api/v1/proposals', body: { items: [aProposal()], next_cursor: null } }])
+    renderSurface(<ProposalList />)
+
+    expect(await screen.findByRole('link', { name: EXCERPT })).toHaveAttribute(
+      'href',
+      `/proposals/${PROPOSAL}`,
+    )
+    expect(screen.getByText(/nothing here has been created/i)).toBeVisible()
+    expect(screen.getByRole('cell', { name: /high \(85%\)/i })).toBeVisible()
+  })
+
+  it('asks only for pending proposals', async () => {
+    const { calls } = stubApi([
+      { match: 'GET /api/v1/proposals', body: { items: [], next_cursor: null } },
+    ])
+    renderSurface(<ProposalList />)
+    await screen.findByText(/nothing is waiting/i)
+    expect(calls.some((call) => call.url.includes('status=pending'))).toBe(true)
+  })
+})
+
+describe('ProposalDetail', () => {
+  it('shows the exact action, argument by argument', async () => {
+    stubApi([detail(), evidence, sourceEvent])
+    renderDetail()
+
+    const action = await screen.findByTestId('action')
+    // Every argument the hash covers, none of them summarised away.
+    expect(action).toHaveTextContent('create_commitment')
+    expect(action).toHaveTextContent('committed_by_person_id')
+    expect(action).toHaveTextContent(MEMBER)
+    expect(action).toHaveTextContent('origin_event_id')
+    expect(screen.getByText(/c0ffee/)).toBeVisible()
+  })
+
+  it('quotes the evidence verbatim rather than describing it', async () => {
+    stubApi([detail(), evidence, sourceEvent])
+    renderDetail()
+
+    expect(await screen.findByTestId('excerpt')).toHaveTextContent(EXCERPT)
+  })
+
+  it('shows the confidence band and the deadline the approval will carry', async () => {
+    stubApi([detail(), evidence, sourceEvent])
+    renderDetail()
+
+    expect(await screen.findByTestId('band')).toHaveTextContent('high')
+    expect(screen.getByText(/authorises this action for 24 hours/i)).toBeVisible()
+  })
+
+  it('approves, queues the action and reports what it produced', async () => {
+    const { calls } = stubApi([
+      detail(),
+      evidence,
+      sourceEvent,
+      decision(),
+      queue,
+      approvalFor(),
+      commitment,
+    ])
+    renderDetail()
+
+    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+
+    // ADR-0048: approving records the decision; a worker performs it. The UI must hand it to the
+    // queue rather than expect the decision response to have done anything.
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.endsWith(`/approvals/${APPROVAL}/queue`))).toBe(true),
+    )
+    expect(await screen.findByTestId('execution-status')).toHaveTextContent('executed')
+    expect(await screen.findByTestId('created-commitment')).toHaveAttribute(
+      'href',
+      `/commitments/${COMMITMENT}`,
+    )
+  })
+
+  it('sends the version it read, so a stale decision is refused', async () => {
+    let sentIfMatch: string | null = null
+    stubApi([
+      detail(),
+      evidence,
+      sourceEvent,
+      { ...decision(), onRequest: ({ headers }) => void (sentIfMatch = headers.get('If-Match')) },
+      queue,
+      approvalFor(),
+      commitment,
+    ])
+    renderDetail()
+
+    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+    await waitFor(() => expect(sentIfMatch).toBe('W/"1"'))
+  })
+
+  it('shows a failed execution as a failure rather than as an absence', async () => {
+    stubApi([
+      detail(),
+      evidence,
+      sourceEvent,
+      decision(),
+      queue,
+      approvalFor({
+        execution_status: 'failed',
+        executed_at: null,
+        execution_error: 'BR-C-03: a commitment needs evidence',
+        resulting_entity_type: null,
+        resulting_entity_id: null,
+      }),
+    ])
+    renderDetail()
+
+    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+
+    expect(await screen.findByTestId('execution-status')).toHaveTextContent('failed')
+    expect(await screen.findByRole('alert')).toHaveTextContent('BR-C-03')
+  })
+
+  it('will not reject without a reason, and sends the reason when given one', async () => {
+    let sent: { decision: string; rejection_reason: string } | undefined
+    stubApi([
+      detail(),
+      evidence,
+      sourceEvent,
+      { ...decision({ decision: 'rejected' }), onRequest: ({ body }) => void (sent = JSON.parse(body)) },
+    ])
+    renderDetail()
+
+    const reject = await screen.findByRole('button', { name: /reject/i })
+    expect(reject).toBeDisabled()
+
+    await userEvent.type(screen.getByLabelText(/reason for rejecting/i), 'Not a commitment')
+    await userEvent.click(reject)
+
+    await waitFor(() =>
+      expect(sent).toEqual({ decision: 'rejected', rejection_reason: 'Not a commitment' }),
+    )
+  })
+
+  it('offers no decision on a proposal that has already been decided', async () => {
+    stubApi([detail({ status: 'approved' }), evidence, sourceEvent])
+    renderDetail()
+
+    await screen.findByTestId('action')
+    expect(screen.queryByRole('button', { name: /approve/i })).toBeNull()
+  })
+
+  it('shows the rule id when a decision is refused', async () => {
+    stubApi([
+      detail(),
+      evidence,
+      sourceEvent,
+      {
+        match: `POST /api/v1/proposals/${PROPOSAL}/decision`,
+        status: 409,
+        body: problem(409, { rule: 'BR-PR-06' }),
+      },
+    ])
+    renderDetail()
+
+    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('BR-PR-06')
+  })
+
+  it('has no accessibility violations', async () => {
+    stubApi([detail(), evidence, sourceEvent])
+    const { container } = renderDetail()
+    await screen.findByTestId('action')
+    expect(await axe(container)).toHaveNoViolations()
+  })
+})

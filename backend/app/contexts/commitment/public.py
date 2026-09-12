@@ -21,9 +21,16 @@ from app.contexts.commitment.queries import (
 )
 from app.contexts.commitment.references import assert_commitment_exists
 from app.contexts.commitment.services import CommitmentService, ServiceContext
+from app.contexts.commitment.similarity import (
+    MIN_SIMILARITY,
+    SimilarCommitment,
+    find_similar_commitments,
+)
 
 __all__ = [
     "Authority",
+    "MIN_SIMILARITY",
+    "SimilarCommitment",
     "ChangeCommitmentStatus",
     "Commitment",
     "CommitmentFilter",
@@ -37,6 +44,7 @@ __all__ = [
     "assert_commitment_exists",
     "authority_of",
     "commitment_relations",
+    "find_similar_commitments",
     "get_commitment",
     "is_missed",
     "list_commitments",

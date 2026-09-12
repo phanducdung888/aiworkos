@@ -22,6 +22,18 @@ export type Assignment = Schemas['AssignmentResource']
 export type Person = Schemas['PersonResource']
 export type Team = Schemas['TeamResource']
 export type Me = Schemas['CurrentPrincipal']
+export type EventDetail = Schemas['EventDetail']
+export type EventCapture = Schemas['EventCapture']
+export type ParticipantInput = Schemas['ParticipantInputModel']
+export type ParticipantRole = Schemas['ParticipantRole']
+export type Analysis = Schemas['AnalysisResource']
+export type Proposal = Schemas['ProposalResource']
+export type ProposalDetail = Schemas['ProposalDetail']
+export type ApprovalRecord = Schemas['ApprovalRecordResource']
+export type Decision = Schemas['Decision']
+export type ProposalStatus = Schemas['ProposalStatus']
+export type Evidence = Schemas['EvidenceResource']
+export type Commitment = Schemas['CommitmentResource']
 /**
  * The enums, taken from the request schemas rather than the response ones.
  *
@@ -43,6 +55,12 @@ export const keys = {
   projects: ['projects'] as const,
   project: (id: string) => ['projects', id] as const,
   milestones: (projectId: string) => ['projects', projectId, 'milestones'] as const,
+  event: (id: string) => ['events', id] as const,
+  proposals: (status: string) => ['proposals', status] as const,
+  proposal: (id: string) => ['proposals', id] as const,
+  evidence: (id: string) => ['evidence', id] as const,
+  approval: (id: string) => ['approvals', id] as const,
+  commitment: (id: string) => ['commitments', id] as const,
 }
 
 export interface WorkFilters {
@@ -294,5 +312,166 @@ export function useCreateDependency(): UseMutationResult<
       ),
     onSuccess: (_data, variables) =>
       void client.invalidateQueries({ queryKey: keys.dependencies(variables.blockedWorkId) }),
+  })
+}
+// --------------------------------------------------------------------------- capture and review
+//
+// The Level 1 loop: an Event is captured, an analysis proposes, and a person decides. Nothing here
+// executes anything — an approved Proposal is queued and a worker runs it (ADR-0044, ADR-0048), so
+// the screen polls the ApprovalRecord rather than waiting on a response that will never carry the
+// result.
+
+export function useEvent(id: string): UseQueryResult<EventDetail> {
+  return useQuery({
+    queryKey: keys.event(id),
+    queryFn: async () =>
+      unwrap(await api.GET('/api/v1/events/{event_id}', { params: { path: { event_id: id } } })),
+    enabled: Boolean(id),
+  })
+}
+
+export function useProposals(status: ProposalStatus = 'pending'): UseQueryResult<Proposal[]> {
+  return useQuery({
+    queryKey: keys.proposals(status),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/proposals', { params: { query: { status, limit: 200 } } }),
+      ).items,
+  })
+}
+
+export function useProposal(id: string): UseQueryResult<ProposalDetail> {
+  return useQuery({
+    queryKey: keys.proposal(id),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/proposals/{proposal_id}', {
+          params: { path: { proposal_id: id } },
+        }),
+      ),
+    enabled: Boolean(id),
+  })
+}
+
+export function useEvidence(id: string | undefined): UseQueryResult<Evidence> {
+  return useQuery({
+    queryKey: keys.evidence(id ?? ''),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/evidence/{evidence_id}', {
+          params: { path: { evidence_id: id as string } },
+        }),
+      ),
+    enabled: Boolean(id),
+  })
+}
+
+//: A worker picks the job up in well under a second when one is running. Bounded because the
+//: interesting failure is that none is: a screen that polled forever would look like a slow
+//: success rather than like nothing listening, and the reader deserves the second reading.
+const POLL_MS = 2000
+const POLL_LIMIT = 30
+
+/**
+ * The approval for a proposal, polled while its execution is still outstanding.
+ *
+ * Polling stops the moment the record reaches a terminal execution status, and gives up after a
+ * minute either way. A screen that kept asking would be asking about something that can no longer
+ * change — or about a worker that is not there.
+ */
+export function useApprovalFor(
+  proposalId: string,
+  enabled: boolean,
+): UseQueryResult<ApprovalRecord> {
+  return useQuery({
+    queryKey: keys.approval(proposalId),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/proposals/{proposal_id}/approval', {
+          params: { path: { proposal_id: proposalId } },
+        }),
+      ),
+    enabled: enabled && Boolean(proposalId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.execution_status
+      const outstanding = status === undefined || status === 'pending' || status === 'running'
+      return outstanding && query.state.dataUpdateCount < POLL_LIMIT ? POLL_MS : false
+    },
+  })
+}
+
+export function useCommitment(id: string | null | undefined): UseQueryResult<Commitment> {
+  return useQuery({
+    queryKey: keys.commitment(id ?? ''),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/commitments/{commitment_id}', {
+          params: { path: { commitment_id: id as string } },
+        }),
+      ),
+    enabled: Boolean(id),
+  })
+}
+
+export function useCaptureEvent(): UseMutationResult<EventDetail, Error, EventCapture> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (body) =>
+      unwrap(
+        await api.POST('/api/v1/events', {
+          body,
+          headers: { 'Idempotency-Key': idempotencyKey() },
+        }),
+      ),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['events'] }),
+  })
+}
+
+export function useAnalyzeEvent(): UseMutationResult<Analysis, Error, { eventId: string }> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ eventId }) =>
+      unwrap(
+        await api.POST('/api/v1/events/{event_id}/analyze', {
+          params: { path: { event_id: eventId } },
+          // One key per action: a retried analysis replays its first answer instead of raising a
+          // second set of Proposals from the same message.
+          headers: { 'Idempotency-Key': idempotencyKey() },
+        }),
+      ),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['proposals'] }),
+  })
+}
+
+export function useDecideProposal(): UseMutationResult<
+  ApprovalRecord,
+  Error,
+  { proposal: ProposalDetail; decision: Decision; rejection_reason?: string }
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ proposal, decision, rejection_reason }) =>
+      unwrap(
+        await api.POST('/api/v1/proposals/{proposal_id}/decision', {
+          params: { path: { proposal_id: proposal.id } },
+          // The version the reviewer read. A decision made from a stale screen is refused rather
+          // than applied to a proposal that has since been revised (BR-PR-06).
+          headers: ifMatch(proposal.version),
+          body: { decision, rejection_reason: rejection_reason ?? null },
+        }),
+      ),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['proposals'] }),
+  })
+}
+
+/** Hand an approved action to the queue. The worker performs it; this returns before it runs. */
+export function useQueueApproval(): UseMutationResult<unknown, Error, { approvalId: string }> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ approvalId }) =>
+      api.POST('/api/v1/approvals/{approval_id}/queue', {
+        params: { path: { approval_id: approvalId } },
+      }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['approvals'] }),
   })
 }

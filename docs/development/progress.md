@@ -314,6 +314,20 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 
 ### Resolved
 
+**PQ-7 — external identity resolution (closed in CP14, ADR-0054).** Resolution is lookup-only
+by `(org_id, source_system, external_id)`; it creates no `ExternalIdentity`, no Person, and
+infers nothing from names. Attribution requires `confirmed_at IS NOT NULL AND confidence >= 90`,
+asked through `identity.may_attribute` — which until CP14 was a rule nothing on any path called.
+Below the threshold the handle is preserved, `person_id` stays NULL, and the existing
+conservative refusals apply unchanged. Attribution by name similarity and by unconfirmed
+mapping were both rejected; M-8/M-9 (channel thread id, phone identity typing) stay open.
+
+**BR-AI-05 searched the wrong corpus (closed in CP14).** Every accepted intent was checked for
+duplicates against *Work titles*, commitments included — so a promise could be suppressed by an
+unrelated task worded alike, and a promise the same person had already made was proposed again.
+Commitment intents now search standing commitments by that committer, and the `tool_call` row
+records which corpus was searched. See the CP14 limitation on the unindexed statement scan.
+
 **A control existed and was never called (closed in CP11).** `assert_within_agent_authority` held
 BR-AI-08 and BR-AI-23, was unit-tested, and nothing invoked it for two checkpoints — ADR-0047
 described it as "applied last" and it was applied nowhere. It is now on the intent path, and
@@ -459,7 +473,6 @@ Owner and due date to be filled at Phase 0 sign-off.
 | S-7 | Channel sender policy: who may send into a connected channel | security-model §9 | Phase 3b | high, new |
 | N-1 | Outbound messaging in the MVP | product-constitution §10 | Phase 3b, tool catalogue | medium, new |
 | PQ-4 | Workforce observation legal posture, now including personal-device messaging | product-constitution §10 | Phase 3b, pilot | **high, raised by PQ-1** |
-| PQ-7 | External identity resolution, now phone numbers | product-constitution §10 | Phase 3, Phase 3b | **high, raised by PQ-1** |
 | A-3 / AI-1 | OpenClaw contract, now with two roles | architecture §12.2 | Phase 3, Phase 3b | high, spike required |
 | AI-3 | pgvector in v1 | ai-architecture §11 | Phase 3 | medium |
 | AI-4 | Golden set origin before real data | ai-architecture §11 | Phase 2 | medium |
@@ -491,6 +504,9 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 9 | Capability policy, job isolation, single execution path, find_similar; ADR-0046/0047/0048 | ✅ complete · 843 backend + 38 frontend |
 | 10 | Provider contract, confidence semantics, execution window; ADR-0049/0050/0051 | ✅ complete · 930 backend + 38 frontend |
 | 11 | Agent Contract / ToolIntent, IntentValidator, G1+G2 fixes; ADR-0052/0053 | ✅ complete · 957 backend + 38 frontend |
+| 12 | Real-provider smoke tests, opt-in and skipped by default; `AgentContract` implemented | ✅ complete · 992 backend + 38 frontend |
+| 13 | OpenAI provider, vendor-neutral span parsing, span-offset realignment fix | ✅ complete · 1020 backend + 38 frontend |
+| 14 | External identity resolution (PQ-7), commitment duplicate routing, capture/proposal/approval UI; ADR-0054 | ✅ complete · 1049 backend + 61 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

@@ -51,6 +51,7 @@ from app.contexts.identity.models import (
     TeamMembership,
 )
 from app.contexts.identity.queries import (
+    AttributedIdentity,
     departments_led_by,
     get_department,
     get_person,
@@ -59,6 +60,7 @@ from app.contexts.identity.queries import (
     list_people,
     list_teams,
     person_status,
+    resolve_attribution,
     team_ids_for_person,
     team_ids_in_departments,
 )
@@ -88,6 +90,7 @@ from app.contexts.identity.services import (
 )
 
 __all__ = [
+    "AttributedIdentity",
     "Department",
     "ExternalIdentity",
     "Organization",
@@ -142,6 +145,7 @@ __all__ = [
     "list_people",
     "list_teams",
     "person_status",
+    "resolve_attribution",
     "team_ids_for_person",
     "team_ids_in_departments",
 ]

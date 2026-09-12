@@ -68,6 +68,7 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0051 | The execution deadline is derived from the approval, not stored | accepted | BR-AI-22, ADR-0041 |
 | 0052 | An agent produces ToolIntents; WorkOS decides what becomes a Proposal | accepted | ADR-0042, BR-AI-16 |
 | 0053 | OpenClaw: spike further, do not integrate | accepted | A-3, ADR-0027 |
+| 0054 | External identity resolution is lookup-only and attribution is threshold-gated | accepted | PQ-7, BR-I-06, BR-AI-34 |
 
 ---
 
@@ -1281,3 +1282,62 @@ Worth separating for whoever runs the spike: OpenClaw's **channel adapter** role
 and a narrow blast radius — it ingests untrusted text through an ingestion-only identity (ADR-0027)
 and holds no tool permissions. Its **capability runtime** role is the contested one. The two can be
 decided independently and probably should be.
+
+
+### ADR-0054 — External identity resolution is lookup-only, and attribution is threshold-gated
+
+**Context.** PQ-7 — "External identity resolution from phone numbers to People" — has been open since
+Decision Pack v1.0. Until now nothing resolved anything: `EventParticipant.person_id` was populated
+only when a caller supplied it by hand, and no code mapped a channel identifier to a Person.
+
+That made one half of the product unreachable. A commitment needs a committer (BR-C-01), BR-AI-34
+forbids the agent from naming one, and ADR-0052 allows only a participant the Event *already*
+resolved. A realistic channel message carries a phone number and nothing else, so every commitment
+either degraded to Work — because no participant held the speaker role — or was refused, because the
+speaker held no `person_id`. The vertical the product is named for could not run.
+
+`identity.may_attribute` (BR-I-06) was written for exactly this decision, has been unit-tested since
+Checkpoint 5, and had never been called. That is the same defect class as the ADR-0052 regression: a
+control that exists and is not on any path.
+
+**Decision.** Resolution happens deterministically, in the Signal context, at Event capture, and is
+**lookup-only**:
+
+- it reads `external_identity` by `(org_id, source_system, external_id)` — the tuple that is already
+  unique — and by nothing else;
+- it **never creates** an `ExternalIdentity` and **never creates** a Person;
+- it **never infers** from display names, name similarity, or any fuzzy match;
+- the **LLM never sees or selects `person_id`**. Resolution completes before any analysis runs, and
+  the agent continues to receive opaque `participant_id`s only (ADR-0052).
+
+Attribution is permitted **only** when `confirmed_at IS NOT NULL AND confidence >= 90`
+(`MIN_ATTRIBUTION_CONFIDENCE`), asked through `identity.may_attribute`. When it is not permitted:
+
+- `external_handle` is preserved exactly as captured;
+- `person_id` stays `NULL` and `resolved_at` stays `NULL`;
+- the existing conservative behaviour applies unchanged — an unresolved speaker means the commitment
+  intent is refused (BR-AI-34), and no speaker at all means it degrades to Work.
+
+**Why a threshold and a human confirmation rather than one or the other.** Confidence alone is a
+number some importer chose; `confirmed_at` alone says a human looked but not how sure they were. The
+conjunction means a mapping can only attribute a promise to a colleague after a person in the
+organization has vouched for it *and* the mapping is strong. A weak or unvouched mapping remains a
+legitimate row that may suggest — it simply may not decide, which is what BR-I-06 always said.
+
+**Consequences.** The commitment vertical becomes reachable without a migration, a new table, a new
+tool or a new intent kind: every column this uses already exists. `may_attribute` moves onto a live
+path, and `test_may_attribute_is_invoked_on_the_resolution_path` asserts it is *called*, not merely
+correct — the ADR-0052 discipline applied to a second control.
+
+The new risk is attribution itself: a message can now cause a Commitment to be recorded against a
+real person. The blast radius is bounded by the conjunction above, by the fact that resolution reads
+and never writes identities, and by the unchanged requirement that a human approve the Proposal
+before anything is written. The residual risk is a spoofed channel identifier presented against an
+already-confirmed mapping; that trust decision is made once, out of band, by the person who confirmed
+the mapping, and not per message.
+
+Rejected: resolving by `handle` as well as `external_id` (`handle` carries no uniqueness constraint,
+so two people could match one participant and the tie-break would be invented); creating an
+`ExternalIdentity` on first sight of an unknown number (self-confirming provenance — the system would
+be vouching for a mapping nobody checked); letting the agent propose the mapping (BR-AI-34 exists to
+prevent precisely that).

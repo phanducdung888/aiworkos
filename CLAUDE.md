@@ -170,6 +170,10 @@ Tool Gateway ┘
 - **Comments (N-3, ADR-0033):** no Comment entity; `Event.type = COMMENT`.
 - **C-1 (ADR-0034):** Evidence attachment to existing entities and Risk narratives are Level 1;
   non-persisted read-side summaries need no Proposal.
+- **External identity (PQ-7, ADR-0054):** resolution is lookup-only by `(org_id, source_system,
+  external_id)`; it never creates an ExternalIdentity or a Person and never infers from names.
+  Attribution requires `confirmed_at IS NOT NULL AND confidence >= 90`; otherwise the handle is
+  preserved and `person_id` stays NULL.
 
 ## 9. Things that are still not decided
 
@@ -181,7 +185,6 @@ in `docs/development/progress.md`:
 - Which languages extraction must handle at MVP quality (N-2).
 - Whether `COMMENT` Events should be extraction-eligible despite being internal-origin (N-4).
 - Channel sender policy for WhatsApp (S-7) and the legal posture on capture (PQ-4).
-- External identity resolution from phone numbers to People (PQ-7).
 - Whether Commitment stays a separate aggregate (A-2).
 
 None of these block Phase 1.

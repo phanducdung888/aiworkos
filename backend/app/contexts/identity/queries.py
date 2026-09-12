@@ -12,13 +12,20 @@ become the reason the other can be dropped (BR-G-01a).
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from typing import Any
 
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.contexts.identity.models import Department, Person, Team
+from app.contexts.identity.domain import may_attribute
+from app.contexts.identity.models import (
+    Department,
+    ExternalIdentity,
+    Person,
+    Team,
+)
 from app.platform.authz import Action, Grant, Principal, ResourceType, grants_for
 from app.platform.http.pagination import Cursor, encode_cursor
 
@@ -248,3 +255,52 @@ def _page(
         last = rows[limit - 1]
         return rows[:limit], encode_cursor(last.created_at, last.id)
     return rows, None
+
+
+# --------------------------------------------------------------------------- attribution (PQ-7)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AttributedIdentity:
+    """A mapping strong enough to say who someone is. Never a row, never a Person."""
+
+    person_id: uuid.UUID
+    confidence: int
+
+
+def resolve_attribution(
+    session: Session, *, org_id: uuid.UUID, source_system: str, external_id: str
+) -> AttributedIdentity | None:
+    """The Person a channel identifier may be attributed to, or nobody (ADR-0054, BR-I-06).
+
+    Lookup-only, and by the tuple that is already unique — `(org_id, source_system, external_id)`.
+    Nothing is created, nothing is inferred from a name, and `handle` is deliberately not matched:
+    it carries no uniqueness constraint, so two people could answer to one participant and the
+    tie-break would have to be invented.
+
+    A row that exists is not an answer. `may_attribute` decides, and a mapping that is unconfirmed
+    or weak returns `None` — which the caller must read as "keep the handle and resolve nobody",
+    not as "no such identity". A weak mapping is a legitimate row that may suggest; what it may not
+    do is decide.
+
+    `org_id` is filtered explicitly even though RLS already scopes the table, for the reason every
+    query here does: two independent controls, neither of which is the excuse for dropping the
+    other (BR-G-01a).
+    """
+    probe = external_id.strip()
+    if not probe:
+        return None
+    row = session.execute(
+        select(ExternalIdentity)
+        .where(
+            ExternalIdentity.org_id == org_id,
+            ExternalIdentity.source_system == source_system,
+            ExternalIdentity.external_id == probe,
+        )
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    if not may_attribute(confidence=row.confidence, confirmed_at=row.confirmed_at):
+        return None
+    return AttributedIdentity(person_id=row.person_id, confidence=row.confidence)

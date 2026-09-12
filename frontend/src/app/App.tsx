@@ -9,6 +9,9 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 import { useMe } from '@/api/hooks'
 import { useAuth } from '@/auth/AuthProvider'
 import { ErrorState, Loading } from '@/components/States'
+import { Capture } from '@/features/capture/Capture'
+import { CommitmentDetail } from '@/features/commitments/CommitmentDetail'
+import { ProposalDetail, ProposalList } from '@/features/proposals/Proposals'
 import { CreateWork } from '@/features/work/CreateWork'
 import { WorkDetail } from '@/features/work/WorkDetail'
 import { WorkList } from '@/features/work/WorkList'
@@ -53,7 +56,9 @@ export function App() {
       <header>
         <nav aria-label="Main">
           <NavLink to="/work">Work</NavLink>
-          <NavLink to="/work/new">Capture</NavLink>
+          <NavLink to="/work/new">New work</NavLink>
+          <NavLink to="/capture">Capture message</NavLink>
+          <NavLink to="/proposals">Proposals</NavLink>
           {canManageProjects ? <NavLink to="/projects">Projects</NavLink> : null}
         </nav>
         <p>
@@ -69,6 +74,10 @@ export function App() {
           <Route path="/work" element={<WorkList />} />
           <Route path="/work/new" element={<CreateWork />} />
           <Route path="/work/:workId" element={<WorkDetail />} />
+          <Route path="/capture" element={<Capture />} />
+          <Route path="/proposals" element={<ProposalList />} />
+          <Route path="/proposals/:proposalId" element={<ProposalDetail />} />
+          <Route path="/commitments/:commitmentId" element={<CommitmentDetail />} />
           <Route path="/projects" element={<ProjectList />} />
           <Route path="/projects/:projectId" element={<ProjectDetail />} />
         </Routes>
