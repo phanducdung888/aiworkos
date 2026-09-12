@@ -14,7 +14,8 @@ export interface paths {
         /** List Organization Departments */
         get: operations["list_organization_departments_api_v1_departments_get"];
         put?: never;
-        post?: never;
+        /** Create Department */
+        post: operations["create_department_api_v1_departments_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -32,6 +33,24 @@ export interface paths {
         get: operations["read_department_by_id_api_v1_departments__department_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Department */
+        patch: operations["update_department_api_v1_departments__department_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/departments/{department_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Department Status */
+        post: operations["change_department_status_api_v1_departments__department_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -72,6 +91,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/external-identities/{identity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update External Identity */
+        patch: operations["update_external_identity_api_v1_external_identities__identity_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/external-identities/{identity_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm External Identity
+         * @description BR-I-06. Records who decided this handle belongs to this person, and when.
+         */
+        post: operations["confirm_external_identity_api_v1_external_identities__identity_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -91,6 +147,43 @@ export interface paths {
         get: operations["read_me_api_v1_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Membership
+         * @description What `resolve_principal` requires to exist before anybody can make a request at all.
+         */
+        post: operations["create_membership_api_v1_memberships_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/memberships/{membership_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Membership Status */
+        post: operations["change_membership_status_api_v1_memberships__membership_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -132,6 +225,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Organization
+         * @description The caller's own organization. There is no path to any other, and none to create one.
+         */
+        patch: operations["update_organization_api_v1_organization_patch"];
+        trace?: never;
+    };
     "/api/v1/people": {
         parameters: {
             query?: never;
@@ -142,7 +255,11 @@ export interface paths {
         /** List Organization People */
         get: operations["list_organization_people_api_v1_people_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Person
+         * @description ADR-0036. Onboarding is a deliberate act with an audit entry naming who performed it.
+         */
+        post: operations["create_person_api_v1_people_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -160,6 +277,69 @@ export interface paths {
         get: operations["read_person_by_id_api_v1_people__person_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Person */
+        patch: operations["update_person_api_v1_people__person_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/people/{person_id}/external-identities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Person External Identities */
+        get: operations["list_person_external_identities_api_v1_people__person_id__external_identities_get"];
+        put?: never;
+        /**
+         * Create External Identity
+         * @description Created unconfirmed. Confirming it is a separate act by a separate permission (ADR-0037).
+         */
+        post: operations["create_external_identity_api_v1_people__person_id__external_identities_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/people/{person_id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Person Roles */
+        get: operations["list_person_roles_api_v1_people__person_id__roles_get"];
+        put?: never;
+        /**
+         * Grant Role
+         * @description `org_admin` only. There is no path by which a role grants itself a wider one.
+         */
+        post: operations["grant_role_api_v1_people__person_id__roles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/people/{person_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Person Status
+         * @description BR-I-05. Departing stops new work arriving; it ends nothing that already exists.
+         */
+        post: operations["change_person_status_api_v1_people__person_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -237,6 +417,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roles/{assignment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke Role
+         * @description Revoked, not deleted: who held what and when is the history an auditor comes for.
+         */
+        delete: operations["revoke_role_api_v1_roles__assignment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams": {
         parameters: {
             query?: never;
@@ -247,7 +447,8 @@ export interface paths {
         /** List Organization Teams */
         get: operations["list_organization_teams_api_v1_teams_get"];
         put?: never;
-        post?: never;
+        /** Create Team */
+        post: operations["create_team_api_v1_teams_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -265,6 +466,65 @@ export interface paths {
         get: operations["read_team_by_id_api_v1_teams__team_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Team */
+        patch: operations["update_team_api_v1_teams__team_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Team Members
+         * @description Every membership, ended ones included: BR-I-03 keeps them so history stays queryable.
+         */
+        get: operations["list_team_members_api_v1_teams__team_id__members_get"];
+        put?: never;
+        /** Add Team Member */
+        post: operations["add_team_member_api_v1_teams__team_id__members_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/members/{membership_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * End Team Member
+         * @description DELETE on the wire, an update in the database. BR-I-03: the row is never removed.
+         */
+        delete: operations["end_team_member_api_v1_teams__team_id__members__membership_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Team Status */
+        post: operations["change_team_status_api_v1_teams__team_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -526,6 +786,15 @@ export interface components {
             /** Roles */
             roles: string[];
         };
+        /** DepartmentCreate */
+        DepartmentCreate: {
+            /** Lead Person Id */
+            lead_person_id?: string | null;
+            /** Name */
+            name: string;
+            /** Parent Department Id */
+            parent_department_id?: string | null;
+        };
         /** DepartmentList */
         DepartmentList: {
             /** Items */
@@ -565,6 +834,15 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /** DepartmentUpdate */
+        DepartmentUpdate: {
+            /** Lead Person Id */
+            lead_person_id?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Parent Department Id */
+            parent_department_id?: string | null;
         };
         /** DependencyCreateRequest */
         DependencyCreateRequest: {
@@ -656,6 +934,118 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /** ExternalIdentityCreate */
+        ExternalIdentityCreate: {
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence?: number;
+            /** External Id */
+            external_id: string;
+            /** Handle */
+            handle?: string | null;
+            /** Source System */
+            source_system: string;
+        };
+        /** ExternalIdentityList */
+        ExternalIdentityList: {
+            /** Items */
+            items: components["schemas"]["ExternalIdentityResource"][];
+        };
+        /**
+         * ExternalIdentityResource
+         * @description The external id is returned as stored.
+         *
+         *     It is the thing being mapped, so a directory that hid it could not be reviewed. Reading is
+         *     organization-wide by ADR-0037 for that reason; what is *not* organization-wide is changing it.
+         */
+        ExternalIdentityResource: {
+            /** Confidence */
+            confidence: number;
+            /** Confirmed At */
+            confirmed_at: string | null;
+            /** Confirmed By Person Id */
+            confirmed_by_person_id: string | null;
+            /** External Id */
+            external_id: string;
+            /** Handle */
+            handle: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Org Id
+             * Format: uuid
+             */
+            org_id: string;
+            /**
+             * Person Id
+             * Format: uuid
+             */
+            person_id: string;
+            /** Source System */
+            source_system: string;
+            /** Version */
+            version: number;
+        };
+        /** ExternalIdentityUpdate */
+        ExternalIdentityUpdate: {
+            /** Confidence */
+            confidence?: number | null;
+            /** Handle */
+            handle?: string | null;
+        };
+        /** MembershipCreate */
+        MembershipCreate: {
+            /**
+             * Person Id
+             * Format: uuid
+             */
+            person_id: string;
+        };
+        /** MembershipResource */
+        MembershipResource: {
+            /** Created By Person Id */
+            created_by_person_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /** Left At */
+            left_at: string | null;
+            /**
+             * Org Id
+             * Format: uuid
+             */
+            org_id: string;
+            /**
+             * Person Id
+             * Format: uuid
+             */
+            person_id: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * MembershipStatus
+         * @enum {string}
+         */
+        MembershipStatus: "active" | "suspended" | "ended";
+        /** MembershipStatusChange */
+        MembershipStatusChange: {
+            target: components["schemas"]["MembershipStatus"];
         };
         /** MilestoneCreate */
         MilestoneCreate: {
@@ -749,6 +1139,43 @@ export interface components {
             /** Target Date */
             target_date?: string | null;
         };
+        /** OrganizationResource */
+        OrganizationResource: {
+            /** Ai Enabled */
+            ai_enabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            /** Timezone */
+            timezone: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** OrganizationUpdate */
+        OrganizationUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+        };
         /** OwnerAssignment */
         OwnerAssignment: {
             /**
@@ -761,6 +1188,17 @@ export interface components {
              * Format: uuid
              */
             person_id: string;
+        };
+        /** PersonCreate */
+        PersonCreate: {
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email?: string | null;
+            /** Keycloak Subject */
+            keycloak_subject?: string | null;
+            /** Timezone */
+            timezone?: string | null;
         };
         /** PersonList */
         PersonList: {
@@ -801,6 +1239,26 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /**
+         * PersonStatus
+         * @enum {string}
+         */
+        PersonStatus: "active" | "inactive" | "departed";
+        /** PersonStatusChange */
+        PersonStatusChange: {
+            target: components["schemas"]["PersonStatus"];
+        };
+        /** PersonUpdate */
+        PersonUpdate: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Keycloak Subject */
+            keycloak_subject?: string | null;
+            /** Timezone */
+            timezone?: string | null;
         };
         /**
          * Problem
@@ -944,12 +1402,130 @@ export interface components {
             /** Target Date */
             target_date?: string | null;
         };
+        /**
+         * Role
+         * @enum {string}
+         */
+        Role: "org_admin" | "department_lead" | "team_lead" | "member" | "viewer" | "auditor" | "executive";
+        /** RoleAssignmentList */
+        RoleAssignmentList: {
+            /** Items */
+            items: components["schemas"]["RoleAssignmentResource"][];
+        };
+        /** RoleAssignmentResource */
+        RoleAssignmentResource: {
+            /**
+             * Granted At
+             * Format: date-time
+             */
+            granted_at: string;
+            /** Granted By Person Id */
+            granted_by_person_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Org Id
+             * Format: uuid
+             */
+            org_id: string;
+            /**
+             * Person Id
+             * Format: uuid
+             */
+            person_id: string;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Role */
+            role: string;
+            /** Scope Id */
+            scope_id: string | null;
+            /** Scope Type */
+            scope_type: string;
+            /** Version */
+            version: number;
+        };
+        /** RoleGrant */
+        RoleGrant: {
+            role: components["schemas"]["Role"];
+            /** Scope Id */
+            scope_id?: string | null;
+            /** @default organization */
+            scope_type?: components["schemas"]["ScopeType"];
+        };
+        /**
+         * ScopeType
+         * @enum {string}
+         */
+        ScopeType: "organization" | "department" | "team" | "project";
+        /** TeamCreate */
+        TeamCreate: {
+            /** Department Id */
+            department_id?: string | null;
+            /** Lead Person Id */
+            lead_person_id?: string | null;
+            /** Name */
+            name: string;
+        };
         /** TeamList */
         TeamList: {
             /** Items */
             items: components["schemas"]["TeamResource"][];
             /** Next Cursor */
             next_cursor?: string | null;
+        };
+        /** TeamMemberAdd */
+        TeamMemberAdd: {
+            /**
+             * Person Id
+             * Format: uuid
+             */
+            person_id: string;
+            /** @default member */
+            role?: components["schemas"]["TeamRole"];
+        };
+        /** TeamMembershipList */
+        TeamMembershipList: {
+            /** Items */
+            items: components["schemas"]["TeamMembershipResource"][];
+        };
+        /** TeamMembershipResource */
+        TeamMembershipResource: {
+            /** Created By Person Id */
+            created_by_person_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Org Id
+             * Format: uuid
+             */
+            org_id: string;
+            /**
+             * Person Id
+             * Format: uuid
+             */
+            person_id: string;
+            /** Role */
+            role: string;
+            /**
+             * Team Id
+             * Format: uuid
+             */
+            team_id: string;
+            /**
+             * Valid From
+             * Format: date-time
+             */
+            valid_from: string;
+            /** Valid To */
+            valid_to: string | null;
+            /** Version */
+            version: number;
         };
         /** TeamResource */
         TeamResource: {
@@ -983,6 +1559,33 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /**
+         * TeamRole
+         * @enum {string}
+         */
+        TeamRole: "lead" | "member" | "guest";
+        /** TeamUpdate */
+        TeamUpdate: {
+            /** Department Id */
+            department_id?: string | null;
+            /** Lead Person Id */
+            lead_person_id?: string | null;
+            /** Name */
+            name?: string | null;
+        };
+        /**
+         * UnitStatus
+         * @description Departments and teams share a lifecycle: they are archived, never deleted (BR-G-04).
+         * @enum {string}
+         */
+        UnitStatus: "active" | "archived";
+        /**
+         * UnitStatusChange
+         * @description Archiving a department or a team. Neither is ever deleted (BR-G-04).
+         */
+        UnitStatusChange: {
+            target: components["schemas"]["UnitStatus"];
         };
         /**
          * Visibility
@@ -1442,6 +2045,266 @@ export interface operations {
             };
         };
     };
+    create_department_api_v1_departments_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     read_department_by_id_api_v1_departments__department_id__get: {
         parameters: {
             query?: never;
@@ -1455,6 +2318,530 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    update_department_api_v1_departments__department_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                department_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    change_department_status_api_v1_departments__department_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                department_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitStatusChange"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2217,6 +3604,526 @@ export interface operations {
             };
         };
     };
+    update_external_identity_api_v1_external_identities__identity_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                identity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalIdentityUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalIdentityResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    confirm_external_identity_api_v1_external_identities__identity_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                identity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalIdentityResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     read_me_api_v1_me_get: {
         parameters: {
             query?: never;
@@ -2236,6 +4143,528 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CurrentPrincipal"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_membership_api_v1_memberships_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    change_membership_status_api_v1_memberships__membership_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipStatusChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembershipResource"];
                 };
             };
             /** @description Missing or malformed organization context, or an invalid cursor */
@@ -3253,6 +5682,266 @@ export interface operations {
             };
         };
     };
+    update_organization_api_v1_organization_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_organization_people_api_v1_people_get: {
         parameters: {
             query?: {
@@ -3513,6 +6202,266 @@ export interface operations {
             };
         };
     };
+    create_person_api_v1_people_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     read_person_by_id_api_v1_people__person_id__get: {
         parameters: {
             query?: never;
@@ -3526,6 +6475,1568 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    update_person_api_v1_people__person_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    list_person_external_identities_api_v1_people__person_id__external_identities_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalIdentityList"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_external_identity_api_v1_people__person_id__external_identities_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalIdentityCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalIdentityResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    list_person_roles_api_v1_people__person_id__roles_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleAssignmentList"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    grant_role_api_v1_people__person_id__roles_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleGrant"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleAssignmentResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    change_person_status_api_v1_people__person_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                person_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonStatusChange"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5590,6 +10101,264 @@ export interface operations {
             };
         };
     };
+    revoke_role_api_v1_roles__assignment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleAssignmentResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     list_organization_teams_api_v1_teams_get: {
         parameters: {
             query?: {
@@ -5849,6 +10618,266 @@ export interface operations {
             };
         };
     };
+    create_team_api_v1_teams_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     read_team_by_id_api_v1_teams__team_id__get: {
         parameters: {
             query?: never;
@@ -5862,6 +10891,1308 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    update_team_api_v1_teams__team_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    list_team_members_api_v1_teams__team_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMembershipList"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    add_team_member_api_v1_teams__team_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamMemberAdd"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMembershipResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    end_team_member_api_v1_teams__team_id__members__membership_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                team_id: string;
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMembershipResource"];
+                };
+            };
+            /** @description Missing or malformed organization context, or an invalid cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No bearer token, or one this application will not accept */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Authenticated, and not permitted this action on this resource */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description No such resource is visible in this organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Another request with the same Idempotency-Key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The If-Match precondition failed; re-read and reapply */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Request validation failed, or a business rule refused the change */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description This request requires an If-Match header */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                    "application/problem+json": {
+                        /** Detail */
+                        detail: string;
+                        /**
+                         * Rule
+                         * @description Business rule id, present on rule violations
+                         */
+                        rule?: string | null;
+                        /** Status */
+                        status: number;
+                        /** Title */
+                        title: string;
+                        /**
+                         * Type
+                         * @description Stable URN, e.g. urn:workos:error:rule-violation
+                         */
+                        type: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    change_team_status_api_v1_teams__team_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "x-organization-id"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitStatusChange"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

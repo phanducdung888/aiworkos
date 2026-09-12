@@ -18,6 +18,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.contexts.identity.public import (
+    MembershipStatus,
+    PersonStatus,
+    ScopeType,
+    TeamRole,
+    UnitStatus,
+)
 from app.contexts.work.public import (
     AssignmentRole,
     DependencyKind,
@@ -28,6 +35,7 @@ from app.contexts.work.public import (
     WorkStatus,
     WorkType,
 )
+from app.platform.authz import Role as WorkosRole
 from app.platform.http.validation import CleanText
 
 
@@ -450,3 +458,213 @@ class DepartmentResource(BaseModel):
 class DepartmentList(BaseModel):
     items: list[DepartmentResource]
     next_cursor: str | None = None
+
+
+# --------------------------------------------------------------------------- identity writes
+
+
+class OrganizationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: CleanText | None = Field(default=None, min_length=1)
+    timezone: CleanText | None = Field(default=None, min_length=1)
+
+
+class OrganizationResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    slug: str
+    timezone: str
+    status: str
+    ai_enabled: bool
+    created_at: dt.datetime
+    updated_at: dt.datetime
+    version: int
+
+
+class PersonCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: CleanText = Field(min_length=1)
+    email: CleanText | None = None
+    #: ADR-0036. Present for somebody who will sign in; absent for somebody only ever referenced,
+    #: who can still own work and be named as a committer (BR-I-04).
+    keycloak_subject: CleanText | None = None
+    timezone: CleanText | None = None
+
+
+class PersonUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: CleanText | None = Field(default=None, min_length=1)
+    email: CleanText | None = None
+    keycloak_subject: CleanText | None = None
+    timezone: CleanText | None = None
+
+
+class PersonStatusChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: PersonStatus
+
+
+class DepartmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: CleanText = Field(min_length=1)
+    parent_department_id: uuid.UUID | None = None
+    lead_person_id: uuid.UUID | None = None
+
+
+class DepartmentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: CleanText | None = Field(default=None, min_length=1)
+    parent_department_id: uuid.UUID | None = None
+    lead_person_id: uuid.UUID | None = None
+
+
+class TeamCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: CleanText = Field(min_length=1)
+    department_id: uuid.UUID | None = None
+    lead_person_id: uuid.UUID | None = None
+
+
+class TeamUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: CleanText | None = Field(default=None, min_length=1)
+    department_id: uuid.UUID | None = None
+    lead_person_id: uuid.UUID | None = None
+
+
+class UnitStatusChange(BaseModel):
+    """Archiving a department or a team. Neither is ever deleted (BR-G-04)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: UnitStatus
+
+
+class TeamMemberAdd(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    person_id: uuid.UUID
+    role: TeamRole = TeamRole.MEMBER
+
+
+class TeamMembershipResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    team_id: uuid.UUID
+    person_id: uuid.UUID
+    role: str
+    valid_from: dt.datetime
+    valid_to: dt.datetime | None
+    created_by_person_id: uuid.UUID | None
+    version: int
+
+
+class TeamMembershipList(BaseModel):
+    items: list[TeamMembershipResource]
+
+
+class MembershipCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    person_id: uuid.UUID
+
+
+class MembershipStatusChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target: MembershipStatus
+
+
+class MembershipResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    person_id: uuid.UUID
+    status: str
+    joined_at: dt.datetime
+    left_at: dt.datetime | None
+    created_by_person_id: uuid.UUID | None
+    version: int
+
+
+class RoleGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: WorkosRole
+    scope_type: ScopeType = ScopeType.ORGANIZATION
+    #: Required for anything narrower than the organization: a department-scoped role that names no
+    #: department is an unbounded grant wearing a narrow name.
+    scope_id: uuid.UUID | None = None
+
+
+class RoleAssignmentResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    person_id: uuid.UUID
+    role: str
+    scope_type: str
+    scope_id: uuid.UUID | None
+    granted_at: dt.datetime
+    granted_by_person_id: uuid.UUID | None
+    revoked_at: dt.datetime | None
+    version: int
+
+
+class RoleAssignmentList(BaseModel):
+    items: list[RoleAssignmentResource]
+
+
+class ExternalIdentityCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_system: CleanText = Field(min_length=1)
+    external_id: CleanText = Field(min_length=1)
+    handle: CleanText | None = None
+    confidence: int = Field(default=0, ge=0, le=100)
+
+
+class ExternalIdentityUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    handle: CleanText | None = None
+    confidence: int | None = Field(default=None, ge=0, le=100)
+
+
+class ExternalIdentityResource(BaseModel):
+    """The external id is returned as stored.
+
+    It is the thing being mapped, so a directory that hid it could not be reviewed. Reading is
+    organization-wide by ADR-0037 for that reason; what is *not* organization-wide is changing it.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    person_id: uuid.UUID
+    source_system: str
+    external_id: str
+    handle: str | None
+    confidence: int
+    confirmed_at: dt.datetime | None
+    confirmed_by_person_id: uuid.UUID | None
+    version: int
+
+
+class ExternalIdentityList(BaseModel):
+    items: list[ExternalIdentityResource]

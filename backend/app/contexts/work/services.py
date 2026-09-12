@@ -49,8 +49,6 @@ from app.contexts.work.commands import (
     UpdateMilestone,
     UpdateProject,
     UpdateWork,
-    changed_fields,
-    value_or_none,
 )
 from app.contexts.work.domain import (
     AssignmentRole,
@@ -89,6 +87,7 @@ from app.platform.authz import (
 )
 from app.platform.errors import DomainRuleViolation, EntityNotFound
 from app.platform.outbox import append_domain_event
+from app.platform.partial import changed_fields, value_or_none
 
 
 def _jsonable(value: Any) -> Any:
@@ -216,6 +215,38 @@ class _WorkCoreService:
         """
         return self._ctx.actor.person_id
 
+    def _assert_references(
+        self,
+        *,
+        owning_team_id: uuid.UUID | None = None,
+        department_id: uuid.UUID | None = None,
+        people: dict[str, uuid.UUID | None] | None = None,
+    ) -> None:
+        """ADR-0035. Every Identity reference is checked before anything is written.
+
+        Through `identity.public`, never by reading Identity's tables: the Work Core knows how to
+        ask whether a team exists and nothing about where teams are stored. Composite foreign keys
+        stay exactly as they are underneath — two independent mechanisms, neither of which is the
+        excuse for dropping the other (BR-G-01a) — but they are the backstop, and a backstop cannot
+        name the field that was wrong (W-11).
+        """
+        if owning_team_id is not None:
+            identity.assert_team_exists(
+                self._session, org_id=self._org_id, team_id=owning_team_id, field="owning_team_id"
+            )
+        if department_id is not None:
+            identity.assert_department_exists(
+                self._session,
+                org_id=self._org_id,
+                department_id=department_id,
+                field="department_id",
+            )
+        for field, person_id in (people or {}).items():
+            if person_id is not None:
+                identity.assert_person_exists(
+                    self._session, org_id=self._org_id, person_id=person_id, field=field
+                )
+
     def _cascade_actor(self, origin_action: str, origin_id: uuid.UUID) -> Actor:
         """The same actor, carrying why this change happened.
 
@@ -286,6 +317,14 @@ class ProjectService(_WorkCoreService):
         # Relations are computed against the project as proposed. A team lead may create a project
         # for their own team and not for somebody else's, and that is decided here, before the row
         # exists, from the values the caller supplied.
+        self._assert_references(
+            owning_team_id=command.owning_team_id,
+            department_id=command.department_id,
+            people={
+                "lead_person_id": command.lead_person_id,
+                "sponsor_person_id": command.sponsor_person_id,
+            },
+        )
         prospective = Project(
             org_id=self._org_id,
             name=command.name,
@@ -346,6 +385,14 @@ class ProjectService(_WorkCoreService):
         changes.pop("project_id")
         changes.pop("expected_version")
 
+        self._assert_references(
+            owning_team_id=changes.get("owning_team_id"),
+            department_id=changes.get("department_id"),
+            people={
+                "lead_person_id": changes.get("lead_person_id"),
+                "sponsor_person_id": changes.get("sponsor_person_id"),
+            },
+        )
         merged = {**before, **{k: _jsonable(v) for k, v in changes.items()}}
         validate_project_creation(
             name=str(merged["name"]),
@@ -1106,7 +1153,12 @@ class AssignmentService(_WorkCoreService):
             self._session, org_id=self._org_id, person_id=command.person_id
         )
         if status is None:
-            raise EntityNotFound("person", command.person_id)
+            # BR-G-01, not a 404: the resource this request addressed is the Work item, and it is
+            # right here. The thing that does not resolve is a field in the body, so the answer has
+            # to name that field — a 404 would tell a client the work item had vanished (ADR-0035).
+            raise DomainRuleViolation(
+                "BR-G-01", "person_id does not name a person in this organization"
+            )
         validate_assignment(
             person_id=command.person_id,
             role=command.role,

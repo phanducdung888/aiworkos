@@ -165,7 +165,23 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ## Open questions register
 
+### Open
+
+**An archived Team or Department still accepts new work.** `assert_team_exists` checks tenancy, not
+status, so a team archived this morning can own a Project created this afternoon. BR-I-05 settles
+the analogous question for people — a departed Person takes no new work — and no rule states the
+unit equivalent, so this is undecided rather than decided. Pinned by
+`test_an_archived_team_can_still_be_given_new_work_today` so that changing it is visible.
+
 ### Resolved
+
+**Assigning an unknown person returned 404 (2026-09-12).** `AssignmentService._create` raised
+`EntityNotFound` for a `person_id` that did not resolve, so a client was told the Work item it had
+just addressed did not exist. The addressed resource was present; the unresolvable thing was a body
+field. Now `BR-G-01`, matching every other reference check under ADR-0035. No test pinned the old
+status, which is why it survived Checkpoint 4a.
+
+**Checkpoint 5.1 (2026-09-12).** W-11 resolved by ADR-0035: Work Core validates every Identity reference through `identity.public` before it writes, so a bad `owning_team_id` is a `BR-G-01` rule violation naming the field rather than a composite foreign key violation from psycopg. The dependency runs one way — Work Core depends on Identity, Identity depends on nothing — enforced by the import-linter contract and two architecture tests. W-12 resolved: Identity has a domain layer (BR-I-01 to BR-I-07), repositories, seven application services and a write API. W-13 resolved by ADR-0036: people are provisioned administratively and there is no just-in-time creation, because a shared realm means JIT would let any authenticated subject conjure themselves a Person in any organization they name in a header. ADR-0037 gives `ExternalIdentity` its own authorization resource with no SELF grant anywhere.
 
 **Checkpoint 5 (2026-09-12).** Frontend: React + TypeScript + Vite, TanStack Query for all server state, OIDC authorization-code with PKCE, a client generated from `backend/openapi.json` with a CI drift check. Work surfaces cover capture, the partitioned list, work detail with status, assignment and dependencies, and projects with milestones. L5 component tests include axe checks; L6 covers journeys 1, 1a, 1b and 4 — the four the Phase 1 domain can complete. T-3's resolution is reused for the browser: the journeys mint real RS256 tokens against a JWKS the dev server publishes, so the API runs its production verification with no Keycloak in the loop.
 
@@ -200,13 +216,10 @@ Owner and due date to be filled at Phase 0 sign-off.
 | id | Question | Source | Blocks | Priority |
 |---|---|---|---|---|
 | N-2 | Target languages for MVP-quality extraction | product-constitution §10 | prompts, eval corpus, Phase 3 | **high** |
-| W-12 | **Identity has no write API.** Organization, Department, Team, Person, memberships and role assignments are readable and are created by `ops/dev/seed.py`. Phase 1 scope lists the context, and BR-I-01 to BR-I-07 are specified but not implemented in a domain layer — there is no code enforcing the department tree depth, time-bounded team membership, or the ExternalIdentity rules. Needs its own checkpoint before a pilot, because an organization that cannot add a person is not one a team can use. | progress.md Phase 1 scope | before the pilot | **high, new** |
-| W-13 | **Keycloak provisioning is by seed script, not just-in-time.** A person who signs in with a subject that has no Person row in the requested organization gets a 404, correctly and unhelpfully. Phase 1 scope says "Person provisioning"; whether that means JIT creation on first login — and if so, into which organization, with which role — is a decision nobody has made. | progress.md Phase 1 scope | before the pilot | **high, new** |
 | W-14 | **No `web` or `proxy` service in Compose.** Phase 1 scope lists both. The frontend runs from `npm run dev` and the E2E harness starts it, so nothing is blocked today, but there is no container image for it and no reverse proxy terminating one origin in front of both. | progress.md Phase 1 scope, docker-compose.yml | before the pilot | medium, new |
 | W-15 | **Five of the nine curated journeys are unwritten.** Journeys 2, 3, 5, 6 and 7 need Events, Proposals, Commitments or Risks, which is Phase 2 and later. Journey 8 (AI disabled) is satisfied by construction — there is no AI to switch off — and is recorded rather than coded. | testing-strategy §L6 | Phase 2+ | low, new |
 | W-9 | **`idempotency_key` has no retention job.** Records are kept for the 24 hours a client retry needs and nothing deletes them afterwards, so the table grows with every keyed POST. The application role is granted SELECT and INSERT only, deliberately — a stored response is the answer that was given — so the sweeper runs as a different role. | migration 0007 | Phase 2 | medium, new |
 | W-10 | **Two concurrent requests sharing one Idempotency-Key.** The unique constraint catches the second at insert, after its mutation has run in the same transaction, so that transaction rolls back and the caller gets 409 with `Retry-After: 1`; the retry then replays the first response. Correct but pessimistic — it wastes the work already done. A reservation row inserted before the handler would serialise them properly, at the cost of a second round trip on the common path. | `platform/http/idempotency.py` | Phase 2 | low, new |
-| W-11 | **A reference to a non-existent Team, Department or Person is caught by the database, not the service.** Found by schemathesis: the FK violation now renders as 422 `constraint-violation` with a detail that names nothing, rather than a 500. It is a safety net and not validation — the service does not check that `owning_team_id` resolves before writing, so the error says less than it could. Proper validation needs Identity read access from the Work Core, which is an ADR-0001 question. | `platform/http/errors.py` | Checkpoint 5 | medium, new |
 | W-5 | **`outbox.seq` orders within a transaction, not globally.** A bigserial is assigned at insert, but transactions commit in a different order than they start, so a relay reading between two commits can pass a `seq` that is still uncommitted and see it appear behind it afterwards. Causal ordering is safe — events from one transaction always arrive in append order — and a single relay at pilot volume is fine. Multiple concurrent consumers, or any guarantee of a strict global order, needs `pg_current_snapshot()` watermarking or an advisory lock around the claim. A recorded trade-off, not an oversight. | `platform/outbox.py`, migration 0006 | Phase 2 relay with a real transport | medium, new |
 | N-4 | Should `COMMENT` Events be extraction-eligible despite internal origin? | domain-model §13 | Phase 2 comment UI, Phase 3 extraction scope | **high, new** |
 | M-10 | Comments are immutable Events (BR-E-01), so editing or deleting a comment means a new Event. Is that acceptable product behaviour? | ADR-0033 consequences | Phase 2 UI | medium, new |
@@ -238,6 +251,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 4a | HTTP spine and the Work vertical slice: auth, principal, problem+json, ETag, cursor pagination, read side | ✅ complete · 238 tests total |
 | 4b | Project, Milestone, Dependency and ownership routers, visibility inheritance, idempotency, OpenAPI snapshot, schemathesis | ✅ complete · 299 tests total |
 | 5 | Frontend (Work surfaces), generated client, L5 component tests, L6 journeys 1/1a/1b/4, Identity read API | ✅ complete · 334 backend + 26 component + 5 journeys |
+| 5.1 | Identity & Organization write side: domain, repositories, services, REST API; W-11 reference validation; ADR-0035/0036/0037; AuthProvider tests | ✅ complete · 429 backend + 38 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

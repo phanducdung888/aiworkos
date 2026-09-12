@@ -350,7 +350,14 @@ def as_member(
     return auth(realm, subject_of(scoped_session, work_org.member), work_org.org_id)
 
 
-def grant(session: Session, org_id: uuid.UUID, person_id: uuid.UUID, role: str) -> None:
+def grant(
+    session: Session,
+    org_id: uuid.UUID,
+    person_id: uuid.UUID,
+    role: str,
+    scope_type: str = "organization",
+    scope_id: uuid.UUID | None = None,
+) -> None:
     # The org context is set with `is_local => true`, so it is discarded at commit. Re-establishing
     # it per statement is not ceremony: without it the second insert has no organization to claim
     # and RLS refuses the row, which is the control working exactly as intended.
@@ -359,10 +366,18 @@ def grant(session: Session, org_id: uuid.UUID, person_id: uuid.UUID, role: str) 
     )
     session.execute(
         text(
-            "INSERT INTO role_assignment (id, org_id, person_id, role, scope_type) "
-            "VALUES (:id, :org, :person, :role, 'organization')"
+            "INSERT INTO role_assignment "
+            "(id, org_id, person_id, role, scope_type, scope_id) "
+            "VALUES (:id, :org, :person, :role, :scope_type, :scope_id)"
         ),
-        {"id": uuid7(), "org": org_id, "person": person_id, "role": role},
+        {
+            "id": uuid7(),
+            "org": org_id,
+            "person": person_id,
+            "role": role,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+        },
     )
     session.commit()
 
@@ -373,3 +388,23 @@ def roles(scoped_session: Session, work_org: WorkOrg) -> None:
     grant(scoped_session, work_org.org_id, work_org.member, "member")
     grant(scoped_session, work_org.org_id, work_org.outsider, "member")
     grant(scoped_session, work_org.org_id, work_org.team_lead, "team_lead")
+
+
+@pytest.fixture
+def other_org_person(app_session_factory: sessionmaker[Session]) -> Iterator[uuid.UUID]:
+    """A Person belonging to somebody else's organization.
+
+    Created through its own session and its own org context, because the point is that the fixture
+    organization's session can never see it — building it any other way would prove nothing.
+    """
+    org_id = uuid7()
+    session = app_session_factory()
+    _scope(session, org_id)
+    session.execute(
+        text("INSERT INTO organization (id, name, slug) VALUES (:id, 'Rival', :slug)"),
+        {"id": org_id, "slug": f"rival-{uuid.uuid4().hex[:12]}"},
+    )
+    person_id = _person(session, org_id, "Rival Person")
+    session.commit()
+    session.close()
+    yield person_id

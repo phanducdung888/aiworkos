@@ -37,6 +37,16 @@ class _Timestamped:
     version: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
 
 
+class _Provenanced(_Timestamped):
+    """Migration 0008. Who created this row, where there is a tenant for them to belong to.
+
+    `Organization` deliberately does not carry it: it is the tenant root, so there is no `org_id` to
+    pair the reference with and whoever creates one does so from outside every tenant.
+    """
+
+    created_by_person_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
 class Organization(_Timestamped, Base):
     __tablename__ = "organization"
 
@@ -61,7 +71,7 @@ class Organization(_Timestamped, Base):
     )
 
 
-class Person(_Timestamped, Base):
+class Person(_Provenanced, Base):
     __tablename__ = "person"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -81,6 +91,11 @@ class Person(_Timestamped, Base):
             "status IN ('active', 'inactive', 'departed')", name="person_status"
         ),
         UniqueConstraint("id", "org_id", name="uq_person_id_org_id"),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_person_created_by_person_id_org_id",
+        ),
         UniqueConstraint(
             "org_id", "keycloak_subject", name="uq_person_org_id_keycloak_subject"
         ),
@@ -88,7 +103,7 @@ class Person(_Timestamped, Base):
     )
 
 
-class OrganizationMembership(_Timestamped, Base):
+class OrganizationMembership(_Provenanced, Base):
     __tablename__ = "organization_membership"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -110,6 +125,11 @@ class OrganizationMembership(_Timestamped, Base):
             name="organization_membership_status",
         ),
         UniqueConstraint("id", "org_id", name="uq_organization_membership_id_org_id"),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_organization_membership_created_by_person_id_org_id",
+        ),
         UniqueConstraint(
             "org_id", "person_id", name="uq_organization_membership_org_id_person_id"
         ),
@@ -121,7 +141,7 @@ class OrganizationMembership(_Timestamped, Base):
     )
 
 
-class Department(_Timestamped, Base):
+class Department(_Provenanced, Base):
     __tablename__ = "department"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -140,6 +160,11 @@ class Department(_Timestamped, Base):
         CheckConstraint("parent_department_id <> id", name="department_not_own_parent"),
         UniqueConstraint("id", "org_id", name="uq_department_id_org_id"),
         ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_department_created_by_person_id_org_id",
+        ),
+        ForeignKeyConstraint(
             ["parent_department_id", "org_id"],
             ["department.id", "department.org_id"],
             name="fk_department_parent_department_id_org_id",
@@ -155,7 +180,7 @@ class Department(_Timestamped, Base):
     )
 
 
-class Team(_Timestamped, Base):
+class Team(_Provenanced, Base):
     __tablename__ = "team"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -173,6 +198,11 @@ class Team(_Timestamped, Base):
         CheckConstraint("status IN ('active', 'archived')", name="team_status"),
         UniqueConstraint("id", "org_id", name="uq_team_id_org_id"),
         ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_team_created_by_person_id_org_id",
+        ),
+        ForeignKeyConstraint(
             ["department_id", "org_id"],
             ["department.id", "department.org_id"],
             name="fk_team_department_id_org_id",
@@ -186,7 +216,7 @@ class Team(_Timestamped, Base):
     )
 
 
-class TeamMembership(_Timestamped, Base):
+class TeamMembership(_Provenanced, Base):
     __tablename__ = "team_membership"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -209,6 +239,11 @@ class TeamMembership(_Timestamped, Base):
         ),
         UniqueConstraint("id", "org_id", name="uq_team_membership_id_org_id"),
         ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_team_membership_created_by_person_id_org_id",
+        ),
+        ForeignKeyConstraint(
             ["team_id", "org_id"],
             ["team.id", "team.org_id"],
             name="fk_team_membership_team_id_org_id",
@@ -221,7 +256,7 @@ class TeamMembership(_Timestamped, Base):
     )
 
 
-class RoleAssignment(_Timestamped, Base):
+class RoleAssignment(_Provenanced, Base):
     __tablename__ = "role_assignment"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -258,6 +293,11 @@ class RoleAssignment(_Timestamped, Base):
         ),
         UniqueConstraint("id", "org_id", name="uq_role_assignment_id_org_id"),
         ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_role_assignment_created_by_person_id_org_id",
+        ),
+        ForeignKeyConstraint(
             ["person_id", "org_id"],
             ["person.id", "person.org_id"],
             name="fk_role_assignment_person_id_org_id",
@@ -265,7 +305,7 @@ class RoleAssignment(_Timestamped, Base):
     )
 
 
-class ExternalIdentity(_Timestamped, Base):
+class ExternalIdentity(_Provenanced, Base):
     __tablename__ = "external_identity"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -289,6 +329,11 @@ class ExternalIdentity(_Timestamped, Base):
             "confidence BETWEEN 0 AND 100", name="external_identity_confidence"
         ),
         UniqueConstraint("id", "org_id", name="uq_external_identity_id_org_id"),
+        ForeignKeyConstraint(
+            ["created_by_person_id", "org_id"],
+            ["person.id", "person.org_id"],
+            name="fk_external_identity_created_by_person_id_org_id",
+        ),
         UniqueConstraint(
             "org_id",
             "source_system",

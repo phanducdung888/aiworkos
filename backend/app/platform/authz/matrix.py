@@ -76,6 +76,7 @@ RESOURCE_ACTIONS: dict[ResourceType, frozenset[Action]] = {
         {A.CREATE, A.READ, A.LIST, A.UPDATE, A.CHANGE_STATE}
     ),
     R.ROLE_ASSIGNMENT: frozenset({A.CREATE, A.READ, A.LIST, A.CHANGE_STATE}),
+    R.EXTERNAL_IDENTITY: frozenset({A.CREATE, A.READ, A.LIST, A.UPDATE, A.CHANGE_STATE}),
     R.PROJECT: frozenset(
         {A.CREATE, A.READ, A.LIST, A.UPDATE, A.CHANGE_STATE, A.CHANGE_VISIBILITY}
     ),
@@ -127,6 +128,16 @@ MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
     (R.ROLE_ASSIGNMENT, A.READ):         row(ORG, DEPT, TEAM, SELF, NO, ORG, NO),
     (R.ROLE_ASSIGNMENT, A.LIST):         row(ORG, DEPT, TEAM, SELF, NO, ORG, NO),
     (R.ROLE_ASSIGNMENT, A.CHANGE_STATE): row(ORG, NO,   NO,   NO,   NO, NO,  NO),
+    # ---------------------------------------------------------------- external identity
+    # ADR-0037. Reading is organization-wide because attribution has to be explicable to the people
+    # it affects. Everything that writes is `org_admin`, and no action carries SELF: a confirmed
+    # mapping is an authority to speak as somebody, so claiming a handle and being believed about it
+    # must not be the same act.
+    (R.EXTERNAL_IDENTITY, A.CREATE):       row(ORG, NO,  NO,  NO,  NO,  NO,  NO),
+    (R.EXTERNAL_IDENTITY, A.READ):         row(ORG, ORG, ORG, ORG, ORG, ORG, ORG),
+    (R.EXTERNAL_IDENTITY, A.LIST):         row(ORG, ORG, ORG, ORG, ORG, ORG, ORG),
+    (R.EXTERNAL_IDENTITY, A.UPDATE):       row(ORG, NO,  NO,  NO,  NO,  NO,  NO),
+    (R.EXTERNAL_IDENTITY, A.CHANGE_STATE): row(ORG, NO,  NO,  NO,  NO,  NO,  NO),
     # ---------------------------------------------------------------- project
     (R.PROJECT, A.CREATE):            row(ORG, DEPT, TEAM, NO,          NO,  NO,  NO),
     (R.PROJECT, A.READ):              row(ORG, DEPT, TEAM, TEAM_OR_OWN, ORG, ORG, ORG),

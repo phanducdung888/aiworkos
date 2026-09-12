@@ -49,6 +49,9 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0032 | `WorkAssignment` is the canonical assignment source of truth | **accepted** (Resolution Pack v1.1) | M-1 |
 | 0033 | Comments are Events, not a Comment aggregate | accepted | N-3 |
 | 0034 | Persistence, not computation, is what requires autonomy policy | accepted | C-1 |
+| 0035 | Cross-context references are validated through the published interface, never by the foreign key | accepted | W-11 |
+| 0036 | People are provisioned administratively; there is no just-in-time creation | accepted | W-13 |
+| 0037 | `ExternalIdentity` is its own authorization resource, and confirmation is not self-service | accepted | W-12, PQ-7 |
 
 ---
 
@@ -454,3 +457,101 @@ What becomes easy, what becomes hard, what must now be tested or monitored.
 ## Review trigger
 The condition that should make us revisit this.
 ```
+
+### ADR-0035 — Cross-context references are validated through the published interface, never by the foreign key
+**Context.** A Project names an owning Team, a lead Person and a sponsor Person; those rows belong to
+Identity, not to Work Core. Until now nothing checked them: the write went out, PostgreSQL refused it
+on a composite foreign key, and the API rendered the violation as a generic 422 that named nothing
+(W-11). The foreign key is doing real work — it makes a cross-tenant reference unrepresentable — but
+it is a backstop, and a backstop is not a validation layer. It cannot say *which* field was wrong, it
+fires after the transaction has done its work, and it ties the application's error vocabulary to
+whatever psycopg happens to raise.
+
+The tempting shortcut is for Work Core to query `person` and `team` itself. Both tables are in the
+same database and a `SELECT` would work. That is precisely the coupling ADR-0001 exists to prevent:
+the moment Work Core reads Identity's tables, Identity cannot change a column without breaking a
+context that never declared a dependency on it.
+
+**Decision.** Work Core validates every Identity reference by calling `app.contexts.identity.public`
+before it writes. Identity publishes reference predicates — `person_exists`, `team_exists`,
+`department_exists` — and Work Core calls them; it never queries Identity's tables and never imports
+anything behind `public`.
+
+The dependency runs one way: **Work Core depends on Identity; Identity depends on nothing.** Identity
+answers questions about people and structure and asks nothing about work, which is why it can be read
+by every other context without creating a cycle. `test_identity_never_imports_the_work_core` and
+`test_the_cross_context_exception_list_stays_one_directional` enforce the direction, and the
+import-linter `context-isolation` contract permits exactly one edge:
+`app.contexts.work.* -> app.contexts.identity.public`.
+
+A reference that does not resolve is a `DomainRuleViolation` carrying the rule id, raised before any
+row is written.
+
+**Consequences.** Errors name the field and the rule instead of the constraint. The foreign keys stay
+exactly as they are — two independent mechanisms, neither of which is the excuse for dropping the
+other, the same shape as application scoping and RLS (BR-G-01a). One extra query per referenced field
+on write paths, which is not a read path and is not hot. Extracting Identity into its own service
+later remains feasible because the call already goes through an interface rather than a join.
+Rejected: Work Core querying `person` directly (couples the contexts); relying on the foreign key
+alone (W-11, the state this replaces).
+
+### ADR-0036 — People are provisioned administratively; there is no just-in-time creation
+**Context.** One Keycloak realm serves every organization (ADR-0031), and `keycloak_subject → Person
+→ OrganizationMembership → RoleAssignment` is resolved in the application (security-model §2). Phase
+1 scope says "Person provisioning" without saying what it means, which left W-13 open: somebody with
+a valid realm token and no Person row gets a 404, correctly and unhelpfully.
+
+The alternative is creating a Person on first sign-in. It is convenient and it is an authorization
+decision in disguise: the realm is shared, so *any* authenticated subject could conjure themselves a
+Person in *any* organization they name in a header. Whichever organization that is, and whatever role
+they land with, is a grant nobody made.
+
+**Decision.** A Person exists because somebody with `PERSON.CREATE` created them. There is no
+just-in-time path and no self-service path. Signing in with a subject that has no Person in the
+requested organization is a 404 — the same 404 as an organization that does not exist, because
+whether one exists is itself tenant information (contract §5).
+
+Linking the Keycloak subject is part of creating or updating the Person, and `keycloak_subject` stays
+unique per organization rather than globally: one human working for two organizations is two Person
+rows sharing a subject (security-model §2, PQ-2). A Person may also have no subject at all — they can
+be assigned work and be named as a committer without ever signing in (BR-I-04).
+
+**Consequences.** Onboarding is a deliberate act with an audit entry naming who performed it, which
+is what an organization actually wants. A new hire cannot self-serve; that is the point. Development
+and the E2E harness seed people through `ops/dev/seed.py` rather than by logging in. If invitation or
+domain-verified self-registration is wanted later it is a new decision with its own approval flow,
+not a default that arrived by omission. Rejected: JIT provisioning on first login; provisioning from
+a realm group claim, which would put authorization back in the token that ADR-0031 took it out of.
+
+### ADR-0037 — `ExternalIdentity` is its own authorization resource, and confirmation is not self-service
+**Context.** An `ExternalIdentity` maps a handle in another system — a phone number first (PQ-1,
+WhatsApp) — to a Person. BR-I-06 says a mapping below 0.90 confidence or without `confirmed_at` must
+not be used to attribute ownership, assignment or commitment authorship; BR-I-07 makes
+`(source_system, external_id)` unique per organization. The authorization matrix had no resource type
+for it at all.
+
+Two shapes were available. Fold it into `PERSON`, treating a handle as an attribute of the person it
+belongs to — simple, no new cells, and it inherits `PERSON.UPDATE`'s `SELF` grant, which would let
+anybody attach handles to their own record. Or give it a resource type of its own.
+
+The `SELF` grant is what settles it. This mapping is the mechanism by which an inbound message is
+attributed to a human, so a confirmed mapping is an authority to speak as somebody. Self-service
+confirmation would mean claiming a number is the same act as being believed about it.
+
+**Decision.** `EXTERNAL_IDENTITY` is a resource type. Reading is organization-wide, because
+attribution has to be explicable to the people it affects. Creating, updating and changing state are
+`org_admin` only. There is no `SELF` grant on any of its actions.
+
+A mapping is created unconfirmed. Confirming it is `CHANGE_STATE` and records who confirmed it and
+when, which is the provenance BR-I-06 depends on. What *raises* confidence — a resolution algorithm,
+an invitation flow, a channel handshake — is PQ-7 and is not decided here; this decides only who may
+persist the answer.
+
+**Consequences.** Three new matrix rows, and the coverage test forced every one of the seven roles to
+be named in each. Phase 3 channel work inherits a resource whose permissions already exist rather
+than inventing them under deadline. A person who changes their phone number needs an administrator,
+which is friction, and is the correct amount of friction for a change that moves who the system
+believes somebody is. Rejected: governing it through `PERSON` (inherits a `SELF` grant that must not
+exist here); leaving it unmodelled until Phase 3 (W-12 would stay open and the table would stay
+orphaned).
+

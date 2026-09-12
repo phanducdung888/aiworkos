@@ -35,6 +35,8 @@ Legend: **[INV]** invariant enforced at write time · **[TRN]** state transition
 | BR-I-05 | A Person marked `departed` cannot receive a new active `WorkAssignment` or be recorded as making a new Commitment. Existing assignments and records are retained, with active assignments ended rather than deleted. | INV |
 | BR-I-06 | An ExternalIdentity mapping with `confidence < 0.90` or `confirmed_at is null` must not be used to attribute ownership, assignment or commitment authorship. It may be used to suggest. | POL |
 | BR-I-07 | One ExternalIdentity per `(source_system, external_id)` per organization. | INV |
+| BR-I-08 | A Person is created by somebody holding `PERSON.CREATE`; there is no just-in-time creation on first sign-in and no self-service path (ADR-0036). A sign-in subject that has no Person in the requested organization is refused with the same answer as an organization that does not exist. `keycloak_subject` is unique per organization, not globally: one human working for two organizations is two Person rows sharing a subject. | INV |
+| BR-I-09 | Confirming an ExternalIdentity records who confirmed it and when, and is never self-service (ADR-0037). Claiming a handle and being believed about it are separate acts with separate permissions, because a confirmed mapping is an authority to speak as somebody. | INV |
 
 ## 3. Project and Milestone
 

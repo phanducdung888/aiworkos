@@ -33,6 +33,24 @@ SCOPED_QUERIES = {
         "JOIN organization o ON o.id = p.org_id"
     ),
     "existence probe": "SELECT count(*) FROM person WHERE id IS NOT NULL",
+    # The tables the Identity write side fills. `external_identity` matters most of the three:
+    # it maps a phone number or a chat handle to a named person, so a leak across tenants is a
+    # leak of who somebody is, not merely of what they were working on (ADR-0037).
+    "external identity": "SELECT count(*) FROM external_identity",
+    "external identity by handle": (
+        "SELECT count(*) FROM external_identity WHERE external_id IS NOT NULL"
+    ),
+    "role assignment": "SELECT count(*) FROM role_assignment",
+    "organization membership": "SELECT count(*) FROM organization_membership",
+    "team membership": "SELECT count(*) FROM team_membership",
+    "department": "SELECT count(*) FROM department",
+    "team": "SELECT count(*) FROM team",
+    # A join is where a forgotten policy hides: every table in the chain must carry its own.
+    "identity join traversal": (
+        "SELECT count(*) FROM external_identity e "
+        "JOIN person p ON p.id = e.person_id "
+        "JOIN organization_membership m ON m.person_id = p.id"
+    ),
 }
 
 

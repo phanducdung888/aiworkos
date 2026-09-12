@@ -29,6 +29,7 @@ class ResourceType(enum.StrEnum):
     PERSON = "person"
     ORGANIZATION_MEMBERSHIP = "organization_membership"
     ROLE_ASSIGNMENT = "role_assignment"
+    EXTERNAL_IDENTITY = "external_identity"
     PROJECT = "project"
     MILESTONE = "milestone"
     WORK = "work"

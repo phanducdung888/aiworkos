@@ -10,7 +10,6 @@ which is why it is absent from this module and stays absent (ADR-0002, contract 
 """
 
 from app.contexts.work.commands import (
-    UNSET,
     AssignWork,
     ChangeDependencyStatus,
     ChangeMilestoneStatus,
@@ -78,6 +77,7 @@ from app.contexts.work.services import (
     WorkService,
 )
 from app.platform.errors import DomainRuleViolation, EntityNotFound
+from app.platform.partial import UNSET
 
 __all__ = [
     "UNSET",

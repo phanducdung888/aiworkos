@@ -1,5 +1,9 @@
 """Inputs to the Work Core application services.
 
+`UNSET`, `Maybe`, `changed_fields` and `value_or_none` are re-exported from `platform.partial`. They
+started here and moved down when Identity needed them: a shared utility living inside one context is
+a reason for another context to import it, which is how a dependency arrives that nobody declared.
+
 Explicit command objects rather than keyword soup, because two very different callers build them:
 the HTTP API in Checkpoint 4 and the Tool Gateway in Phase 3. Both must be constrained by the same
 shape, and a shape written down is one that can be diffed when it changes.
@@ -12,12 +16,9 @@ will silently erase data on a partial update.
 
 from __future__ import annotations
 
-import dataclasses
 import datetime as dt
-import enum
 import uuid
 from dataclasses import dataclass
-from typing import Any
 
 from app.contexts.work.domain import (
     AssignmentRole,
@@ -28,35 +29,7 @@ from app.contexts.work.domain import (
     Source,
     WorkStatus,
 )
-
-
-class _Sentinel(enum.Enum):
-    UNSET = "unset"
-
-
-#: "This field was not mentioned." Distinct from `None`, which means "set it to null".
-UNSET = _Sentinel.UNSET
-
-type Maybe[T] = T | _Sentinel
-
-
-def value_or_none[T](value: Maybe[T]) -> T | None:
-    """The caller's value, or None when they said nothing.
-
-    For fields where "unspecified" and "null" mean the same thing to the service — a visibility the
-    caller left to inheritance, say — collapsing them here keeps `_Sentinel` private to this module.
-    """
-    return None if isinstance(value, _Sentinel) else value
-
-
-def changed_fields(command: object) -> dict[str, Any]:
-    """The fields a caller actually set. Everything still `UNSET` is left untouched."""
-    return {
-        field.name: value
-        for field in dataclasses.fields(command)  # type: ignore[arg-type]
-        if not isinstance(value := getattr(command, field.name), _Sentinel)
-    }
-
+from app.platform.partial import UNSET, Maybe
 
 # --------------------------------------------------------------------------- project
 

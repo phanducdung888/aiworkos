@@ -54,12 +54,17 @@ def test_every_published_path_is_one_of_the_five_work_core_aggregates(
         "/api/v1/projects",
         "/api/v1/milestones",
         "/api/v1/dependencies",
-        # Identity & Organization, read-only: every Work Core write names a Person, a Team or a
-        # Department, so a client cannot complete a journey without looking them up.
+        # Identity & Organization. Reads are organization-wide; writes are narrow (ADR-0036,
+        # ADR-0037). Provisioning a tenant is not here and never will be: there is no
+        # `ORGANIZATION.CREATE` cell, because it happens from outside every tenant.
         "/api/v1/me",
+        "/api/v1/organization",
         "/api/v1/people",
         "/api/v1/teams",
         "/api/v1/departments",
+        "/api/v1/memberships",
+        "/api/v1/roles",
+        "/api/v1/external-identities",
         "/health",
     )
     unexpected = [p for p in paths if not p.startswith(allowed_prefixes)]
