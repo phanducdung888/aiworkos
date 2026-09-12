@@ -167,6 +167,26 @@ Acceptance: manual entry ratio below 30%, reversal rate below 5%.
 
 ### Open
 
+**Evidence has a table and no way to create one.** Migration 0009 creates `evidence` with its
+invariants — BR-E-04 structurally (a composite foreign key to the Event in the same organization),
+BR-E-05 and BR-E-14 as a check constraint (verbatim `excerpt` or a `claim_summary`, exactly one),
+BR-E-06 as an immutability trigger leaving only `superseded_by_id` writable. There is no service, no
+endpoint and no `EVIDENCE` authorization resource, because who may produce Evidence is a question
+extraction answers and extraction is not built. The table exists now so Events captured today are
+citable later without a backfill inventing provenance for rows already written.
+
+**N-4 is still open and now has code standing on it.** BR-E-16 says nothing may read `COMMENT` Events
+for extraction until N-4 is decided. The capture API enforces the stricter reading: `COMMENT` is
+internal-origin by BR-E-15 and `POST /api/v1/events` writes external Events only, so a comment cannot
+be captured through it at all. Whether in-app conversation is a capture surface is what N-4 asks, and
+answering it changes this endpoint.
+
+**Sensitivity is enforced for reading, not for setting.** BR-E-08 narrows who may *read* a
+`restricted` Event and `queries._sensitivity_predicate` implements exactly that. Nothing stops a
+member marking their own capture `restricted` and hiding it from everyone but its participants and
+the auditors. That may be correct — it is the same discretion a person has over something they never
+wrote down — but no rule states it either way.
+
 **An archived Team or Department still accepts new work.** `assert_team_exists` checks tenancy, not
 status, so a team archived this morning can own a Project created this afternoon. BR-I-05 settles
 the analogous question for people — a departed Person takes no new work — and no rule states the
@@ -174,6 +194,16 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 `test_an_archived_team_can_still_be_given_new_work_today` so that changing it is visible.
 
 ### Resolved
+
+**Attachment authorization could be bypassed for a restricted Event (2026-09-12, found in
+Checkpoint 6).** `AttachmentService` loaded the Event through `repository.get_event`, which filters
+by organization and nothing else. BR-E-08's narrowing lives in the query layer, so a `restricted`
+Event loaded that way passed the subsequent `READ` authorization — the matrix grant is
+organization-wide and the narrowing is not in the matrix. Anyone in the organization holding an
+attachment id could obtain a presigned download URL for a conversation they could not read. Fixed by
+loading through `queries.get_event`. This is the exact shape of the bug ADR-0039 claims the design
+makes unrepresentable, and it was unrepresentable only once the load path went through the
+read-filtered query.
 
 **Assigning an unknown person returned 404 (2026-09-12).** `AssignmentService._create` raised
 `EntityNotFound` for a `person_id` that did not resolve, so a client was told the Work item it had
@@ -252,6 +282,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 4b | Project, Milestone, Dependency and ownership routers, visibility inheritance, idempotency, OpenAPI snapshot, schemathesis | ✅ complete · 299 tests total |
 | 5 | Frontend (Work surfaces), generated client, L5 component tests, L6 journeys 1/1a/1b/4, Identity read API | ✅ complete · 334 backend + 26 component + 5 journeys |
 | 5.1 | Identity & Organization write side: domain, repositories, services, REST API; W-11 reference validation; ADR-0035/0036/0037; AuthProvider tests | ✅ complete · 429 backend + 38 frontend |
+| 6 | Signal/Capture: Event, EventParticipant, EventAttachment, Evidence foundation; capture API; ObjectStore port; ADR-0038/0039 | ✅ complete · 552 backend + 38 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

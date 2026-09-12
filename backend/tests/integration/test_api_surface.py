@@ -65,6 +65,9 @@ def test_every_published_path_is_one_of_the_five_work_core_aggregates(
         "/api/v1/memberships",
         "/api/v1/roles",
         "/api/v1/external-identities",
+        # Signal/Capture. The capture surface and the attachment flow (ADR-0039); no connector
+        # endpoints, because a channel adapter ingests through this same path rather than its own.
+        "/api/v1/events",
         "/health",
     )
     unexpected = [p for p in paths if not p.startswith(allowed_prefixes)]

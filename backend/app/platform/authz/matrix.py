@@ -89,6 +89,10 @@ RESOURCE_ACTIONS: dict[ResourceType, frozenset[Action]] = {
     ),
     R.DEPENDENCY: frozenset({A.CREATE, A.READ, A.LIST, A.CHANGE_STATE}),
     R.AUDIT_ENTRY: frozenset({A.READ, A.LIST}),
+    # No UPDATE. An Event is immutable (BR-E-01, ADR-0038) and the fields that do change —
+    # processing status, participant resolution, retention — belong to pipelines that do not yet
+    # exist. Declaring a permission nobody can exercise would be a guess about how they will work.
+    R.EVENT: frozenset({A.CREATE, A.READ, A.LIST, A.ATTACH}),
 }
 
 MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
@@ -170,6 +174,21 @@ MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
     (R.DEPENDENCY, A.LIST):         row(ORG, DEPT, TEAM, TEAM_OR_OWN, ORG, ORG, ORG),
     (R.DEPENDENCY, A.CHANGE_STATE): row(ORG, DEPT, TEAM, OWN,         NO,  NO,  NO),
     # ---------------------------------------------------------------- audit
+    # ---------------------------------------------------------------- event (capture)
+    # Capture is the act the product exists for, so every working role can do it and the read-only
+    # roles cannot. READ and LIST are organization-wide here and narrowed afterwards by sensitivity
+    # (BR-E-08): a `restricted` Event reaches only its participants and an auditor, and that
+    # narrowing is a query predicate rather than a grant, matching how Work visibility already
+    # works. Putting it in the matrix instead would need a Relation the policy engine cannot
+    # evaluate without reading the participant table, which it is not allowed to do.
+    #                                 admin  dept  team  member viewer audit exec
+    (R.EVENT, A.CREATE):             row(ORG,  ORG,  ORG,  ORG,   NO,    NO,   NO),
+    (R.EVENT, A.READ):               row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    (R.EVENT, A.LIST):               row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    # Attaching is narrower than capturing. Adding a file to an Event somebody else recorded is a
+    # change to their record of what happened, so a member reaches only their own captures
+    # (ADR-0039 routes every attachment endpoint through the Event's own authorization).
+    (R.EVENT, A.ATTACH):             row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
     (R.AUDIT_ENTRY, A.READ): row(ORG, NO, NO, NO, NO, ORG, NO),
     (R.AUDIT_ENTRY, A.LIST): row(ORG, NO, NO, NO, NO, ORG, NO),
 }

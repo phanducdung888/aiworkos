@@ -248,3 +248,29 @@ drift, migration drift, eval gate breach on a changed capability.
 | T-4 | Do we need contract tests between frontend and backend beyond generated clients? | Likely not in v1 given a single first-party client |
 | T-5 | How do we test the OpenClaw channel adapter without a live WhatsApp connection? | (a) a recorded-fixture adapter replaying realistic message shapes (proposed); (b) a sandbox number, which adds a live dependency to CI |
 | T-6 | Does the eval corpus need native-speaker review for Vietnamese labelling (N-2)? | Likely yes; inter-annotator agreement is meaningless without it |
+
+## Signal/Capture (Checkpoint 6)
+
+Three things about this slice are tested differently from the rest, and each for a stated reason.
+
+**Immutability is tested as the table owner, in raw SQL.** `test_event_immutability.py` bypasses the
+services, the ORM and every line of Python that might be enforcing BR-E-01 politely. An Event is the
+system's record of what happened, and a record that holds only because the application layer
+remembered to be careful is not a record — the extraction worker and the retention sweep are still to
+be written, and each is a plausible place for an UPDATE nobody reviews. The mutable allow-list is
+asserted as carefully as the frozen part, because a trigger that refused *every* update would pass a
+test that only checked the refusals and would make the entity unusable.
+
+**The object store is a real implementation, not a mock.** `InMemoryObjectStore` satisfies the same
+protocol as `S3ObjectStore` and answers `stat` only about objects actually written through a URL it
+issued. So a test that forgets the upload step sees the same `pending` attachment a real client would
+leave behind. A mock returning a canned size would make that bug untestable, which is the bug most
+worth having a test for. This is the same arrangement as the generated OIDC realm: the suite needs no
+MinIO for the same reason it needs no Keycloak.
+
+**Atomicity is induced by real integrity violations.** `test_capture_atomicity.py` provokes a
+duplicate-participant unique violation that fires *after* the Event, the audit row and the outbox row
+are in the transaction. A patched exception would prove the `except` clause runs; a duplicate key
+proves the database and the application agree about what one unit of work is. The suite also asserts,
+across everything it has written, that no outbox row names an Event that does not exist — the failure
+mode a consumer cannot recover from downstream.

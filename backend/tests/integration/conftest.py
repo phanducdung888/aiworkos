@@ -37,6 +37,7 @@ from app.platform.auth import JwksCache, TokenVerifier
 from app.platform.db import set_org_context
 from app.platform.http import deps
 from app.platform.ids import uuid7
+from app.platform.storage import InMemoryObjectStore
 from tests.conftest import APP_URL
 
 
@@ -278,6 +279,10 @@ def test_application() -> FastAPI:
     """
     realm = test_realm()
     application = create_app()
+    # ADR-0039. The attachment path runs end to end against a real implementation of the store
+    # protocol that happens to keep objects in memory, so these tests need no MinIO — the same
+    # arrangement as the generated realm above, which is why they need no Keycloak either.
+    application.state.object_store = InMemoryObjectStore()
     application.state.token_verifier = TokenVerifier(
         issuer=realm.issuer,
         audience=realm.audience,
@@ -408,3 +413,15 @@ def other_org_person(app_session_factory: sessionmaker[Session]) -> Iterator[uui
     session.commit()
     session.close()
     yield person_id
+
+
+@pytest.fixture
+def object_store(api: TestClient) -> InMemoryObjectStore:
+    """The store the application under test is using.
+
+    Handed to tests so they can perform the upload the way a client does — through the presigned
+    URL the API issued — rather than by reaching past it and asserting on a mock.
+    """
+    store = api.app.state.object_store  # type: ignore[attr-defined]
+    assert isinstance(store, InMemoryObjectStore)
+    return store

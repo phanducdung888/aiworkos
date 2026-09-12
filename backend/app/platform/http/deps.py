@@ -21,7 +21,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
@@ -29,10 +29,12 @@ from sqlalchemy.orm import Session
 from app.platform.actor import Actor, ActorType
 from app.platform.auth import TokenError, TokenVerifier, build_verifier
 from app.platform.authz import Principal
+from app.platform.config import get_settings
 from app.platform.db import session_factory, set_org_context
 from app.platform.http.errors import AuthenticationRequired
 from app.platform.http.validation import CleanText
 from app.platform.principal import parse_organization_header, resolve_principal
+from app.platform.storage import ObjectStore, S3ObjectStore
 
 
 @lru_cache
@@ -118,6 +120,32 @@ def current_actor(
 #: NUL byte.
 IdempotencyKeyDep = Annotated[CleanText | None, Header(alias="Idempotency-Key")]
 
+def object_store(request: Request) -> ObjectStore:
+    """The attachment store, or whatever the app was built with.
+
+    Tests install `InMemoryObjectStore` on the app the same way they install a token verifier, so
+    the capture path is exercised end to end without MinIO running — which is what lets these tests
+    run anywhere, the way the OIDC tests already do with a generated realm (ADR-0039).
+    """
+    override = getattr(request.app.state, "object_store", None)
+    if override is not None:
+        return cast(ObjectStore, override)
+    return _default_object_store()
+
+
+@lru_cache
+def _default_object_store() -> ObjectStore:
+    settings = get_settings()
+    return S3ObjectStore(
+        endpoint_url=settings.s3_endpoint_url,
+        access_key=settings.s3_access_key,
+        secret_key=settings.s3_secret_key,
+        bucket=settings.s3_bucket,
+        region=settings.s3_region,
+    )
+
+
 SessionDep = Annotated[Session, Depends(scoped_session)]
 PrincipalDep = Annotated[Principal, Depends(current_principal)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
+ObjectStoreDep = Annotated[ObjectStore, Depends(object_store)]

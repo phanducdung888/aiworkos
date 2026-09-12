@@ -30,6 +30,17 @@ class Settings(BaseSettings):
     #: immediately, because an unknown `kid` forces a refetch regardless of this window.
     oidc_jwks_ttl_seconds: int = 600
 
+    # --- Object storage (MinIO / S3), ADR-0039 ---
+    # Attachment bytes never pass through this process: the API issues short-lived presigned URLs
+    # and the client transfers directly. Defaults point at the Compose MinIO so `make up` needs no
+    # configuration; the credentials here are the same development ones Compose starts with and are
+    # overridden by the environment anywhere that matters.
+    s3_endpoint_url: str = "http://localhost:9000"
+    s3_access_key: str = "workos"
+    s3_secret_key: str = "workos-dev-secret"
+    s3_bucket: str = "workos-attachments"
+    s3_region: str = "us-east-1"
+
 
 @lru_cache
 def get_settings() -> Settings:

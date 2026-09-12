@@ -152,6 +152,74 @@
         "title": "AssignmentRole",
         "type": "string"
       },
+      "AttachmentContentResource": {
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/EventAttachmentResource"
+          },
+          "download_url": {
+            "title": "Download Url",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment",
+          "download_url",
+          "expires_at"
+        ],
+        "title": "AttachmentContentResource",
+        "type": "object"
+      },
+      "AttachmentStart": {
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "media_type": {
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "media_type"
+        ],
+        "title": "AttachmentStart",
+        "type": "object"
+      },
+      "AttachmentTicketResource": {
+        "description": "The attachment row plus a short-lived URL to write it (ADR-0039).\n\nThe upload does not pass through this API. The client PUTs to `upload_url` and then calls the\ncomplete endpoint, at which point the size and checksum are read from the store rather than\nbelieved from the client.",
+        "properties": {
+          "attachment": {
+            "$ref": "#/components/schemas/EventAttachmentResource"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "upload_url": {
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment",
+          "upload_url",
+          "expires_at"
+        ],
+        "title": "AttachmentTicketResource",
+        "type": "object"
+      },
       "CurrentPrincipal": {
         "description": "The caller, as this organization sees them.\n\n`roles` is here so a client can render navigation that matches what the caller may do. It is\nguidance for the interface and nothing more: the backend re-decides every request, so a client\nthat ignored this and showed every button would be refused rather than obeyed (contract \u00a714).",
         "properties": {
@@ -552,6 +620,638 @@
         ],
         "title": "DependencyResource",
         "type": "object"
+      },
+      "EventAttachmentResource": {
+        "description": "An attachment's metadata. Never its bytes, and never its object key.\n\nThe key is server-derived (ADR-0039) and publishing it would let a caller reason about the\nbucket layout, which is the one thing that must stay uninteresting.",
+        "properties": {
+          "checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checksum"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "uploaded_by_person_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded By Person Id"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "filename",
+          "media_type",
+          "size_bytes",
+          "checksum",
+          "status",
+          "uploaded_by_person_id",
+          "created_at",
+          "completed_at",
+          "version"
+        ],
+        "title": "EventAttachmentResource",
+        "type": "object"
+      },
+      "EventCapture": {
+        "additionalProperties": false,
+        "properties": {
+          "body_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Text"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/ParticipantInputModel"
+            },
+            "maxItems": 200,
+            "title": "Participants",
+            "type": "array"
+          },
+          "sender_external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender External Id"
+          },
+          "sensitivity": {
+            "$ref": "#/components/schemas/Sensitivity",
+            "default": "normal"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "source_system": {
+            "default": "web",
+            "minLength": 1,
+            "title": "Source System",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EventType"
+          }
+        },
+        "required": [
+          "type",
+          "occurred_at"
+        ],
+        "title": "EventCapture",
+        "type": "object"
+      },
+      "EventDetail": {
+        "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentResource"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "body_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Text"
+          },
+          "captured_by_person_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By Person Id"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "org_id": {
+            "format": "uuid",
+            "title": "Org Id",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "participant_count": {
+            "title": "Participant Count",
+            "type": "integer"
+          },
+          "participants": {
+            "items": {
+              "$ref": "#/components/schemas/EventParticipantResource"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "processing_status": {
+            "title": "Processing Status",
+            "type": "string"
+          },
+          "revision_of_event_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Of Event Id"
+          },
+          "sender_external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender External Id"
+          },
+          "sensitivity": {
+            "title": "Sensitivity",
+            "type": "string"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "source_system": {
+            "title": "Source System",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "org_id",
+          "type",
+          "origin",
+          "source_system",
+          "source_ref",
+          "content_hash",
+          "channel",
+          "sender_external_id",
+          "occurred_at",
+          "observed_at",
+          "title",
+          "body_text",
+          "sensitivity",
+          "participant_count",
+          "processing_status",
+          "revision_of_event_id",
+          "captured_by_person_id",
+          "created_at",
+          "version"
+        ],
+        "title": "EventDetail",
+        "type": "object"
+      },
+      "EventList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EventResource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "EventList",
+        "type": "object"
+      },
+      "EventParticipantResource": {
+        "properties": {
+          "external_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Handle"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "match_confidence": {
+            "title": "Match Confidence",
+            "type": "integer"
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Id"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "person_id",
+          "external_handle",
+          "role",
+          "match_confidence",
+          "resolved_at"
+        ],
+        "title": "EventParticipantResource",
+        "type": "object"
+      },
+      "EventResource": {
+        "properties": {
+          "body_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Text"
+          },
+          "captured_by_person_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured By Person Id"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "org_id": {
+            "format": "uuid",
+            "title": "Org Id",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "participant_count": {
+            "title": "Participant Count",
+            "type": "integer"
+          },
+          "processing_status": {
+            "title": "Processing Status",
+            "type": "string"
+          },
+          "revision_of_event_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Of Event Id"
+          },
+          "sender_external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender External Id"
+          },
+          "sensitivity": {
+            "title": "Sensitivity",
+            "type": "string"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "source_system": {
+            "title": "Source System",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "org_id",
+          "type",
+          "origin",
+          "source_system",
+          "source_ref",
+          "content_hash",
+          "channel",
+          "sender_external_id",
+          "occurred_at",
+          "observed_at",
+          "title",
+          "body_text",
+          "sensitivity",
+          "participant_count",
+          "processing_status",
+          "revision_of_event_id",
+          "captured_by_person_id",
+          "created_at",
+          "version"
+        ],
+        "title": "EventResource",
+        "type": "object"
+      },
+      "EventType": {
+        "enum": [
+          "EXTERNAL_MESSAGE",
+          "MANUAL_CAPTURE",
+          "MEETING_NOTE",
+          "COMMENT",
+          "ATTACHMENT",
+          "SYSTEM_ACTIVITY"
+        ],
+        "title": "EventType",
+        "type": "string"
       },
       "ExternalIdentityCreate": {
         "additionalProperties": false,
@@ -1215,6 +1915,60 @@
         ],
         "title": "OwnerAssignment",
         "type": "object"
+      },
+      "ParticipantInputModel": {
+        "additionalProperties": false,
+        "description": "Somebody named on an Event.\n\n`person_id` and `external_handle` are both optional and at least one is required (BR-E-12). The\npairing is the point: a meeting has attendees the system can name, and a channel message has a\nnumber it cannot resolve yet, and both are participants.",
+        "properties": {
+          "confidence": {
+            "default": 0,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "integer"
+          },
+          "external_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Handle"
+          },
+          "person_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Person Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ParticipantRole"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "ParticipantInputModel",
+        "type": "object"
+      },
+      "ParticipantRole": {
+        "enum": [
+          "organiser",
+          "speaker",
+          "mentioned",
+          "recipient"
+        ],
+        "title": "ParticipantRole",
+        "type": "string"
       },
       "PersonCreate": {
         "additionalProperties": false,
@@ -2093,6 +2847,15 @@
           "project"
         ],
         "title": "ScopeType",
+        "type": "string"
+      },
+      "Sensitivity": {
+        "enum": [
+          "normal",
+          "confidential",
+          "restricted"
+        ],
+        "title": "Sensitivity",
         "type": "string"
       },
       "TeamCreate": {
@@ -6735,6 +7498,3202 @@
         "summary": "Withdraw Dependency",
         "tags": [
           "dependencies"
+        ]
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "description": "Newest first. Restricted Events the caller is not part of are absent, not forbidden.",
+        "operationId": "list_captured_events_api_v1_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EventType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_system",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source System"
+            }
+          },
+          {
+            "in": "query",
+            "name": "occurred_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Occurred After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "occurred_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Occurred Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "participant_person_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Participant Person Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-organization-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or malformed organization context, or an invalid cursor"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No bearer token, or one this application will not accept"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authenticated, and not permitted this action on this resource"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such resource is visible in this organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Another request with the same Idempotency-Key is in flight"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The If-Match precondition failed; re-read and reapply"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request validation failed, or a business rule refused the change"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "This request requires an If-Match header"
+          }
+        },
+        "summary": "List Captured Events",
+        "tags": [
+          "capture"
+        ]
+      },
+      "post": {
+        "description": "Capture an Event. 201 for a new one, 200 for a reference already seen (BR-E-02).",
+        "operationId": "capture_event_api_v1_events_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-organization-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventCapture"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or malformed organization context, or an invalid cursor"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No bearer token, or one this application will not accept"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authenticated, and not permitted this action on this resource"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such resource is visible in this organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Another request with the same Idempotency-Key is in flight"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The If-Match precondition failed; re-read and reapply"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request validation failed, or a business rule refused the change"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "This request requires an If-Match header"
+          }
+        },
+        "summary": "Capture Event",
+        "tags": [
+          "capture"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}": {
+      "get": {
+        "operationId": "read_event_api_v1_events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-organization-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or malformed organization context, or an invalid cursor"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No bearer token, or one this application will not accept"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authenticated, and not permitted this action on this resource"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such resource is visible in this organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Another request with the same Idempotency-Key is in flight"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The If-Match precondition failed; re-read and reapply"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request validation failed, or a business rule refused the change"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "This request requires an If-Match header"
+          }
+        },
+        "summary": "Read Event",
+        "tags": [
+          "capture"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/attachments": {
+      "post": {
+        "description": "Reserve an attachment and get a URL to upload it to (ADR-0039).\n\nThe row is created `pending`. It becomes readable only after the complete call has asked the\nstore how big the object actually is, so a client that never finishes leaves a row that is\nvisible as unfinished rather than one that claims a file nobody can fetch.",
+        "operationId": "start_attachment_api_v1_events__event_id__attachments_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-organization-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentStart"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentTicketResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or malformed organization context, or an invalid cursor"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No bearer token, or one this application will not accept"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authenticated, and not permitted this action on this resource"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such resource is visible in this organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Another request with the same Idempotency-Key is in flight"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The If-Match precondition failed; re-read and reapply"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request validation failed, or a business rule refused the change"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "This request requires an If-Match header"
+          }
+        },
+        "summary": "Start Attachment",
+        "tags": [
+          "capture"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/attachments/{attachment_id}/complete": {
+      "post": {
+        "description": "Record what the store actually holds.\n\nSize and checksum are read from the object, never taken from the request body (ADR-0039).",
+        "operationId": "complete_attachment_api_v1_events__event_id__attachments__attachment_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-organization-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventAttachmentResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or malformed organization context, or an invalid cursor"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No bearer token, or one this application will not accept"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authenticated, and not permitted this action on this resource"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such resource is visible in this organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Another request with the same Idempotency-Key is in flight"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The If-Match precondition failed; re-read and reapply"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request validation failed, or a business rule refused the change"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "This request requires an If-Match header"
+          }
+        },
+        "summary": "Complete Attachment",
+        "tags": [
+          "capture"
+        ]
+      }
+    },
+    "/api/v1/events/{event_id}/attachments/{attachment_id}/content": {
+      "get": {
+        "description": "A short-lived download URL, issued only to a caller who may read the Event.\n\nReturns the URL rather than redirecting to it: a 302 to a presigned link puts a credential in\nthe browser's history and in every intermediary's access log, and the caller here is an\napplication that is about to fetch it anyway.",
+        "operationId": "attachment_content_api_v1_events__event_id__attachments__attachment_id__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-organization-id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Organization-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentContentResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Missing or malformed organization context, or an invalid cursor"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No bearer token, or one this application will not accept"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authenticated, and not permitted this action on this resource"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No such resource is visible in this organization"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Another request with the same Idempotency-Key is in flight"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The If-Match precondition failed; re-read and reapply"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Request validation failed, or a business rule refused the change"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "RFC 9457, as this API emits it.\n\nDeclared so the OpenAPI document describes the errors the application actually returns.\nPublishing FastAPI's default validation schema while returning problem+json would make the\ndocument a description of a different service \u2014 and a generated client would be built against\nthe wrong one.",
+                  "properties": {
+                    "detail": {
+                      "title": "Detail",
+                      "type": "string"
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Business rule id, present on rule violations",
+                      "title": "Rule"
+                    },
+                    "status": {
+                      "title": "Status",
+                      "type": "integer"
+                    },
+                    "title": {
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Stable URN, e.g. urn:workos:error:rule-violation",
+                      "title": "Type",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "detail"
+                  ],
+                  "title": "Problem",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "This request requires an If-Match header"
+          }
+        },
+        "summary": "Attachment Content",
+        "tags": [
+          "capture"
         ]
       }
     },

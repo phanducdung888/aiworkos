@@ -35,6 +35,7 @@ class ResourceType(enum.StrEnum):
     WORK = "work"
     WORK_ASSIGNMENT = "work_assignment"
     DEPENDENCY = "dependency"
+    EVENT = "event"
     AUDIT_ENTRY = "audit_entry"
 
 
@@ -50,6 +51,9 @@ class Action(enum.StrEnum):
     END_ASSIGNMENT = "end_assignment"
     MANAGE_MEMBERS = "manage_members"
     MANAGE_ROLES = "manage_roles"
+    #: Attaching a file to an Event. Not a resource of its own: ADR-0039 makes attachment
+    #: authorization the Event's authorization, so this action is declared on EVENT.
+    ATTACH = "attach"
 
 
 class Grant(enum.StrEnum):

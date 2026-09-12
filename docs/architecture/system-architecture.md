@@ -215,6 +215,14 @@ mutation. The mutation happens later, in a separate transaction, when a human ap
 | Surface | Principal | Path | Notes |
 |---|---|---|---|
 | Web manual entry and paste | the user | `POST /api/v1/events` (user-authenticated) | Mandatory MVP path. Attachments go to MinIO and are referenced by the Event |
+
+**Checkpoint 6 status.** The web capture path is implemented: `POST /api/v1/events` plus read and
+list, and a two-step attachment flow (`POST /events/{id}/attachments` → client PUTs to a presigned
+URL → `POST .../complete`) with `GET .../content` issuing a presigned read. Bytes never traverse the
+API process (ADR-0039). `app.platform.storage` defines the `ObjectStore` port; `S3ObjectStore` is the
+only module that imports boto3, and `InMemoryObjectStore` is what lets the capture tests run without
+MinIO. No channel connector is implemented — an adapter, when it exists, ingests through this same
+endpoint rather than a private one.
 | OpenClaw messaging (WhatsApp first) | dedicated **connector** service account | `POST /api/v1/ingest/events` | The channel adapter is an ingestion client only. It holds no tool permissions (ADR-0027) |
 | Internal system activity | system actor | emitted in-process by the Work Core | Work status changes, commitments, decisions, notifications, project activity, comments (subject to N-3) |
 
@@ -246,7 +254,7 @@ naming ambiguity is tracked as A-1 (§12).
 
 | Concept | Meaning | Store | Mutability |
 |---|---|---|---|
-| **Event** (domain entity) | An observed unit of human/system activity: a meeting, a message, a document revision, a commit | `events` table + raw blob in MinIO | Immutable; corrections are new events |
+| **Event** (domain entity) | An observed unit of human/system activity: a meeting, a message, a document revision, a commit | `event` table + raw blob in MinIO | Immutable at the database, not by convention (ADR-0038); corrections are new Events carrying `revision_of_event_id` |
 | **Evidence** (domain entity) | An assertion that a specific excerpt of an Event supports a specific claim about a specific entity | `evidence` table | Immutable; superseded, not edited |
 | **DomainEvent** (technical) | An internal fact emitted when state changes, e.g. `work.status_changed` | `outbox` table, then in-process/Redis dispatch | Append-only, retained for a bounded window |
 

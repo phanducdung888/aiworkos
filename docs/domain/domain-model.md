@@ -353,6 +353,16 @@ Decisions are never edited after `accepted`; they are superseded (BR-DE-02). Thi
 `body_text` is stored in Postgres so evidence excerpts remain readable even if blob storage is
 unavailable or the raw payload has been purged for retention.
 
+**Implemented in Checkpoint 6** (migration 0009, `app/contexts/signal`). Two fields were added that
+the table above does not name, both because BR-E-02 needs somewhere to put its answer:
+`revision_of_event_id`, set when an Event corrects one that arrived under the same external
+reference, and `captured_by_person_id`, which records BR-E-13's capturer and is deliberately not a
+claim about who authored the content. `processing_error` accompanies `processing_status`.
+
+Immutability is a column-scoped trigger rather than a convention (ADR-0038): a correction is a new
+Event, and the original keeps saying what it originally said even against hand-written SQL run as
+the table owner.
+
 **Comments are Events** (N-3, ADR-0033). There is no `Comment` entity in the MVP. A comment on a Work
 item is an Event with `type = COMMENT`, targeted at the entity through Evidence or a subject reference,
 and `origin = INTERNAL`. Threaded discussion, mentions, reactions, subscriptions and moderation are
@@ -385,7 +395,11 @@ Evidence is the join between the world and the model. If a query cannot be answe
 the product should say so rather than assert.
 
 ### EventAttachment
-`(event_id, object_uri, filename, media_type, size_bytes, uploaded_by_person_id, checksum)`. The web
+`(event_id, object_key, filename, media_type, size_bytes, uploaded_by_person_id, checksum, status)`.
+The field is `object_key` rather than `object_uri`: it is derived server-side and is never published
+to a client or accepted from one (ADR-0039). `status` is `pending` until the upload has been
+confirmed against the store, at which point the size and checksum recorded are the **store's**, not
+the client's. The web
 capture surface allows attaching supporting files to an Event. Attachments can be Evidence targets via
 a locator of `{attachment_id}`; excerpt verification does not apply to binary attachments, and Evidence
 over an attachment records `excerpt = null` with a human or AI-authored `claim_summary` instead.

@@ -25,6 +25,11 @@ from app.contexts.identity.public import (
     TeamRole,
     UnitStatus,
 )
+from app.contexts.signal.public import (
+    EventType,
+    ParticipantRole,
+    Sensitivity,
+)
 from app.contexts.work.public import (
     AssignmentRole,
     DependencyKind,
@@ -668,3 +673,137 @@ class ExternalIdentityResource(BaseModel):
 
 class ExternalIdentityList(BaseModel):
     items: list[ExternalIdentityResource]
+
+
+# --------------------------------------------------------------------------- capture (events)
+
+
+class ParticipantInputModel(BaseModel):
+    """Somebody named on an Event.
+
+    `person_id` and `external_handle` are both optional and at least one is required (BR-E-12). The
+    pairing is the point: a meeting has attendees the system can name, and a channel message has a
+    number it cannot resolve yet, and both are participants.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: ParticipantRole
+    person_id: uuid.UUID | None = None
+    external_handle: CleanText | None = None
+    confidence: int = Field(default=0, ge=0, le=100)
+
+
+class EventCapture(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: EventType
+    occurred_at: dt.datetime
+    #: Defaults to `web`, which is what a manual capture through this API is. A caller integrating a
+    #: registered channel names its own key so that BR-E-02's dedup is scoped to that channel.
+    source_system: CleanText = Field(default="web", min_length=1)
+    source_ref: CleanText | None = None
+    title: CleanText | None = None
+    body_text: CleanText | None = None
+    channel: CleanText | None = None
+    #: BR-E-12. Recorded verbatim and never overwritten when the sender is later resolved.
+    sender_external_id: CleanText | None = None
+    sensitivity: Sensitivity = Sensitivity.NORMAL
+    participants: list[ParticipantInputModel] = Field(default_factory=list, max_length=200)
+
+
+class EventParticipantResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    person_id: uuid.UUID | None
+    external_handle: str | None
+    role: str
+    match_confidence: int
+    resolved_at: dt.datetime | None
+
+
+class EventAttachmentResource(BaseModel):
+    """An attachment's metadata. Never its bytes, and never its object key.
+
+    The key is server-derived (ADR-0039) and publishing it would let a caller reason about the
+    bucket layout, which is the one thing that must stay uninteresting.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    event_id: uuid.UUID
+    filename: str
+    media_type: str
+    size_bytes: int | None
+    checksum: str | None
+    status: str
+    uploaded_by_person_id: uuid.UUID | None
+    created_at: dt.datetime
+    completed_at: dt.datetime | None
+    version: int
+
+
+class EventResource(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    type: str
+    origin: str
+    source_system: str
+    source_ref: str | None
+    content_hash: str
+    channel: str | None
+    sender_external_id: str | None
+    occurred_at: dt.datetime
+    observed_at: dt.datetime
+    title: str | None
+    body_text: str | None
+    sensitivity: str
+    participant_count: int
+    processing_status: str
+    #: BR-E-02. Set when this Event corrects one that arrived under the same external reference;
+    #: the original is never touched.
+    revision_of_event_id: uuid.UUID | None
+    #: BR-E-13. Who wrote it down — not a claim about who authored the content.
+    captured_by_person_id: uuid.UUID | None
+    created_at: dt.datetime
+    version: int
+
+
+class EventDetail(EventResource):
+    participants: list[EventParticipantResource] = Field(default_factory=list)
+    attachments: list[EventAttachmentResource] = Field(default_factory=list)
+
+
+class EventList(BaseModel):
+    items: list[EventResource]
+    next_cursor: str | None = None
+
+
+class AttachmentStart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: CleanText = Field(min_length=1)
+    media_type: CleanText = Field(min_length=1)
+
+
+class AttachmentTicketResource(BaseModel):
+    """The attachment row plus a short-lived URL to write it (ADR-0039).
+
+    The upload does not pass through this API. The client PUTs to `upload_url` and then calls the
+    complete endpoint, at which point the size and checksum are read from the store rather than
+    believed from the client.
+    """
+
+    attachment: EventAttachmentResource
+    upload_url: str
+    expires_at: dt.datetime
+
+
+class AttachmentContentResource(BaseModel):
+    attachment: EventAttachmentResource
+    download_url: str
+    expires_at: dt.datetime

@@ -19,6 +19,7 @@ name = Bounded contexts do not reach into each other
 type = independence
 modules =
     app.contexts.identity
+    app.contexts.signal
     app.contexts.work
 # ADR-0001 forbids reaching into another context, not talking to one. A context's `public` module
 # is the published interface and is the one edge that is allowed; everything behind it stays
@@ -26,6 +27,10 @@ modules =
 # between "imports the interface" and "imports the internals" a thing CI can still tell apart.
 ignore_imports =
     app.contexts.work.* -> app.contexts.identity.public
+# Signal resolves participants to people, so it asks Identity whether a Person exists — through the
+# same published interface and the same one-way direction. Identity does not know Signal exists, and
+# Signal does not know the Work Core exists: capture is upstream of both.
+    app.contexts.signal.* -> app.contexts.identity.public
 
 [importlinter:contract:api-purity]
 name = Routers never touch the database or the policy engine directly

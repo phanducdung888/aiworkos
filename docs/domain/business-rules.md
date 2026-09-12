@@ -148,6 +148,8 @@ Legend: **[INV]** invariant enforced at write time · **[TRN]** state transition
 | BR-E-15 | **Comments are Events** (ADR-0033). A comment is `Event.type = COMMENT` with `origin = INTERNAL`. There is no `Comment` entity, no threading, no mentions, no reactions, no subscriptions and no moderation in the MVP. | INV |
 | BR-E-16 | Because `COMMENT` Events are internal-origin, BR-E-11 currently excludes them from AI extraction. Whether that is the intended product behaviour is **open (N-4)** and must be answered before comments are shipped as a capture surface. Until then, no extraction path may read them. | POL |
 | BR-E-14 | Attachments are stored against the Event and referenced by Evidence via an `{attachment_id}` locator. Verbatim excerpt verification (BR-E-05) does not apply to binary attachments; such Evidence carries a `claim_summary` and no `excerpt`. | INV |
+| BR-E-17 | An Event's frozen fields are enforced by a database trigger, not by convention (ADR-0038). The mutable set is exactly `processing_status`, `processing_error`, `participant_count`, `retention_expires_at`, `raw_payload_uri` and `deleted_at`; every other column, including any added by a later migration, is frozen by construction. | INV |
+| BR-E-18 | Attachment bytes never pass through the API (ADR-0039). Upload and download happen against short-lived presigned URLs issued only after the **Event's** own authorization has passed, the object key is derived server-side from `(org_id, event_id, attachment_id)` and is never accepted from a client, and the recorded `size_bytes` and `checksum` are the store's report rather than the client's claim. | INV |
 
 ## 9a. DomainEvent projection into internal Events
 

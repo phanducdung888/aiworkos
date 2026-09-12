@@ -1,0 +1,74 @@
+"""The published interface of Signal/Capture (ADR-0001).
+
+Everything another context or the API layer is allowed to use. What is deliberately not here: the
+models, the repository and the raw session work. A caller that needs an Event asks for one; a caller
+that wants to write SQL against `event` is reaching into this context's internals and the import
+contract will say so.
+
+Evidence is absent too, and that absence is the current state of the design rather than an oversight
+— the table and its invariants exist (migration 0009) so that Events captured now are citable later,
+and nothing may create Evidence until extraction defines who produces it and under what authority.
+"""
+
+from app.contexts.signal.commands import (
+    CaptureEvent,
+    CompleteAttachment,
+    ParticipantInput,
+    RequestAttachmentContent,
+    StartAttachment,
+)
+from app.contexts.signal.domain import (
+    CAPTURABLE_TYPES,
+    AttachmentStatus,
+    EventOrigin,
+    EventType,
+    ParticipantRole,
+    ProcessingStatus,
+    Sensitivity,
+    may_extract,
+    visible_to,
+)
+from app.contexts.signal.models import Event, EventAttachment, EventParticipant
+from app.contexts.signal.queries import EventFilter, EventPage, list_events
+from app.contexts.signal.queries import get_event as read_event
+from app.contexts.signal.repository import attachments_for, participants_for
+from app.contexts.signal.services import (
+    AttachmentContent,
+    AttachmentService,
+    AttachmentTicket,
+    CaptureResult,
+    CaptureService,
+    ServiceContext,
+)
+
+__all__ = [
+    "CAPTURABLE_TYPES",
+    "AttachmentContent",
+    "AttachmentService",
+    "AttachmentStatus",
+    "AttachmentTicket",
+    "CaptureEvent",
+    "CaptureResult",
+    "CaptureService",
+    "CompleteAttachment",
+    "Event",
+    "EventAttachment",
+    "EventFilter",
+    "EventOrigin",
+    "EventPage",
+    "EventParticipant",
+    "EventType",
+    "ParticipantInput",
+    "ParticipantRole",
+    "ProcessingStatus",
+    "RequestAttachmentContent",
+    "Sensitivity",
+    "ServiceContext",
+    "StartAttachment",
+    "attachments_for",
+    "list_events",
+    "may_extract",
+    "participants_for",
+    "read_event",
+    "visible_to",
+]

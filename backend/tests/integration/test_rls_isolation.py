@@ -45,6 +45,24 @@ SCOPED_QUERIES = {
     "team membership": "SELECT count(*) FROM team_membership",
     "department": "SELECT count(*) FROM department",
     "team": "SELECT count(*) FROM team",
+    # Signal/Capture. `event.body_text` is the captured content itself — a pasted conversation, a
+    # meeting note — so a leak here is a leak of what was said, and `event_attachment` leaks the
+    # object keys that a presigned URL would be issued against.
+    "event": "SELECT count(*) FROM event",
+    "event body text": "SELECT count(*) FROM event WHERE body_text IS NOT NULL",
+    "event by other org": "SELECT count(*) FROM event WHERE org_id = :other",
+    "event participant": "SELECT count(*) FROM event_participant",
+    "event attachment": "SELECT count(*) FROM event_attachment",
+    "attachment object keys": "SELECT count(*) FROM event_attachment WHERE object_key IS NOT NULL",
+    "evidence": "SELECT count(*) FROM evidence",
+    "capture join traversal": (
+        "SELECT count(*) FROM event e "
+        "JOIN event_participant p ON p.event_id = e.id "
+        "JOIN event_attachment a ON a.event_id = e.id"
+    ),
+    "evidence back to its event": (
+        "SELECT count(*) FROM evidence v JOIN event e ON e.id = v.event_id"
+    ),
     # A join is where a forgotten policy hides: every table in the chain must carry its own.
     "identity join traversal": (
         "SELECT count(*) FROM external_identity e "

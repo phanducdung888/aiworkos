@@ -52,6 +52,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0035 | Cross-context references are validated through the published interface, never by the foreign key | accepted | W-11 |
 | 0036 | People are provisioned administratively; there is no just-in-time creation | accepted | W-13 |
 | 0037 | `ExternalIdentity` is its own authorization resource, and confirmation is not self-service | accepted | W-12, PQ-7 |
+| 0038 | Event immutability is a column-scoped database trigger, not a convention | accepted | domain §Event, BR-E-01 |
+| 0039 | Attachment bytes never pass through the API; an ObjectStore port fronts MinIO | accepted | arch §storage, BR-E-14 |
 
 ---
 
@@ -555,3 +557,101 @@ believes somebody is. Rejected: governing it through `PERSON` (inherits a `SELF`
 exist here); leaving it unmodelled until Phase 3 (W-12 would stay open and the table would stay
 orphaned).
 
+### ADR-0038 — Event immutability is a column-scoped database trigger, not a convention
+
+**Context.** BR-E-01 says an Event is immutable after `received`, *except* for `processing_status`,
+participant resolution and retention fields. That exception is what makes the rule hard. `audit_entry`
+could be made append-only with a trigger that refuses every UPDATE, because nothing about an audit row
+is ever allowed to change. An Event is different: extraction will move `processing_status` from
+`received` to `extracted`, participant resolution will fill in `person_id` as confidence improves, and
+a retention sweep will set `retention_expires_at` and blank `raw_payload_uri`. A blanket refusal would
+make the entity unusable; no refusal at all makes "immutable" a comment rather than a control.
+
+Enforcing it in the service layer was the alternative and it fails the same way every application-layer
+invariant fails: it holds only for code that goes through the service. The whole point of an Event is
+that it is the record of what happened, and a record that a future maintenance script can quietly edit
+is not a record. The extraction worker, the retention job and the projector are all still to be
+written, and each is a plausible place for an UPDATE that nobody reviews closely.
+
+**Decision.** A `BEFORE UPDATE ... FOR EACH ROW` trigger on `event` compares OLD and NEW and raises
+`restrict_violation` if any column outside an explicit mutable allow-list has changed. DELETE and
+TRUNCATE are refused outright. The allow-list is exactly the three categories BR-E-01 names:
+
+* `processing_status`, `processing_error` — the extraction pipeline's own state
+* `participant_count` — a denormalised count maintained as participants resolve
+* `retention_expires_at`, `raw_payload_uri`, `deleted_at` — BR-E-07 retention and purge
+
+Everything else — `occurred_at`, `body_text`, `type`, `origin`, `source_system`, `source_ref`,
+`content_hash`, `sensitivity` — is frozen the moment the row is inserted. A correction is a new Event
+carrying `revision_of_event_id`, which is BR-E-02's revision path and is the only way the record of
+what was originally observed can change meaning.
+
+`EventParticipant` gets the same treatment with a different allow-list: `person_id` and
+`match_confidence` are mutable because resolution is a process (BR-I-06, BR-E-12); `external_handle`
+is frozen, because BR-E-12 requires the raw sender identifier to survive resolution unchanged.
+
+**Consequences.** "Immutable" becomes checkable — `test_event_immutability.py` asserts it with raw SQL
+as the owner role, so no application code is involved in the proof. A future field must be classified
+as frozen or mutable when it is added, which is a small tax on every migration touching `event` and is
+the tax that keeps the rule honest. The error surfaces as a database exception rather than a domain
+rule violation, so the service layer still validates first and the trigger is the backstop, in the same
+two-mechanism arrangement BR-G-01a already describes for tenancy. Rejected: application-only enforcement
+(does not survive a worker or a psql session); a blanket append-only trigger (contradicts BR-E-01's
+stated exceptions); an `event_revision` side table (duplicates what `revision_of_event_id` already says
+and splits the history across two shapes).
+
+### ADR-0039 — Attachment bytes never pass through the API; an ObjectStore port fronts MinIO
+
+**Context.** The web capture surface lets a user attach files to an Event (BR-E-14). The architecture
+already fixes where the bytes live — MinIO, never Postgres — and already says the agent runtime reads
+blobs "only through short-lived presigned URLs issued by the API after authorization". What it does not
+fix is the *upload* direction, or how the application code talks to the store at all.
+
+Streaming uploads through the API is the obvious first answer and is the wrong one at this scale: it
+puts request-duration memory and connection pressure on the same process that serves every read, and
+it makes a 200 MB attachment a web-tier problem. The counter-risk is real though — a presigned PUT
+hands the client a window in which it writes whatever it likes, so `size_bytes`, `media_type` and
+`checksum` recorded at request time are claims, not facts.
+
+Testing is the second half of this. MinIO is on the `data` network with no exposed port, and the
+existing suite deliberately depends on no external service — the OIDC tests generate their own realm
+rather than requiring Keycloak. An attachment path that can only be tested with MinIO running would be
+the first piece of this system whose tests need infrastructure.
+
+**Decision.** Two parts.
+
+*The port.* `app.platform.storage` defines `ObjectStore`, a protocol with `presigned_put`,
+`presigned_get`, `stat` and `delete`. `S3ObjectStore` implements it over MinIO/S3; `InMemoryObjectStore`
+implements it for tests. Services depend on the protocol. This is not a second object-storage
+abstraction — it is the seam to the one the architecture already chose, and it exists so that the
+capture path is testable without infrastructure, the way `test_realm()` already makes OIDC testable
+without Keycloak.
+
+*The flow.* Attaching a file is two calls and three states. `POST /events/{id}/attachments` authorizes
+against the **Event**, records a `pending` row with the client's claimed filename and media type, and
+returns a presigned PUT valid for minutes. The client uploads directly to the store. `POST
+/events/{id}/attachments/{attachment_id}/complete` re-authorizes, calls `stat` on the object, and
+records the size and checksum the **store** reports — never the client's numbers — moving the row to
+`available`. A row that never completes stays `pending`, is excluded from reads, and is a retention
+sweep's problem rather than a correctness problem.
+
+Downloads are symmetrical: `GET /events/{id}/attachments/{attachment_id}/content` authorizes against
+the Event, then issues a short-lived presigned GET and returns it. The object key is derived
+server-side from `(org_id, event_id, attachment_id)` and is never accepted from the client, so a
+presigned URL cannot be requested for an object the caller has not been authorized to reach.
+
+**Consequences.** Attachment authorization is Event authorization by construction — there is no
+attachment permission to get wrong, because every attachment endpoint loads the Event first and every
+denial is the Event's denial. Bytes never touch the API process or Postgres. The recorded integrity
+data is the store's, so a client that lies about its upload produces a row that disagrees with the
+object and is caught at completion rather than trusted forever.
+
+The presigned window is the residual risk and it is deliberate: within it, whoever holds the URL can
+write those bytes. It is scoped to one key, expires in minutes, and is issued only to a caller who has
+already passed Event authorization. A leaked URL is a leaked object, not a leaked bucket.
+
+Rejected: proxying bytes through the API (moves large-object load onto the web tier for no security
+gain, since authorization happens before the URL is issued either way); trusting client-reported size
+and checksum (makes the integrity fields decorative); a separate `ATTACHMENT` authorization resource
+(invites the two permissions to drift apart, which is exactly the bug this design makes
+unrepresentable).

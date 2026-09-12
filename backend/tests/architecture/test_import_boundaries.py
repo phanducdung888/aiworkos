@@ -87,6 +87,51 @@ def test_identity_never_imports_the_work_core() -> None:
         )
 
 
+def test_identity_never_imports_signal() -> None:
+    """Identity is upstream of everything, Signal included.
+
+    Capture asks Identity whether a Person exists so it can resolve a participant. Identity has no
+    reason to know that Events exist at all, and the day it does is the day the two can no longer be
+    reasoned about separately.
+    """
+    for module in _modules(APP / "contexts" / "identity"):
+        offending = {i for i in _imports(module) if i.startswith("app.contexts.signal")}
+        assert not offending, (
+            f"{module.relative_to(BACKEND_ROOT)} imports {sorted(offending)}; Identity is upstream "
+            "of Signal and may not depend on it"
+        )
+
+
+def test_signal_never_imports_the_work_core() -> None:
+    """Capture is upstream of the Work Core, not the other way round and not both.
+
+    An Event records that something happened; a Work item is a decision somebody made about it.
+    Signal reaching into Work Core would mean capture had opinions about what the observation
+    implies, which is extraction's job and does not exist yet — and when it does, it will read
+    Events rather than being embedded in them (BR-E-11).
+    """
+    for module in _modules(APP / "contexts" / "signal"):
+        offending = {i for i in _imports(module) if i.startswith("app.contexts.work")}
+        assert not offending, (
+            f"{module.relative_to(BACKEND_ROOT)} imports {sorted(offending)}; Signal is upstream "
+            "of the Work Core"
+        )
+
+
+def test_signal_reaches_identity_only_through_its_published_interface() -> None:
+    for module in _modules(APP / "contexts" / "signal"):
+        internals = {
+            i
+            for i in _imports(module)
+            if i.startswith("app.contexts.identity")
+            and not i.startswith("app.contexts.identity.public")
+        }
+        assert not internals, (
+            f"{module.relative_to(BACKEND_ROOT)} reaches into Identity's internals: "
+            f"{sorted(internals)}"
+        )
+
+
 def test_the_cross_context_exception_list_stays_one_directional() -> None:
     """Guards the configuration, not just the code.
 
@@ -99,7 +144,14 @@ def test_the_cross_context_exception_list_stays_one_directional() -> None:
         for line in config.splitlines()
         if "->" in line and not line.strip().startswith("#")
     ]
-    assert exceptions == ["app.contexts.work.* -> app.contexts.identity.public"], (
+    # Every entry points at a `public` module and every arrow runs the same way: Identity is
+    # upstream of everything, Signal is upstream of the Work Core, and neither of them knows its
+    # consumers exist. A new entry belongs here only with an ADR; an `identity -> *` or a
+    # `work -> signal` entry is not a new exception, it is a different architecture.
+    assert exceptions == [
+        "app.contexts.work.* -> app.contexts.identity.public",
+        "app.contexts.signal.* -> app.contexts.identity.public",
+    ], (
         f"the cross-context exception list changed to {exceptions}; every entry needs an ADR, and "
         "an identity -> work entry needs a different architecture"
     )
