@@ -83,31 +83,46 @@ export function AuthProvider({
     })
   }
 
-  useEffect(() => {
-    let cancelled = false
+  // The in-flight restore, shared across effect runs.
+  //
+  // An authorization code may be redeemed exactly once. React's StrictMode mounts, unmounts and
+  // remounts in development, so the effect below runs twice — and CP25 measured the result against
+  // real Keycloak: two calls to the token endpoint on every single sign-in, one of them answered
+  // `400 invalid_grant: Code not valid`. It resolved in the app's favour each time only because
+  // the first call happened to win the race. A `cancelled` flag does not help, because it guards
+  // the state update and the damage is the second *request*.
+  //
+  // Holding the promise itself means the second run awaits the first rather than starting another.
+  const restoring = useRef<Promise<void> | null>(null)
 
+  useEffect(() => {
     async function restore(): Promise<void> {
       try {
         if (window.location.pathname === '/auth/callback') {
           const user = await userManager.signinRedirectCallback()
-          if (cancelled) return
           userRef.current = user
           window.history.replaceState({}, '', '/')
           setStatus('signed-in')
           return
         }
         const user = await userManager.getUser()
-        if (cancelled) return
         userRef.current = user
         setStatus(user && !user.expired ? 'signed-in' : 'signed-out')
       } catch (cause) {
-        if (cancelled) return
         setError(cause instanceof Error ? cause.message : 'Sign-in failed.')
         setStatus('error')
       }
     }
 
-    void restore()
+    // Started once, and the result is applied whichever run started it.
+    //
+    // There is deliberately no `cancelled` guard here any more. It was doing the opposite of its
+    // job: under StrictMode the first run is always "cancelled" by the remount, so guarding the
+    // state update on it means the single exchange's result is thrown away and the app sits on
+    // `loading` for ever. React 18 does not warn about setting state after unmount, and these
+    // three writes are idempotent, so applying them unconditionally is both correct and simpler.
+    restoring.current ??= restore()
+    void restoring.current
     const onLoaded = (user: User) => {
       userRef.current = user
       setStatus('signed-in')
@@ -119,7 +134,6 @@ export function AuthProvider({
     userManager.events.addUserLoaded(onLoaded)
     userManager.events.addUserUnloaded(onUnloaded)
     return () => {
-      cancelled = true
       userManager.events.removeUserLoaded(onLoaded)
       userManager.events.removeUserUnloaded(onUnloaded)
     }

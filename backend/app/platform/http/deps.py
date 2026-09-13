@@ -149,6 +149,7 @@ def _default_object_store() -> ObjectStore:
         bucket=settings.s3_bucket,
         region=settings.s3_region,
         public_endpoint_url=settings.s3_public_endpoint_url or None,
+        upload_endpoint_url=settings.s3_upload_endpoint_url or None,
     )
 
 

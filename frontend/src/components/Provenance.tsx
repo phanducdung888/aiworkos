@@ -25,6 +25,7 @@ import {
   useProposal,
 } from '@/api/hooks'
 import { ApiProblem } from '@/api/problem'
+import { Attachments } from '@/components/Attachments'
 import { Loading } from '@/components/States'
 
 const formatted = (iso: string): string => new Date(iso).toLocaleString()
@@ -90,10 +91,16 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
             <p>No citation is attached to this proposal.</p>
           )}
           {event.data ? (
-            <p>
-              {event.data.type} on {formatted(event.data.occurred_at)} via{' '}
-              {event.data.source_system}
-            </p>
+            <>
+              <p>
+                {event.data.type} on {formatted(event.data.occurred_at)} via{' '}
+                {event.data.source_system}
+              </p>
+              {/* The files the message arrived with. Part of "where this came from" rather than a
+                  surface of its own: a person questioning a Proposal wants the invoice that was
+                  attached to the mail it was extracted from. */}
+              <Attachments eventId={event.data.id} attachments={event.data.attachments ?? []} />
+            </>
           ) : null}
         </li>
 

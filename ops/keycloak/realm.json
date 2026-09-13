@@ -84,6 +84,25 @@
   ],
   "users": [
     {
+      "id": "00000000-0000-4000-8000-00000000a00a",
+      "username": "po",
+      "email": "po@example.test",
+      "firstName": "Product",
+      "lastName": "Owner",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "workos",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "workos-user"
+      ]
+    },
+    {
       "id": "00000000-0000-4000-8000-00000000a001",
       "username": "avery.admin",
       "email": "avery.admin@example.test",

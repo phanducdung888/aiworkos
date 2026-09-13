@@ -67,6 +67,40 @@ class AttachmentStatus(enum.StrEnum):
     PENDING = "pending"
     AVAILABLE = "available"
     PURGED = "purged"
+    #: Reserved, never uploaded, and now past the window in which it could be. **Reported, never
+    #: stored** — the column's CHECK constraint knows the three above and nothing writes this one.
+    #:
+    #: A reservation is a row plus a presigned URL with an expiry. When that expiry passes with no
+    #: object behind it, the row can never become `available` by any action the holder can still
+    #: take, and calling it `pending` for ever says the opposite. CP24 left four of these in the
+    #: pilot database and CP25 had to answer what they meant.
+    #:
+    #: Derived rather than swept, for the reason every other derived fact in this system is
+    #: (CLAUDE.md rule 5): it is a deterministic function of two columns and the clock, it needs no
+    #: scheduler to be true, and it cannot drift from the thing it describes.
+    EXPIRED = "expired"
+
+
+def effective_attachment_status(
+    status: str, created_at: dt.datetime, *, window: dt.timedelta, now: dt.datetime
+) -> str:
+    """What a reservation's status actually is, as opposed to what is written down.
+
+    Only ever widens `pending` to `expired`. `available` and `purged` are facts about what
+    happened and no amount of elapsed time changes either.
+
+    Being late here is generous on purpose: an upload that finished inside the window and is
+    completed afterwards still succeeds, because `complete` asks the store rather than the clock.
+    This decides what to *show* somebody, and "expired" is the honest answer to a file that never
+    arrived.
+    """
+    if status != AttachmentStatus.PENDING.value:
+        return status
+    return (
+        AttachmentStatus.EXPIRED.value
+        if now - created_at > window
+        else AttachmentStatus.PENDING.value
+    )
 
 
 #: Types a person may capture through the web surface.

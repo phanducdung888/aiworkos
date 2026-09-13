@@ -27,6 +27,7 @@ import threading
 import time
 from collections.abc import Sequence
 
+from connectors.imap.auth import ClientCredentials, StaticToken, TokenSource
 from connectors.imap.canonical import (
     DEFAULT_SOURCE_SYSTEM,
     MAX_ATTACHMENT_BYTES,
@@ -53,6 +54,13 @@ logger = logging.getLogger("connectors.imap")
 #: not a thing to arrive at by leaving a setting unset.
 SECURITY = ("ssl", "starttls", "none")
 
+#: The keyword this connector puts on a message it could not normalise.
+#:
+#: An IMAP keyword rather than a flag of its own invention: `PERMANENTFLAGS` advertising `\*` means
+#: the server accepts client keywords, which Gmail and GreenMail both do. Prefixed with `$`, which
+#: is the convention for a keyword with meaning outside one client.
+UNPROCESSABLE = "$WorkOSUnprocessable"
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Settings:
@@ -62,7 +70,10 @@ class Settings:
     username: str
     password: str
     workos_url: str
-    workos_token: str
+    #: How the bearer token is obtained. `ClientCredentials` renews itself and is what unattended
+    #: operation needs; `StaticToken` is a credential handed in from outside and expires with no
+    #: way back (ADR-0066).
+    tokens: TokenSource
     organization_id: str
     mailbox: str = "INBOX"
     port: int = 993
@@ -84,7 +95,6 @@ class Settings:
             "username": "IMAP_USERNAME",
             "password": "IMAP_PASSWORD",
             "workos_url": "WORKOS_URL",
-            "workos_token": "WORKOS_INGESTION_TOKEN",
             "organization_id": "WORKOS_ORGANIZATION_ID",
         }
         values = {field: os.environ.get(name, "") for field, name in required.items()}
@@ -93,6 +103,7 @@ class Settings:
             raise SystemExit(f"missing required environment: {', '.join(missing)}")
         return cls(
             **values,
+            tokens=_token_source(),
             mailbox=os.environ.get("IMAP_MAILBOX", "INBOX"),
             port=int(os.environ.get("IMAP_PORT", "993")),
             security=os.environ.get("IMAP_SECURITY", "ssl"),
@@ -100,6 +111,35 @@ class Settings:
             batch=int(os.environ.get("IMAP_BATCH", "50")),
             interval=_optional_float(os.environ.get("IMAP_INTERVAL")),
         )
+
+
+def _token_source() -> TokenSource:
+    """Client credentials if the connector can obtain its own token, otherwise one handed to it.
+
+    Preferring the renewable one when both are configured, because the only reason to prefer a
+    static token is that renewal is unavailable. CP24 ran with a static token against a real
+    mailbox and the fifteen-minute lifespan ended the run; nothing that needs an operator four
+    times an hour can be left alone for a week (ADR-0066).
+    """
+    token_url = os.environ.get("WORKOS_OIDC_TOKEN_URL", "").strip()
+    client_id = os.environ.get("WORKOS_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("WORKOS_CLIENT_SECRET", "")
+    if token_url and client_id and client_secret:
+        return ClientCredentials(
+            token_url, client_id=client_id, client_secret=client_secret
+        )
+    static = os.environ.get("WORKOS_INGESTION_TOKEN", "").strip()
+    if static:
+        logger.warning(
+            "running with WORKOS_INGESTION_TOKEN: this token cannot be renewed and delivery will "
+            "stop when it expires. Set WORKOS_OIDC_TOKEN_URL, WORKOS_CLIENT_ID and "
+            "WORKOS_CLIENT_SECRET for unattended operation."
+        )
+        return StaticToken(static)
+    raise SystemExit(
+        "no credential: set WORKOS_OIDC_TOKEN_URL, WORKOS_CLIENT_ID and WORKOS_CLIENT_SECRET, "
+        "or WORKOS_INGESTION_TOKEN"
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -123,7 +163,7 @@ def run_once(
     """One pass over the unseen messages in the mailbox."""
     delivery = client or IngestionClient(
         settings.workos_url,
-        token=settings.workos_token,
+        token=settings.tokens,
         organization_id=settings.organization_id,
         attempts=attempts,
         backoff=backoff,
@@ -133,7 +173,10 @@ def run_once(
     with _connect(settings) as mail:
         mail.login(settings.username, settings.password)
         mail.select(settings.mailbox)
-        _status, data = mail.search(None, "UNSEEN")
+        # Unseen, and not already found unprocessable. Without the second half a message that
+        # cannot be normalised is re-read on every pass for ever, and fifty of them fill the batch
+        # and starve every healthy message behind them — which CP24 watched happen with one.
+        _status, data = mail.search(None, "UNSEEN", "UNKEYWORD", UNPROCESSABLE)
         identifiers = data[0].split()[: settings.batch]
 
         for identifier in identifiers:
@@ -160,7 +203,10 @@ def run_once(
             except Unnormalisable as error:
                 # Left unseen on purpose: this is a message somebody may want to look at, and a
                 # connector that swallowed it would make it disappear without a record anywhere.
+                # Flagged, though, so the next pass does not read it again — unread for the human,
+                # done with for the connector.
                 logger.warning("skipping a message that cannot be normalised: %s", error)
+                _mark_unprocessable(mail, identifier)
                 skipped += 1
                 continue
 
@@ -269,6 +315,30 @@ def _internaldate(header: object) -> dt.datetime | None:
 
 def _mark_seen(mail: imaplib.IMAP4, identifier: bytes) -> None:
     mail.store(identifier.decode(), "+FLAGS", "\\Seen")
+
+
+def _mark_unprocessable(mail: imaplib.IMAP4, identifier: bytes) -> None:
+    """Quarantine a message this connector cannot read, without marking it read.
+
+    A keyword rather than `\\Seen`, because the two say different things: `\\Seen` means a person
+    has looked at it, and this connector is not a person. The message stays bold in whoever's
+    mailbox it is, and stays out of the connector's search.
+
+    A server that refuses the keyword is reported and not fought with. Arbitrary keywords are
+    advertised by `PERMANENTFLAGS` containing `\\*`, which Gmail and GreenMail both do; a server
+    that does not is back to re-reading the message each pass, which is where this started, and
+    saying so is more use than an exception.
+    """
+    try:
+        typ, _ = mail.store(identifier.decode(), "+FLAGS", UNPROCESSABLE)
+    except imaplib.IMAP4.error as error:
+        logger.warning("this server will not store %s: %s", UNPROCESSABLE, error)
+        return
+    if typ != "OK":
+        logger.warning(
+            "this server would not store %s; the message will be read again next pass",
+            UNPROCESSABLE,
+        )
 
 
 def run_forever(settings: Settings, *, stop: threading.Event | None = None) -> RunReport:

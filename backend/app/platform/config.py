@@ -43,11 +43,15 @@ class Settings(BaseSettings):
     # configuration; the credentials here are the same development ones Compose starts with and are
     # overridden by the environment anywhere that matters.
     s3_endpoint_url: str = "http://localhost:9000"
-    #: The address a *client* uses. Empty means "the same one this process uses", which is right
-    #: for a single-address deployment and wrong the moment the store sits behind a proxy — a
-    #: presigned URL cannot be rewritten after signing, because the signature covers the host
-    #: (ADR-0063).
+    #: The address a *browser* uses to download an attachment. Empty means "the same one this
+    #: process uses", which is right for a single-address deployment and wrong the moment the store
+    #: sits behind a proxy — a presigned URL cannot be rewritten after signing, because the
+    #: signature covers the host (ADR-0063).
     s3_public_endpoint_url: str = ""
+    #: The address a *connector* uses to upload one. A different client on a different network from
+    #: the browser above, and a URL signed for one is unusable by the other (ADR-0067). Empty means
+    #: "the same as the browser's", which is right wherever both reach the store by one name.
+    s3_upload_endpoint_url: str = ""
     s3_access_key: str = "workos"
     s3_secret_key: str = "workos-dev-secret"
     s3_bucket: str = "workos-attachments"

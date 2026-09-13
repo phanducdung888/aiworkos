@@ -80,6 +80,9 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0063 | Attachment delivery by a connector | accepted (CP23) | ADR-0039, ADR-0060, ADR-0062 |
 | 0064 | Tenant scoping is not authorization | accepted (CP24) | ADR-0008, ADR-0027, ADR-0060 |
 | 0065 | The connector's per-message ceiling, measured | accepted (CP24) | ADR-0058, ADR-0061, ADR-0063 |
+| 0066 | The connector obtains and renews its own credential | accepted (CP25) | ADR-0058, ADR-0060 |
+| 0067 | A presigned URL is signed for the client that will use it | accepted (CP25) | ADR-0039, ADR-0063 |
+| 0068 | The organization is named by the person, in the browser | accepted (CP25) | ADR-0008, ADR-0031 |
 
 ---
 
@@ -1955,3 +1958,122 @@ Rejected: raising the per-file limit without a per-message one (leaves the real 
 streaming attachments out of the parsed message (IMAP hands over the whole document; there is
 nothing to stream from); refusing the message and leaving it unseen (an infinite retry on a
 condition that cannot change).
+
+---
+
+### ADR-0066 — The connector obtains and renews its own credential
+
+**Status:** accepted (CP25) · **Amends:** ADR-0058, ADR-0060
+
+**Context.** ADR-0058 said a connector is handed a bearer token by whoever deploys it. CP24 ran
+that against a real mailbox and the realm's fifteen-minute access token expired mid-run. Two things
+went wrong and only one was CP24's to fix: the connector read the resulting 401 as "this message is
+wrong", marked it seen and moved on — a message consumed from the mailbox and never delivered — and
+there was no way for it to get another token. CP24 fixed the misreading. Nothing that needs an
+operator four times an hour can be dogfooded for a week, which is what CP25 exists to make possible.
+
+**Decision.** The connector holds a **token source**, not a token.
+
+* `ClientCredentials` performs the OAuth 2.0 client-credentials exchange (RFC 6749 §4.4) against
+  the realm's token endpoint, caches the result, and re-fetches it `leeway` seconds before expiry —
+  the gap has to cover the slowest request the token will be attached to, which is an attachment
+  upload rather than a capture.
+* `StaticToken` is a credential handed in from outside. It still works, and it says out loud that
+  it cannot renew: both in a startup warning and in the error a rejection produces. A source that
+  silently returned the same dead token would make an expired credential look like a broken API.
+* A 401 or 403 renews **once** and retries **once**. A token that has aged out is the ordinary case
+  for a service left running and should cost one round trip, not a person. A second refusal is an
+  outage, and the mail stays in the mailbox.
+* Obtaining a token is logged — the client id, the lifetime, the leeway. Never the token, never the
+  secret. Authentication that can only be inferred from the absence of 401s is not observable.
+
+**A prerequisite this forced.** Keycloak's `start-dev` derives `iss` from the request's Host header,
+so a token minted inside the network said `http://keycloak:8080/...` while the browser's said
+`http://localhost:8080/...`, and the API — which compares `iss` to a fixed string — could only
+accept one. CP24 measured `KC_HOSTNAME_URL` as having no effect and worked around it by minting
+every token from the host, which is exactly what CP25 needed to stop doing. `KC_HOSTNAME` *does*
+take effect: it fixes the hostname while the port follows the request, so both addresses now yield
+one issuer.
+
+Rejected: lengthening the realm's token lifetime (moves the failure rather than removing it, and
+makes a stolen token worth more); a refresh token (client credentials has no user to refresh on
+behalf of, and RFC 6749 §4.4.3 says not to issue one); the connector reading the API's JWKS and
+minting its own (that is forging tokens, whatever it is called).
+
+---
+
+### ADR-0067 — A presigned URL is signed for the client that will use it
+
+**Status:** accepted (CP25) · **Amends:** ADR-0063
+
+**Context.** ADR-0063 split the object store's address in two: the one this process uses, and the
+one "a client" uses. That was right and one word too coarse. There are two kinds of client and they
+are on different networks. A connector uploads from the application network and addresses the proxy
+by its service name; a browser downloads from a person's laptop and cannot resolve a Docker service
+name at all.
+
+CP24 signed both for `objects:9000` and nothing noticed, because the only thing that had ever
+fetched an attachment was a test running inside the network. CP25 opened one in a browser.
+
+**Decision.** Three endpoints, one per route, each the name the holder of that URL will actually
+resolve:
+
+| Setting | Used by | Points at |
+| --- | --- | --- |
+| `WORKOS_S3_ENDPOINT_URL` | the API itself, for `stat` and `delete` | the store, internally |
+| `WORKOS_S3_UPLOAD_ENDPOINT_URL` | a connector's presigned `PUT` | the proxy, by service name |
+| `WORKOS_S3_PUBLIC_ENDPOINT_URL` | a browser's presigned `GET` | the proxy, published |
+
+Each falls back to the one above it, so a deployment where every client reaches the store by one
+name — a cloud deployment with a public bucket — behaves exactly as before.
+
+The object proxy is published on loopback for the browser's sake. The port it is published on need
+not match the port it listens on: the signature covers the `Host` header the client sends, and
+nginx forwards that header unchanged, which is the same property ADR-0063 relies on.
+
+MinIO does not move. It is still on `data`, still unreachable from `edge`, and still addressed only
+through the proxy — an architecture test asserts the public address is not a Docker service name
+*and* that the proxy is published on the port URLs are signed for, because either half alone
+passes while the thing is broken.
+
+Rejected: rewriting the host after signing (does not work — the signature covers it, and ADR-0063
+already has a test that proves it); routing attachment bytes through the API (reverses ADR-0039);
+one address resolvable from both sides via `*.localhost` (works in Chrome and Firefox, not
+everywhere, and a file that opens for some colleagues is worse than one that opens for none).
+
+---
+
+### ADR-0068 — The organization is named by the person, in the browser
+
+**Status:** accepted (CP25) · **Related:** ADR-0008, ADR-0031
+
+**Context.** `app/platform/principal.py` has always said the organization "arrives in an explicit
+header and is never inferred — not from a single membership, not from a default", and the SPA has
+always rendered "Choose the organization you are working in." Until CP25 there was nothing to
+choose with: `setOrganizationId` existed and no component called it. A real sign-in against real
+Keycloak reached that sentence and stopped, having made no API call at all.
+
+**Decision.** The identifier is typed into a field, checked once against `/api/v1/me`, and
+remembered per browser only after it resolves.
+
+Listing a person's organizations is not something this system can offer, and that is a consequence
+of two deliberate choices rather than an oversight. The token carries no organization claim
+(security-model §2: a claim keeps asserting a membership after it is revoked), and every table that
+could answer the question is under RLS keyed on `app_current_org()`, so a session with no
+organization context sees nothing anywhere. Answering it would need a claim, or a `BYPASSRLS` role,
+or a policy that lets a person read rows outside any tenant — each of which reverses something
+ADR-0008 or ADR-0031 decided on purpose, to make a picker more convenient.
+
+Checking before storing is the part that is not optional. An identifier that is not yours 404s
+every subsequent request, and an app that looks empty is far harder to diagnose than one that says
+"no organization with that identifier has you as an active member". A member holding no role gets a
+different sentence, because it is a different problem with a different fix.
+
+One consequence in the API client: a header set explicitly by a caller now wins over the configured
+one. Without that, the check validates whichever organization is already selected rather than the
+one being tried — right when nothing is selected yet, wrong the moment somebody switches.
+
+Rejected: inferring a single membership (the rule this system states, broken for convenience, and
+correct right up until the first person joins a second organization); putting memberships in the
+token; a cross-tenant bootstrap endpoint behind a privileged role (a new credential with the
+broadest possible read, to save typing a UUID once per browser).

@@ -54,6 +54,9 @@ class Capture:
         #: What the attachment endpoints answer. Separate from `status`, so a test can fail the
         #: files while the Event still succeeds — which is the interesting half.
         self.attachment_status = 201
+        #: Bearer values this WorkOS refuses with a 401, as a realm refuses an expired token.
+        #: Anything else is accepted, so a renewal is visibly what made the difference.
+        self.reject_tokens: set[str] = set()
         self._server: http.server.HTTPServer | None = None
 
     @property
@@ -80,7 +83,13 @@ class Capture:
             def _read_body(self) -> bytes:
                 return self.rfile.read(int(self.headers.get("Content-Length", "0")))
 
+            def _stale(self) -> bool:
+                presented = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+                return presented in capture.reject_tokens
+
             def do_PUT(self) -> None:
+                # The store is reached by a presigned URL and sees no bearer token at all, so an
+                # expired WorkOS credential never reaches here. Nothing to check.
                 # The presigned upload. Deliberately not under /api/v1: bytes do not pass through
                 # the API, and a connector that posted them there would fail here.
                 capture.uploaded.append(
@@ -97,6 +106,9 @@ class Capture:
 
             def do_POST(self) -> None:
                 body = self._read_body()
+                if self._stale():
+                    self._answer(401, {"detail": "the bearer token was not accepted"})
+                    return
                 capture.received.append(
                     {
                         "path": self.path,

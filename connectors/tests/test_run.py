@@ -11,6 +11,7 @@ import datetime as dt
 
 import pytest
 
+from connectors.imap.auth import StaticToken
 from connectors.imap.run import (
     Settings,
     _internaldate,
@@ -87,7 +88,7 @@ class TestSettings:
             "username": "ingest@example.test",
             "password": "secret",
             "workos_url": "https://workos.example.test",
-            "workos_token": "token",
+            "tokens": StaticToken("token"),
             "organization_id": "org",
         }
         fields.update(over)
@@ -155,7 +156,7 @@ class TestTheService:
                     username="u",
                     password="p",
                     workos_url="http://workos.test",
-                    workos_token="t",
+                    tokens=StaticToken("t"),
                     organization_id="o",
                     interval=0.0,
                 ),
@@ -197,7 +198,7 @@ class TestTheService:
                     username="u",
                     password="p",
                     workos_url="http://workos.test",
-                    workos_token="t",
+                    tokens=StaticToken("t"),
                     organization_id="o",
                     interval=0.0,
                 ),

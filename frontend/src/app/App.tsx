@@ -8,6 +8,7 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
 import { useMe } from '@/api/hooks'
 import { useAuth } from '@/auth/AuthProvider'
+import { ChooseOrganization } from '@/auth/ChooseOrganization'
 import { ErrorState, Loading } from '@/components/States'
 import { AgentPolicy } from '@/features/policy/AgentPolicy'
 import { Attention } from '@/features/attention/Attention'
@@ -37,15 +38,8 @@ export function App() {
       </main>
     )
   }
-  if (!auth.organizationId) {
-    return (
-      <main>
-        <h1>AI WorkOS</h1>
-        {/* Never inferred, even from a single membership (security-model §2). */}
-        <p>Choose the organization you are working in.</p>
-      </main>
-    )
-  }
+  // Never inferred, even from a single membership (security-model §2) — so it is asked for.
+  if (!auth.organizationId) return <ChooseOrganization />
   if (me.isPending || me.isLoading) return <Loading label="your profile" />
   if (me.isError) return <ErrorState error={me.error} retry={() => void me.refetch()} />
 

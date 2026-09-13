@@ -33,6 +33,8 @@ export type ApprovalRecord = Schemas['ApprovalRecordResource']
 export type Decision = Schemas['Decision']
 export type ProposalStatus = Schemas['ProposalStatus']
 export type Evidence = Schemas['EvidenceResource']
+export type EventAttachment = Schemas['EventAttachmentResource']
+export type AttachmentContent = Schemas['AttachmentContentResource']
 export type Commitment = Schemas['CommitmentResource']
 export type CommitmentStatus = Schemas['CommitmentStatus']
 export type AIInteraction = Schemas['AIInteractionDetail']
@@ -339,6 +341,26 @@ export function useEvent(id: string): UseQueryResult<EventDetail> {
     queryFn: async () =>
       unwrap(await api.GET('/api/v1/events/{event_id}', { params: { path: { event_id: id } } })),
     enabled: Boolean(id),
+  })
+}
+
+/**
+ * Ask for a short-lived URL to one attachment's bytes.
+ *
+ * A mutation rather than a query, because it is not idempotent in the sense that matters: each call
+ * mints a fresh credential with its own expiry, and caching one would hand out a URL that has since
+ * died. Nothing here is cached for the same reason.
+ */
+export function useAttachmentContent(
+  eventId: string,
+): UseMutationResult<AttachmentContent, Error, string> {
+  return useMutation({
+    mutationFn: async (attachmentId: string) =>
+      unwrap(
+        await api.GET('/api/v1/events/{event_id}/attachments/{attachment_id}/content', {
+          params: { path: { event_id: eventId, attachment_id: attachmentId } },
+        }),
+      ),
   })
 }
 

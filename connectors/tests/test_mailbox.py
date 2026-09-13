@@ -25,7 +25,8 @@ import uuid
 
 import pytest
 
-from connectors.imap.run import Settings, run_once
+from connectors.imap.auth import StaticToken
+from connectors.imap.run import UNPROCESSABLE, Settings, run_once
 from connectors.tests.conftest import Capture
 
 pytestmark = pytest.mark.imap
@@ -84,7 +85,7 @@ def settings_for(mailbox: str, workos: Capture, **over: object) -> Settings:
         "username": mailbox,
         "password": "any-password-greenmail-accepts",
         "workos_url": workos.url,
-        "workos_token": "not-a-real-token",
+        "tokens": StaticToken("not-a-real-token"),
         "organization_id": "11111111-1111-4111-8111-111111111111",
     }
     fields.update(over)
@@ -318,3 +319,74 @@ def test_a_file_that_cannot_be_delivered_does_not_lose_the_message(
     assert report.attachments == 0
     assert workos.uploaded == [], "nothing was uploaded, because nothing was reserved"
     assert unseen(mailbox) == 0, "the message would otherwise be redelivered forever"
+
+
+# --------------------------------------------------------------------------- starvation (CP25)
+
+
+def send_raw(mailbox: str, raw: bytes) -> None:
+    """A message a library would refuse to build, put in the mailbox as bytes."""
+    with smtplib.SMTP(HOST, SMTP_PORT) as smtp:
+        smtp.sendmail("nobody@example.test", [mailbox], raw)
+
+
+def unprocessable(mailbox: str) -> int:
+    mail = imaplib.IMAP4(HOST, IMAP_PORT)
+    try:
+        mail.login(mailbox, "any")
+        mail.select("INBOX")
+        _status, data = mail.search(None, "KEYWORD", UNPROCESSABLE)
+        return len(data[0].split())
+    finally:
+        mail.logout()
+
+
+@pytest.mark.imap
+def test_a_message_that_cannot_be_normalised_is_not_read_twice(workos: Capture) -> None:
+    """It stays unread for the person and is done with for the connector.
+
+    `\\Seen` would mean somebody looked at it, and this connector is not somebody. A keyword says
+    what actually happened.
+    """
+    mailbox = a_mailbox()
+    send_raw(
+        mailbox,
+        b"Message-ID: <poison-1@example.test>\r\nFrom: a@example.test\r\n"
+        b"To: " + mailbox.encode() + b"\r\nSubject: no body\r\n"
+        b"Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n\r\n",
+    )
+
+    first = run_once(settings_for(mailbox, workos))
+    assert (first.delivered, first.skipped) == (0, 1)
+    assert unprocessable(mailbox) == 1
+    assert unseen(mailbox) == 1, "the person's mailbox still shows it as unread"
+
+    second = run_once(settings_for(mailbox, workos))
+    assert (second.delivered, second.skipped) == (0, 0), "it was read a second time"
+
+
+@pytest.mark.imap
+def test_poison_messages_cannot_starve_the_healthy_ones(workos: Capture) -> None:
+    """The failure CP24 observed and CP25 had to fix.
+
+    The batch is finite. Enough messages that are re-read on every pass and nothing behind them is
+    ever reached — so this sends a full batch of poison, then one good message, with a batch size
+    small enough to make the arithmetic obvious.
+    """
+    mailbox = a_mailbox()
+    for index in range(3):
+        send_raw(
+            mailbox,
+            f"Message-ID: <poison-{index}@example.test>\r\nFrom: a@example.test\r\n".encode()
+            + b"To: " + mailbox.encode() + b"\r\nSubject: no body\r\n"
+            b"Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n\r\n",
+        )
+    healthy = send(mailbox, subject="A message worth reading")
+
+    # A batch of three: without the keyword the three poison messages fill every pass for ever.
+    first = run_once(settings_for(mailbox, workos, batch=3))
+    assert (first.delivered, first.skipped) == (0, 3)
+
+    second = run_once(settings_for(mailbox, workos, batch=3))
+    assert second.delivered == 1, "the healthy message never got a turn"
+    assert workos.received[-1]["event"]["source_ref"] == healthy

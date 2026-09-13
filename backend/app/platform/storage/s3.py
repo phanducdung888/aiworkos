@@ -3,10 +3,18 @@
 The only module in the system that imports boto3. Everything else depends on `ObjectStore`, so
 replacing the store means replacing this file and nothing above it.
 
-It holds two clients, not one. Presigned URLs are signed for the endpoint a *client* can reach —
-a reverse proxy, or a public bucket address — while `stat` and `delete` go straight to the store
-over the internal one. A presigned URL cannot be rewritten after signing, because the signature
-covers the host, so the two addresses have to be known at signing time (ADR-0063).
+It holds three clients, not one, because there are three routes to the same store and a presigned
+URL cannot be rewritten after signing — the signature covers the host (ADR-0063).
+
+* `stat` and `delete` go straight to the store over the internal endpoint. This process is not a
+  client and needs no proxy.
+* An **upload** URL is handed to a connector: a service on the application network, which reaches
+  the object proxy by its service name.
+* A **download** URL is handed to a browser: a person on a laptop, which reaches the same proxy by
+  a published address and cannot resolve a Docker service name at all.
+
+CP24 signed both for one address and CP25 found the consequence in a browser: the download URL
+pointed at `objects:9000`, which is not a name any browser will ever resolve (ADR-0067).
 """
 
 from __future__ import annotations
@@ -39,21 +47,25 @@ class S3ObjectStore:
         bucket: str,
         region: str = "us-east-1",
         public_endpoint_url: str | None = None,
+        upload_endpoint_url: str | None = None,
     ) -> None:
-        """Two endpoints, because the API and its clients reach the store by different routes.
+        """Three endpoints, because three different kinds of client reach the store.
 
         `endpoint_url` is how this process talks to the store — inside the data network, where the
-        store lives and where nothing else is allowed. `public_endpoint_url` is the host a *client*
-        can reach: a reverse proxy in front of the store, or the store's own public address in a
-        cloud deployment.
+        store lives and where nothing else is allowed.
+
+        `upload_endpoint_url` is how a **connector** reaches it: a service on the application
+        network, addressing the object proxy by its service name.
+
+        `public_endpoint_url` is how a **browser** reaches it: a published address on a person's
+        machine, which cannot resolve a Docker service name.
 
         The split exists because a presigned URL cannot be rewritten after it is signed. The
-        signature covers the host, so handing a client a URL signed for the internal name and then
-        editing it produces a 403 — the URL has to be signed for the name the client will use. Hence
-        two clients rather than one plus string surgery.
+        signature covers the host, so handing a client a URL signed for a name it cannot reach
+        produces either a DNS failure or a 403, and neither is fixable after the fact.
 
-        Defaults to the internal endpoint, so a deployment that has one reachable address behaves
-        exactly as it did before.
+        Each falls back to the one below it, so a deployment with a single reachable address —
+        which is what a cloud deployment with a public bucket has — behaves exactly as before.
         """
         self._bucket = bucket
         # MinIO speaks SigV4 and serves buckets as a path prefix rather than a subdomain, which is
@@ -71,24 +83,27 @@ class S3ObjectStore:
             )
 
         self._client: S3Client = client_for(endpoint_url)
-        # The same credentials either way: the proxy forwards to the same store, so a URL signed
-        # for the public name is honoured by the private one. What differs is only the host the
-        # signature covers.
-        self._signer: S3Client = (
-            self._client if public_endpoint_url is None else client_for(public_endpoint_url)
+        # The same credentials in every case: the proxy forwards to the same store, so a URL signed
+        # for any of these names is honoured by it. What differs is only the host the signature
+        # covers, and therefore who can use the URL.
+        self._downloads: S3Client = (
+            self._client if not public_endpoint_url else client_for(public_endpoint_url)
+        )
+        self._uploads: S3Client = (
+            self._downloads if not upload_endpoint_url else client_for(upload_endpoint_url)
         )
 
     def presigned_put(self, key: str, *, media_type: str, expires_in: dt.timedelta) -> str:
-        """Signed for the public host: whoever receives this has to be able to reach it."""
-        return self._signer.generate_presigned_url(
+        """Signed for the uploader's route: today a connector, on the application network."""
+        return self._uploads.generate_presigned_url(
             "put_object",
             Params={"Bucket": self._bucket, "Key": key, "ContentType": media_type},
             ExpiresIn=int(expires_in.total_seconds()),
         )
 
     def presigned_get(self, key: str, *, expires_in: dt.timedelta) -> str:
-        """Signed for the public host, for the same reason `presigned_put` is."""
-        return self._signer.generate_presigned_url(
+        """Signed for the address a person's browser can reach, because that is who opens a file."""
+        return self._downloads.generate_presigned_url(
             "get_object",
             Params={"Bucket": self._bucket, "Key": key},
             ExpiresIn=int(expires_in.total_seconds()),

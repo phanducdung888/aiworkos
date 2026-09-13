@@ -116,6 +116,17 @@ def test_no_autonomy_level_above_two_is_representable() -> None:
             )
 
 
+def _defaults(value: str) -> str:
+    """`${VAR:-9002}` as `9002`.
+
+    Compose interpolates before anything reads this file; a test that reads the YAML directly sees
+    the placeholder, and comparing placeholders would pass whatever they expand to.
+    """
+    import re as _re
+
+    return _re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}", r"\1", value)
+
+
 def _connectors(services: dict) -> list[str]:
     return [name for name in services if name.endswith(CONNECTOR_SERVICE_SUFFIX)]
 
@@ -188,6 +199,11 @@ def test_no_connector_service_carries_a_default_credential() -> None:
         block = block[:end] if end != -1 else block
         for secret in ("PASSWORD", "TOKEN", "SECRET"):
             for match in re.finditer(rf"\$\{{(\w*{secret}\w*)([^}}]*)\}}", block):
+                # A name, not a value. `WORKOS_OIDC_TOKEN_URL` is where to ask for a token, which
+                # is deployment topology and belongs in this file with a working default; the
+                # client secret next to it is the credential and still may not have one.
+                if match.group(1).endswith("_URL"):
+                    continue
                 assert match.group(2) == "", (
                     f"{name} gives {match.group(1)} a default or a marker: "
                     f"a credential is passed through or not at all"
@@ -240,16 +256,37 @@ def test_a_connector_reaches_object_storage_only_through_the_proxy() -> None:
         assert not networks & store_networks, f"{name} can address the object store directly"
 
 
-def test_the_api_signs_urls_for_a_host_a_client_can_reach() -> None:
-    """A presigned URL signed for the internal name is a 403 in a client's hands.
+def test_the_api_signs_urls_for_hosts_its_clients_can_actually_reach() -> None:
+    """A presigned URL signed for a name the holder cannot resolve is unusable, and unfixable.
 
     The signature covers the host, so this is not something a deployment can paper over later by
-    rewriting the URL — the two addresses have to be configured together.
+    rewriting the URL — every address has to be configured at signing time.
+
+    There are two kinds of client and they are on different networks. A connector uploads from the
+    application network and addresses the proxy by its service name. A browser downloads from a
+    person's machine and cannot resolve a Docker service name at all — CP24 signed both for
+    `objects:9000` and CP25 found the consequence the first time anybody opened an attachment
+    (ADR-0067).
     """
-    environment = _compose()["services"]["api"].get("environment") or {}
-    assert "WORKOS_S3_PUBLIC_ENDPOINT_URL" in environment
-    assert "objects" in environment["WORKOS_S3_PUBLIC_ENDPOINT_URL"]
-    assert "minio" in environment["WORKOS_S3_ENDPOINT_URL"]
+    services = _compose()["services"]
+    environment = services["api"].get("environment") or {}
+    assert "minio" in environment["WORKOS_S3_ENDPOINT_URL"], (
+        "this process talks to the store directly"
+    )
+    assert "objects" in environment["WORKOS_S3_UPLOAD_ENDPOINT_URL"], (
+        "a connector reaches the proxy by its service name"
+    )
+    public = environment["WORKOS_S3_PUBLIC_ENDPOINT_URL"]
+    assert "objects" not in public and "minio" not in public, (
+        f"{public} is a Docker service name; no browser will ever resolve it"
+    )
+
+    # And the address it is signed for has to be one the proxy is actually published on.
+    published = [_defaults(str(entry)) for entry in services["objects"].get("ports") or []]
+    port = _defaults(public).rsplit(":", 1)[-1].rstrip("/")
+    assert any(entry.split(":")[-2] == port for entry in published), (
+        f"URLs are signed for port {port} but the object proxy publishes {published}"
+    )
 
 
 def test_the_object_proxy_does_not_log_presigned_urls() -> None:

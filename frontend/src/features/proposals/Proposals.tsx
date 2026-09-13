@@ -29,6 +29,7 @@ import {
   useQueueApproval,
   useWorkItem,
 } from '@/api/hooks'
+import { Attachments } from '@/components/Attachments'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { Field } from '@/components/Field'
 
@@ -192,10 +193,16 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
           </blockquote>
         ) : null}
         {event.data ? (
-          <p>
-            From a {event.data.type} on {formatted(event.data.occurred_at)} ·{' '}
-            <Link to={`/proposals?event=${event.data.id}`}>{event.data.source_system}</Link>
-          </p>
+          <>
+            <p>
+              From a {event.data.type} on {formatted(event.data.occurred_at)} ·{' '}
+              <Link to={`/proposals?event=${event.data.id}`}>{event.data.source_system}</Link>
+            </p>
+            {/* The files that message carried. A reviewer deciding whether to accept a proposal
+                extracted from an email is entitled to the invoice that came with it, before
+                deciding rather than after. */}
+            <Attachments eventId={event.data.id} attachments={event.data.attachments ?? []} />
+          </>
         ) : null}
       </section>
 

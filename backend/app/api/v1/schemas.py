@@ -29,11 +29,13 @@ from app.contexts.identity.public import (
 from app.contexts.intelligence.public import Decision as ApprovalDecision
 from app.contexts.intelligence.public import ProposalKind, execution_deadline
 from app.contexts.signal.public import (
+    UPLOAD_WINDOW,
     Assertion,
     EventType,
     EvidenceTarget,
     ParticipantRole,
     Sensitivity,
+    effective_attachment_status,
 )
 from app.contexts.work.public import (
     AssignmentRole,
@@ -750,6 +752,27 @@ class EventAttachmentResource(BaseModel):
     created_at: dt.datetime
     completed_at: dt.datetime | None
     version: int
+
+    @model_validator(mode="after")
+    def _widen_a_reservation_that_can_no_longer_complete(self) -> EventAttachmentResource:
+        """`pending` past its upload window is reported as `expired` (CP25).
+
+        Derived here rather than stored, because it is a function of `created_at` and the clock and
+        needs nothing to run in order to be true. A reservation whose presigned URL has expired
+        with no object behind it cannot become `available` by anything its holder can still do, and
+        calling it `pending` for ever tells a person to keep waiting for a file that is not coming.
+        """
+        object.__setattr__(
+            self,
+            "status",
+            effective_attachment_status(
+                self.status,
+                self.created_at,
+                window=UPLOAD_WINDOW,
+                now=dt.datetime.now(dt.UTC),
+            ),
+        )
+        return self
 
 
 class EventResource(BaseModel):

@@ -20,6 +20,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from connectors.imap.auth import StaticToken, TokenSource, Unauthenticated
 from connectors.imap.canonical import Attachment, CanonicalMessage
 
 logger = logging.getLogger("connectors.imap")
@@ -93,7 +94,7 @@ class IngestionClient:
         self,
         base_url: str,
         *,
-        token: str,
+        token: str | TokenSource,
         organization_id: str,
         attempts: int = DEFAULT_ATTEMPTS,
         backoff: float = DEFAULT_BACKOFF,
@@ -101,7 +102,8 @@ class IngestionClient:
         opener: Any | None = None,
     ) -> None:
         self._url = f"{base_url.rstrip('/')}/api/v1/events"
-        self._token = token
+        # A plain string is still accepted, and becomes the source that says it cannot renew.
+        self._tokens: TokenSource = StaticToken(token) if isinstance(token, str) else token
         self._organization_id = organization_id
         self._attempts = attempts
         self._backoff = backoff
@@ -119,6 +121,7 @@ class IngestionClient:
         """
         payload = json.dumps(message.as_event()).encode()
         last: Exception | None = None
+        renewed = False
 
         for attempt in range(1, self._attempts + 1):
             try:
@@ -155,9 +158,23 @@ class IngestionClient:
                 self._wait(attempt)
                 continue
             if status in _CREDENTIAL_STATUS:
+                # Renewed once, then tried once more. A token that has simply aged out is the
+                # ordinary case for a service that runs for days, and it should cost one extra
+                # round trip rather than an operator.
+                if not renewed:
+                    renewed = True
+                    try:
+                        self._tokens.renew()
+                    except Unauthenticated as error:
+                        raise DeliveryUnavailable(
+                            f"{status}: the credential was rejected and could not be renewed "
+                            f"({error}); {message.source_ref} is left in the mailbox"
+                        ) from error
+                    logger.info("the access token was renewed after a %d", status)
+                    continue
                 raise DeliveryUnavailable(
-                    f"{status}: the credential was rejected; {message.source_ref} is left in the "
-                    f"mailbox ({_detail(body)})"
+                    f"{status}: the credential was rejected after renewal; "
+                    f"{message.source_ref} is left in the mailbox ({_detail(body)})"
                 )
             # 4xx that is not a "not now": the message is wrong, not the moment. Raised so the
             # caller can quarantine it instead of the connector retrying a defect forever.
@@ -174,7 +191,7 @@ class IngestionClient:
             method="POST",
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._token}",
+                "Authorization": f"Bearer {self._tokens.token()}",
                 "X-Organization-Id": self._organization_id,
                 "Idempotency-Key": key,
             },
@@ -252,7 +269,7 @@ class IngestionClient:
     ) -> dict[str, Any]:
         """One authenticated call to WorkOS, retried on the answers worth retrying."""
         headers = {
-            "Authorization": f"Bearer {self._token}",
+            "Authorization": f"Bearer {self._tokens.token()}",
             "X-Organization-Id": self._organization_id,
         }
         if body is not None:
@@ -262,6 +279,7 @@ class IngestionClient:
 
         base = self._url.rsplit("/api/v1/events", 1)[0]
         last: Exception | None = None
+        renewed = False
         for attempt in range(1, self._attempts + 1):
             request = urllib.request.Request(
                 f"{base}{path}",
@@ -276,8 +294,21 @@ class IngestionClient:
                 status, payload = error.code, _read(error)
                 if status in _CREDENTIAL_STATUS:
                     # Same reasoning as in `deliver`: this is about the connector, not the file.
+                    if not renewed:
+                        renewed = True
+                        try:
+                            self._tokens.renew()
+                        except Unauthenticated as cause:
+                            raise DeliveryUnavailable(
+                                f"{status}: the credential was rejected and could not be "
+                                f"renewed ({cause})"
+                            ) from cause
+                        headers["Authorization"] = f"Bearer {self._tokens.token()}"
+                        logger.info("the access token was renewed after a %d", status)
+                        continue
                     raise DeliveryUnavailable(
-                        f"{status}: the credential was rejected ({_detail(payload)})"
+                        f"{status}: the credential was rejected after renewal "
+                        f"({_detail(payload)})"
                     ) from error
                 if status not in _RETRYABLE_STATUS:
                     raise DeliveryRefused(status, _detail(payload)) from error

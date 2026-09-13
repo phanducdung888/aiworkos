@@ -95,12 +95,16 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_RELATIVE_PATH: /
-      # `start-dev` derives `iss` from the request's Host header and ignores the hostname options
-      # (measured in CP24: `KC_HOSTNAME_URL` had no effect). So a token is issued for whichever
-      # address it was asked for, and there is exactly one rule that keeps that consistent:
-      # **tokens are always obtained through the published address below**. The connector never
-      # talks to Keycloak — it is handed a bearer token by operations (ADR-0058) — so nothing
-      # inside the network mints one.
+      # One issuer, whichever address the token is asked for.
+      #
+      # `start-dev` otherwise derives `iss` from the request's Host header, so a token fetched from
+      # the browser said `http://localhost:8080/...` and one fetched from inside the network said
+      # `http://keycloak:8080/...` — and the API compares `iss` to a fixed string, so it accepted
+      # one and rejected the other. CP24 measured `KC_HOSTNAME_URL` as having no effect and worked
+      # around it by minting every token from the host; CP25 needs the connector to mint its own,
+      # and `KC_HOSTNAME` does take effect (the port follows the request, the hostname does not).
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
+      KC_HOSTNAME_STRICT: "false"
     volumes:
       - ./ops/keycloak:/opt/keycloak/data/import:ro
     # Loopback only, like PostgreSQL and MinIO. The browser signs in against this address, which is
@@ -141,6 +145,11 @@ services:
     profiles: ["pilot"]
     volumes:
       - ./ops/proxy/objects.conf:/etc/nginx/conf.d/default.conf:ro
+    # Published on loopback, because the other client of this proxy is a person's browser and a
+    # browser cannot resolve `objects`. The port differs from the one the container listens on and
+    # that is fine: the signature covers the Host header the client sends, which carries 9002.
+    ports:
+      - "127.0.0.1:${OBJECTS_PORT:-9002}:9000"
     depends_on: [minio]
     restart: unless-stopped
     networks: [app, data]
@@ -178,8 +187,15 @@ services:
       IMAP_PASSWORD: ${IMAP_PASSWORD}
       IMAP_MAILBOX: ${IMAP_MAILBOX:-INBOX}
       WORKOS_URL: ${WORKOS_URL:-http://api:8000}
-      WORKOS_INGESTION_TOKEN: ${WORKOS_INGESTION_TOKEN}
       WORKOS_ORGANIZATION_ID: ${WORKOS_ORGANIZATION_ID}
+      # The connector obtains its own token and renews it (ADR-0066). Keycloak is reached by its
+      # service name; the issuer is fixed by `KC_HOSTNAME` above, so the token it mints here is the
+      # same issuer the API expects from a browser sign-in.
+      WORKOS_OIDC_TOKEN_URL: ${WORKOS_OIDC_TOKEN_URL:-http://keycloak:8080/realms/workos/protocol/openid-connect/token}
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-workos-connector}
+      WORKOS_CLIENT_SECRET: ${WORKOS_CLIENT_SECRET}
+      # Still honoured, and still the thing that stops delivering when it expires.
+      WORKOS_INGESTION_TOKEN: ${WORKOS_INGESTION_TOKEN}
     depends_on: [api]
     restart: unless-stopped
     networks: [edge, app]
@@ -197,7 +213,11 @@ services:
       # name the client can resolve *and* the one the URL is signed for — the signature covers the
       # host, so these cannot be reconciled after the fact (ADR-0063). `objects` is the proxy above.
       WORKOS_S3_ENDPOINT_URL: ${WORKOS_S3_ENDPOINT_URL:-http://minio:9000}
-      WORKOS_S3_PUBLIC_ENDPOINT_URL: ${WORKOS_S3_PUBLIC_ENDPOINT_URL:-http://objects:9000}
+      # A browser opening an attachment, and a connector uploading one, are on different networks
+      # and cannot use each other's URLs (ADR-0067). Both go through the `objects` proxy; they just
+      # reach it by different names, and the signature covers the name.
+      WORKOS_S3_PUBLIC_ENDPOINT_URL: ${WORKOS_S3_PUBLIC_ENDPOINT_URL:-http://localhost:9002}
+      WORKOS_S3_UPLOAD_ENDPOINT_URL: ${WORKOS_S3_UPLOAD_ENDPOINT_URL:-http://objects:9000}
       WORKOS_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-workos}
       WORKOS_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-workos-dev-secret}
       # The issuer is a string this process compares; the JWKS address is one it fetches. They are

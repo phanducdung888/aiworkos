@@ -47,6 +47,11 @@ from sqlalchemy.orm import Session, sessionmaker
 #: the `ingestion` role and nothing else — it may capture Events and attach to its own, and cannot
 #: read anyone else's, approve anything, or execute a tool.
 PEOPLE = [
+    # The Product Owner, for alpha dogfooding (CP25). An `org_admin`, because dogfooding means
+    # deciding the agent policy as well as using the product. The email is a placeholder: this
+    # file is public, and a real mailbox address is mapped to this Person at run time through the
+    # external-identity API instead (ADR-0054).
+    ("00000000-0000-4000-8000-00000000a00a", "po", "Product Owner", "org_admin"),
     ("00000000-0000-4000-8000-00000000a001", "avery.admin", "Avery Admin", "org_admin"),
     ("00000000-0000-4000-8000-00000000a002", "tomas.lead", "Tomas Lead", "team_lead"),
     ("00000000-0000-4000-8000-00000000a003", "mira.member", "Mira Member", "member"),

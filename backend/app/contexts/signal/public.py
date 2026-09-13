@@ -27,6 +27,7 @@ from app.contexts.signal.domain import (
     ParticipantRole,
     ProcessingStatus,
     Sensitivity,
+    effective_attachment_status,
     may_extract,
     visible_to,
 )
@@ -48,6 +49,7 @@ from app.contexts.signal.repository import (
     participants_for,
 )
 from app.contexts.signal.services import (
+    UPLOAD_WINDOW,
     AttachmentContent,
     AttachmentService,
     AttachmentTicket,
@@ -95,6 +97,8 @@ __all__ = [
     "ServiceContext",
     "StartAttachment",
     "attachments_for",
+    "effective_attachment_status",
+    "UPLOAD_WINDOW",
     "list_events",
     "may_extract",
     "participants_for",

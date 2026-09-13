@@ -33,8 +33,14 @@ const authentication: Middleware = {
   async onRequest({ request }) {
     const token = context.getAccessToken()
     if (token) request.headers.set('Authorization', `Bearer ${token}`)
+    // A header the caller set explicitly wins. There is one call that needs this — checking an
+    // organization identifier before committing to it — and overwriting it there would validate
+    // whichever organization is already configured rather than the one being tried, which is
+    // exactly right when nothing is configured yet and exactly wrong when somebody is switching.
     const organization = context.getOrganizationId()
-    if (organization) request.headers.set('X-Organization-Id', organization)
+    if (organization && !request.headers.has('X-Organization-Id')) {
+      request.headers.set('X-Organization-Id', organization)
+    }
     return request
   },
   async onResponse({ response }) {

@@ -304,6 +304,37 @@ describe('ProposalDetail', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('BR-C-03')
   })
 
+  it.each(['failed', 'expired', 'pending'])(
+    'never claims something was created when execution is %s (CP25)',
+    async (executionStatus) => {
+      // §6: the UI must never show a successful execution when execution actually failed. The
+      // claim that matters is "Created a commitment" — a person reads that as done, and a
+      // resulting entity is the only thing entitled to produce it.
+      stubApi([
+        detail(),
+        evidence,
+        sourceEvent,
+        decision(),
+        queue,
+        approvalFor({
+          execution_status: executionStatus,
+          executed_at: null,
+          execution_error: executionStatus === 'failed' ? 'BR-C-03: something was refused' : null,
+          resulting_entity_type: null,
+          resulting_entity_id: null,
+        }),
+      ])
+      renderDetail()
+
+      await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+
+      expect(await screen.findByTestId('execution-status')).toHaveTextContent(executionStatus)
+      expect(screen.queryByTestId('created-commitment')).toBeNull()
+      expect(screen.queryByText(/Created a commitment/i)).toBeNull()
+      expect(screen.queryByText(/Created work/i)).toBeNull()
+    },
+  )
+
   it('will not reject without a reason, and sends the reason when given one', async () => {
     let sent: { decision: string; rejection_reason: string } | undefined
     stubApi([
