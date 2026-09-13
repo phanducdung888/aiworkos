@@ -74,6 +74,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0057 | The policy surface is derived from the tools, and a cell's action decides | accepted | ADR-0047, BR-AI-30 |
 | 0058 | Ingestion has no in-process port; the connector boundary is the capture API | accepted | BR-E-02, ADR-0054 |
 | 0059 | OpenClaw publishes no outbound delivery contract; the integration direction reverses | accepted, supersedes part of 0053 | A-3, ADR-0027, ADR-0053 |
+| 0060 | An ingestion-only role, holding one grant | accepted | ADR-0027, ADR-0058, migration 0014 |
+| 0061 | Email over IMAP is the first connector; PQ-1 amended | accepted, amends Decision Pack v1.0 | PQ-1, ADR-0058, ADR-0059 |
 
 ---
 
@@ -1600,3 +1602,100 @@ decision to adopt it would be a new record.
 Sources consulted: `docs.openclaw.ai/channels/whatsapp` (fetched 2026-09-13). Several other domains
 present themselves as OpenClaw documentation; none was treated as authoritative, and no field name,
 endpoint or schema from any of them appears in this repository.
+
+
+### ADR-0060 — An ingestion-only role, holding one grant
+
+**Context.** ADR-0027 required a channel connector to authenticate as an ingestion-only identity
+holding no tool permissions, and nothing ever issued one. A connector would therefore have run as
+`member` — the narrowest existing role holding `EVENT.CREATE`.
+
+`member` holds **56 of the authorization matrix's 83 cells**, including `PROPOSAL.APPROVE`. A stolen
+delivery credential could have approved the AI's own proposals: deliver a message, have the agent
+read it, approve what it proposed, and write into the organization with no person anywhere in the
+chain. That is the one control the Level-2 autonomy model rests on, reachable from a credential
+whose whole job is to receive email.
+
+**Decision. `Role.INGESTION`, holding exactly one grant: `EVENT.CREATE`.**
+
+It authenticates the same way everything else does — a Keycloak subject resolved to a Person and
+their roles (ADR-0031). A connector is not a human, but a second authentication path would be a
+second way into the application and a second thing to get right.
+
+**The reads are denied too, and that is deliberate.** A connector needs no read to do its job: the
+capture response tells it what happened. Denying them means a stolen delivery credential cannot be
+used to page through an organization's messages or work, which is the thing it would otherwise be
+most useful for. It cannot even read back the Event it just delivered.
+
+**Two consequences of that worth knowing**, both verified rather than assumed:
+
+* **Analysis is refused as 404, not 403.** `POST /events/{id}/analyze` reads the Event through the
+  caller's own visibility (BR-E-08), and a connector cannot see Events at all. The refusal comes
+  from the narrowing rather than from a separate check, which is the stronger arrangement — there is
+  no permission to grant by accident later.
+* **A redelivery *without* the idempotency key answers 404.** Telling a caller "you already sent
+  this, here it is" means returning the Event, which this role may not read. No second Event is
+  written either way; what the connector loses is a usable answer. The derived key avoids the read
+  entirely, because the idempotency guard replays a stored response without going near the row.
+
+**Listing endpoints answer 200 with nothing rather than 403.** They narrow by the grants a role
+holds instead of refusing up front, so a role with none gets an empty page. The confidentiality
+property is identical and is what the tests assert against a populated organization.
+
+**`row()` defaults the new column to denial.** This file's usual discipline is that adding a role
+breaks the build until every cell is filled in deliberately. `ingestion` is *defined* as denied
+everywhere but one cell, so a default of `NO` states exactly that, and
+`test_the_ingestion_role_holds_exactly_one_grant` replaces the build break with a stronger
+assertion: it checks the whole matrix rather than checking that somebody typed something.
+
+**Consequences.** Migration `0014` widens one CHECK constraint's value list — no column, no data, no
+RLS, no change to any existing role. Its `downgrade` refuses while `ingestion` assignments exist
+rather than deleting them: revoking access is a decision with an actor and an audit entry, not a
+side effect of a schema rollback.
+
+Rejected: running as `member` (56 cells for a job that needs one); a service-account authentication
+path outside Keycloak (a second way in); granting `EVENT.READ` so redelivery could answer cleanly
+(it trades the confidentiality property for a status code).
+
+### ADR-0061 — Email over IMAP is the first connector; PQ-1 amended
+
+**Context.** Decision Pack v1.0 PQ-1 named three capture sources — the web paste path, OpenClaw
+messaging with WhatsApp first, and internal system-generated Events — and listed email among its
+non-goals. ADR-0059 then established that OpenClaw publishes no outbound delivery mechanism, so the
+only *external message* source PQ-1 sanctioned could not be built. The internal source is
+explicitly not an external capture source and is non-extractable by BR-E-11.
+
+The pack could therefore not be satisfied: its sanctioned connector was un-buildable and its
+buildable connectors were non-goals. That was reported as a conflict rather than resolved in code,
+and the Product Owner amended PQ-1.
+
+**Decision (Product Owner, recorded here). PQ-1 is amended: email over IMAP is permitted as the
+first external connector.** OpenClaw/WhatsApp remains a sanctioned future source and is not to be
+integrated until a verified external interface exists.
+
+**Why email, on the criteria that were asked for.** IMAP is RFC-specified and vendor-neutral, so
+there is a contract to build against rather than a product's current behaviour. It runs entirely
+outside WorkOS. `Message-ID` is *defined* by RFC 5322 to be globally unique, which is exactly what
+`source_ref` needs — BR-E-02's key comes free rather than being invented. And it needs no
+dependency: `imaplib` and `email` are in the standard library, which is the strongest available
+statement that a connector shares nothing with the application it posts to.
+
+**What the connector is, and is not.** It lives in `connectors/imap/`, outside the backend package,
+and speaks only the contract in ADR-0058. The interesting half is pure — bytes in, an event body out
+— which is why it is a module rather than a step inside the IMAP loop, and why most of its tests
+need no mail server. Two architecture tests hold the boundary: the application imports no connector,
+and the connector imports no context, session, ORM or web framework.
+
+It refuses rather than invents. A message with no `Date` and no server receipt time is skipped, not
+delivered with `now()` — CP15 reads deadlines against `occurred_at` (ADR-0055), so an invented
+timestamp would become a real date on somebody's promise. Addresses become bare handles and never a
+`person_id`. Quoted replies are delivered intact, because deciding a reply is not part of a message
+is interpretation and belongs where it can be audited.
+
+**Consequences.** `connectors/` is a new top-level directory; CLAUDE.md §4 requires an ADR for that
+and this is it. The MVP gains a capture source that a pilot can actually use, and the adapter layer
+PQ-1 asked for is demonstrated rather than asserted — a second connector is a second directory
+speaking the same contract, with no change to WorkOS.
+
+Not decided here: whether email is a source the product *wants* long-term, which is a product
+question the pilot will answer. This ADR records that it is permitted and that it is first.

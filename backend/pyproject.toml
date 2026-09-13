@@ -35,6 +35,11 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The repository root, so an integration test can normalise a message with the *connector's*
+# own code rather than re-implementing it (CP20). The dependency runs one way only: nothing
+# under `app` imports `connectors`, and `test_the_application_never_imports_a_connector`
+# is what keeps that true.
+pythonpath = [".", ".."]
 markers = [
     "integration: requires a live PostgreSQL",
     "architecture: asserts an architectural invariant",

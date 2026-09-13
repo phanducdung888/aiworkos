@@ -314,6 +314,20 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 
 ### Resolved
 
+**PQ-1 had no buildable external connector (closed in CP20, ADR-0061).** Its only sanctioned
+external-message source was OpenClaw/WhatsApp, which ADR-0059 showed publishes no outbound
+delivery mechanism; its named non-goals covered every alternative with a verified protocol.
+Reported as a conflict rather than resolved in code, and the Product Owner amended PQ-1 to
+permit **email over IMAP** as the first external connector. OpenClaw/WhatsApp stays sanctioned
+and unbuilt until a verified external interface exists.
+
+**ADR-0027's ingestion-only identity did not exist (closed in CP20, ADR-0060).** A connector
+would have run as `member` — 56 of the matrix's 83 cells, including `PROPOSAL.APPROVE`, so a
+stolen delivery credential could have approved the AI's own proposals. `Role.INGESTION` holds
+one grant: `EVENT.CREATE`. It cannot approve, write business state, run the agent, change the
+agent policy, confirm an identity, or read anything back — including the Event it delivered.
+Migration 0014 widens one CHECK constraint and changes nothing else.
+
 **A-3 / OpenClaw's channel-adapter question (closed in CP19B, ADR-0059).** The spike ADR-0053
 called for was done against the published documentation rather than against expectation.
 OpenClaw documents WhatsApp as an inbound channel *inside its own gateway runtime* — a CLI,
@@ -535,6 +549,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 18 | Product integration: lands on Attention, decided proposals readable again, proposal history, "the agent is switched off" distinguished from "the agent found nothing", shell coherence tests | ✅ complete · 1115 backend + 101 frontend + 5 journeys |
 | 19A | Agent policy surface: derived editable grid, a cell's action made load-bearing, admin UI; ADR-0057 | ✅ complete · 1127 backend + 111 frontend |
 | 19B | Ingestion contract: no connector port, the capture API is the seam; executable conformance suite; OpenClaw spike closed on evidence; ADR-0058/0059 | ✅ complete · 1139 backend + 111 frontend |
+| 20 | First real connector: IMAP email, ingestion-only role, migration 0014, PQ-1 amended; ADR-0060/0061 | ✅ complete · 1169 backend + 111 frontend + 45 connector |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

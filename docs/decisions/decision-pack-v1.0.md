@@ -25,6 +25,14 @@ Priority order:
 **Non-goals:** no Gmail, Outlook, Calendar, GitHub, GitLab, Odoo, Slack, Teams or Zalo integrations as
 MVP dependencies. The adapter layer must allow them later without blocking the MVP.
 
+> **Amended 2026-09-13 (ADR-0061).** Source 2 could not be built: ADR-0059 established that OpenClaw
+> publishes no outbound delivery mechanism, so the only sanctioned *external message* source had no
+> contract to build against. **Email over IMAP is now permitted as the first external connector** —
+> a vendor-neutral protocol whose `Message-ID` is defined to be globally unique, which is what
+> BR-E-02 needs. This permits the protocol, not a provider: the non-goals above still stand for
+> Gmail- and Outlook-specific integrations. OpenClaw/WhatsApp remains sanctioned and is not to be
+> integrated until a verified external interface exists.
+
 **Acceptance:** a user pastes a realistic work conversation into the web UI and the system creates an
 immutable Event, preserves the original source, extracts candidate Work/Commitment information,
 creates a Proposal, attaches Evidence, allows approve/reject/edit, creates the Work/Commitment through

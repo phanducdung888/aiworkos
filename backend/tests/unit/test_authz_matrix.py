@@ -107,3 +107,63 @@ def test_changing_who_owns_work_is_not_the_same_power_as_editing_it() -> None:
     reassign = MATRIX[(ResourceType.WORK_ASSIGNMENT, Action.REASSIGN)][Role.MEMBER]
     assert update != frozenset({Grant.DENY})
     assert reassign == frozenset({Grant.DENY})
+
+
+# --------------------------------------------------------------------------- the ingestion role
+
+
+def test_the_ingestion_role_holds_exactly_one_grant() -> None:
+    """ADR-0060. A connector delivers messages; it does not do anything else, ever.
+
+    This replaces the build-break discipline for this role. `row()` defaults `ingestion` to denial,
+    so a new resource or action cannot accidentally grant it something — and this checks the whole
+    matrix rather than checking that somebody remembered to type `NO`.
+
+    The number matters. Running a connector as `member` would give it 56 of these cells, including
+    `PROPOSAL.APPROVE` — the single control the Level-2 autonomy model rests on.
+    """
+    held = {
+        (resource, action)
+        for (resource, action), cells in MATRIX.items()
+        if cells[Role.INGESTION] != frozenset({Grant.DENY})
+    }
+    assert held == {(ResourceType.EVENT, Action.CREATE)}
+
+
+def test_the_ingestion_role_can_never_approve_or_write_business_state() -> None:
+    """Stated as refusals rather than as a count, so a failure names what leaked."""
+    forbidden = (
+        (ResourceType.PROPOSAL, Action.APPROVE),
+        (ResourceType.PROPOSAL, Action.CREATE),
+        (ResourceType.PROPOSAL, Action.UPDATE),
+        (ResourceType.WORK, Action.CREATE),
+        (ResourceType.WORK, Action.CHANGE_STATE),
+        (ResourceType.WORK_ASSIGNMENT, Action.ASSIGN),
+        (ResourceType.COMMITMENT, Action.CREATE),
+        (ResourceType.COMMITMENT, Action.CHANGE_STATE),
+        (ResourceType.EVIDENCE, Action.CREATE),
+        (ResourceType.AGENT_CAPABILITY_POLICY, Action.UPDATE),
+        (ResourceType.EXTERNAL_IDENTITY, Action.CREATE),
+        (ResourceType.AUDIT_ENTRY, Action.READ),
+    )
+    for pair in forbidden:
+        assert MATRIX[pair][Role.INGESTION] == frozenset({Grant.DENY}), pair
+
+
+def test_the_ingestion_role_cannot_even_read_what_it_delivered() -> None:
+    """Deliberate, and worth stating.
+
+    A connector needs no read to do its job: the capture response tells it what happened. Denying
+    the read means a stolen ingestion credential cannot be used to page through an organization's
+    messages, which is the thing it would otherwise be most useful for.
+    """
+    for action in (Action.READ, Action.LIST):
+        assert MATRIX[(ResourceType.EVENT, action)][Role.INGESTION] == frozenset({Grant.DENY})
+
+
+def test_adding_a_resource_cannot_quietly_grant_the_connector_something() -> None:
+    """The deny default, asserted as behaviour rather than trusted as a keyword argument."""
+    from app.platform.authz.matrix import ORG, row
+
+    fresh = row(ORG, ORG, ORG, ORG, ORG, ORG, ORG)
+    assert fresh[Role.INGESTION] == frozenset({Grant.DENY})

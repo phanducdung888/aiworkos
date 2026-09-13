@@ -2985,7 +2985,7 @@ export interface components {
          * Role
          * @enum {string}
          */
-        Role: "org_admin" | "department_lead" | "team_lead" | "member" | "viewer" | "auditor" | "executive";
+        Role: "org_admin" | "department_lead" | "team_lead" | "member" | "viewer" | "auditor" | "executive" | "ingestion";
         /** RoleAssignmentList */
         RoleAssignmentList: {
             /** Items */

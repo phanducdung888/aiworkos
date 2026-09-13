@@ -4874,7 +4874,8 @@
           "member",
           "viewer",
           "auditor",
-          "executive"
+          "executive",
+          "ingestion"
         ],
         "title": "Role",
         "type": "string"

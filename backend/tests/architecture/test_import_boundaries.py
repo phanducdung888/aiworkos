@@ -752,3 +752,55 @@ def test_a_commitment_is_never_deduplicated_against_work_titles() -> None:
     assert "find_similar_work" not in body, (
         "submit_analysis still searches Work directly; the corpus must be chosen by intent kind"
     )
+
+
+def test_the_application_never_imports_a_connector() -> None:
+    """CP20, ADR-0058. The dependency runs one way and only one way.
+
+    A connector imports nothing from WorkOS — it posts to the capture API — and WorkOS imports
+    nothing from a connector. The backend *test* suite does import the normaliser, deliberately, so
+    the end-to-end journey exercises the connector's own code instead of re-implementing it; that
+    is a test reaching outwards, which is the opposite direction and carries none of the coupling.
+
+    An application that imported a connector would have a vendor's protocol inside the process that
+    holds the database credential, which is the arrangement ADR-0027 put behind a separate identity
+    to avoid.
+    """
+    for module in _modules(APP):
+        for imported in _imports(module):
+            assert not imported.startswith("connectors"), (
+                f"{module.relative_to(BACKEND_ROOT)} imports {imported}; a connector runs outside "
+                "this process and is not the application's to reach"
+            )
+
+
+def test_a_connector_cannot_reach_the_database_or_the_domain() -> None:
+    """ADR-0058: receiving and normalising, and nothing else.
+
+    Asserted over the connector's own source rather than trusted. A connector that could import a
+    context would be a second write path into Signal — and one that could import a session would be
+    holding the credential the whole arrangement exists to keep away from vendor code.
+    """
+    connectors = BACKEND_ROOT.parent / "connectors"
+    forbidden = ("app.", "sqlalchemy", "alembic", "psycopg", "fastapi")
+    for module in _modules(connectors):
+        if "tests" in module.parts:
+            continue
+        for imported in _imports(module):
+            assert not imported.startswith(forbidden), (
+                f"{module.name} imports {imported}; a connector normalises and posts, and holds "
+                "no database credential and no business rule"
+            )
+
+
+def test_the_connector_holds_no_credential_of_its_own() -> None:
+    """Everything comes from the environment. A default here would be a secret in a repository."""
+    import re
+
+    connectors = BACKEND_ROOT.parent / "connectors"
+    suspicious = re.compile(r"(?i)(password|token|secret)\s*[:=]\s*[\"'][^\"']{6,}")
+    for module in _modules(connectors):
+        if "tests" in module.parts:
+            continue
+        found = suspicious.search(module.read_text())
+        assert found is None, f"{module.name} appears to hold a literal credential: {found}"

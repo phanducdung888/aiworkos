@@ -7,7 +7,7 @@ cells are filled in deliberately.
 
 Column order in every row is fixed:
 
-    admin, dept_lead, team_lead, member, viewer, auditor, executive
+    admin, dept_lead, team_lead, member, viewer, auditor, executive, ingestion
 
 Grants are conditions, not permissions in themselves. `TEAM` means "allowed when the actor is
 related to this resource through a team they belong to". The relationship facts are supplied by the
@@ -34,6 +34,7 @@ _ROLE_ORDER: tuple[Role, ...] = (
     Role.VIEWER,
     Role.AUDITOR,
     Role.EXECUTIVE,
+    Role.INGESTION,
 )
 
 # Short aliases so the table below stays readable.
@@ -56,8 +57,19 @@ def row(
     viewer: Cell,
     auditor: Cell,
     executive: Cell,
+    ingestion: Cell = NO,
 ) -> dict[Role, frozenset[Grant]]:
-    values = (admin, dept_lead, team_lead, member, viewer, auditor, executive)
+    """One row of the table. Every role's cell, and `ingestion` defaults to denial.
+
+    The default is the one departure from this file's usual discipline — adding a role normally
+    breaks the build until every cell is filled in deliberately, which is what stops a new role
+    being granted something by accident. `ingestion` is defined as *denied everywhere but one
+    cell*, so a default of `NO` says exactly that, and spelling it out sixty times would bury the
+    one place it is not. `test_the_ingestion_role_holds_exactly_one_grant` replaces the build break
+    and is the stronger assertion: it checks the whole matrix rather than checking that somebody
+    typed something.
+    """
+    values = (admin, dept_lead, team_lead, member, viewer, auditor, executive, ingestion)
     return {role: frozenset(grants) for role, grants in zip(_ROLE_ORDER, values, strict=True)}
 
 
@@ -201,7 +213,9 @@ MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
     # works. Putting it in the matrix instead would need a Relation the policy engine cannot
     # evaluate without reading the participant table, which it is not allowed to do.
     #                                 admin  dept  team  member viewer audit exec
-    (R.EVENT, A.CREATE):             row(ORG,  ORG,  ORG,  ORG,   NO,    NO,   NO),
+    # The one cell a connector holds (ADR-0060). `ORG`, because a delivered message belongs to
+    # the organization the credential is scoped to and to no narrower thing inside it.
+    (R.EVENT, A.CREATE):             row(ORG,  ORG,  ORG,  ORG,   NO,    NO,   NO,  ORG),
     (R.EVENT, A.READ):               row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
     (R.EVENT, A.LIST):               row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
     # Attaching is narrower than capturing. Adding a file to an Event somebody else recorded is a

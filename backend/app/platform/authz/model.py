@@ -20,6 +20,13 @@ class Role(enum.StrEnum):
     VIEWER = "viewer"
     AUDITOR = "auditor"
     EXECUTIVE = "executive"
+    #: A channel connector, and nothing else (ADR-0027, ADR-0060).
+    #:
+    #: Not a person and not an agent: a process that delivers messages it received. It holds one
+    #: grant in the whole matrix — `EVENT.CREATE` — because delivering is all it does. Running a
+    #: connector as `member` instead would hand it `PROPOSAL.APPROVE`, which is the single control
+    #: the Level-2 autonomy model rests on.
+    INGESTION = "ingestion"
 
 
 class ResourceType(enum.StrEnum):

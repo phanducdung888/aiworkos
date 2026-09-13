@@ -10,7 +10,7 @@ DEV_DB := workos
 TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast lint types imports check dev-db test-db seed web-install web-check web-test e2e
+.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast connector-test connector-types lint types imports check dev-db test-db seed web-install web-check web-test e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -60,8 +60,15 @@ test-unit:  ## Domain and authorization tests only, no database
 
 test-fast: test-unit  ## Alias
 
-lint:  ## ruff
+connector-test:  ## The connectors' own tests. No database, no mail server, no network.
+	.venv/bin/python -m pytest connectors/tests -q
+
+connector-types:  ## mypy --strict over the connectors
+	.venv/bin/mypy --strict connectors/
+
+lint:  ## ruff, over the backend and the connectors
 	cd $(BACKEND) && ruff check .
+	ruff check connectors/
 
 types:  ## mypy --strict over contexts and platform
 	cd $(BACKEND) && PYTHONPATH=. mypy
@@ -89,4 +96,4 @@ web-check:  ## Frontend: generated-client drift, types, lint, component tests, p
 e2e:  ## The curated journeys (L6). Needs PostgreSQL; starts the API and the dev server itself.
 	cd $(FRONTEND) && npm run e2e
 
-check: lint types imports test web-check  ## Everything CI runs
+check: lint types imports connector-test connector-types test web-check  ## Everything CI runs

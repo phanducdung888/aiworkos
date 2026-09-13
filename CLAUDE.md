@@ -109,6 +109,7 @@ ai-workos/
 │   ├── migrations/           # Alembic
 │   └── tests/
 ├── frontend/                 # React + TypeScript + Vite
+├── connectors/               # processes that deliver messages in from outside (ADR-0058/0061)
 ├── agent/                    # OpenClaw runtime config, prompts, tool manifests, evals
 └── ops/                      # compose files, Keycloak realm, seed data
 ```
@@ -157,9 +158,10 @@ Tool Gateway ┘
 
 ## 8. Decided (Decision Pack v1.0)
 
-- **Capture sources (PQ-1):** web manual entry and paste (mandatory path), OpenClaw-connected
-  messaging with WhatsApp as the first channel, and internal system-generated Events. No other
-  connectors in the MVP.
+- **Capture sources (PQ-1, amended by ADR-0061):** web manual entry and paste (mandatory path),
+  **email over IMAP** (the first connector actually built — ADR-0059 showed OpenClaw publishes no
+  outbound interface), OpenClaw-connected messaging with WhatsApp when a verified external
+  interface exists, and internal system-generated Events. No other connectors in the MVP.
 - **Tenancy (PQ-2):** multi-organization capable schema, authorization and API; one organization in
   the first deployment; shared Keycloak realm, org membership resolved in the application.
 - **Autonomy (PQ-3):** Levels 1–2 as described in rule 9 above.
