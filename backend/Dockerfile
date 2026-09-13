@@ -23,6 +23,7 @@ COPY . .
 
 ENV PYTHONPATH=/srv
 
-# Checkpoint 4 replaces this with uvicorn once routers exist. Until then the container is useful for
-# running migrations and tests, not for serving traffic.
-CMD ["python", "-c", "print('AI WorkOS backend image. No HTTP surface until Checkpoint 4.')"]
+# One image, two processes (ADR-0044). The default is the HTTP surface; the worker service in
+# docker-compose.yml overrides the command and runs the queue loop from the same build, because a
+# handler that executes an approved action must be the same code the API validated it against.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -29,6 +29,8 @@ from collections.abc import Sequence
 
 from connectors.imap.canonical import (
     DEFAULT_SOURCE_SYSTEM,
+    MAX_ATTACHMENT_BYTES,
+    TooLarge,
     Unnormalisable,
     parse_message,
 )
@@ -146,6 +148,15 @@ def run_once(
                 message = parse_message(
                     raw, source_system=settings.source_system, received_at=received_at
                 )
+            except TooLarge as error:
+                # Marked seen, unlike everything else that cannot be normalised. A message does not
+                # get smaller, so leaving it unseen would retry it every interval forever — which
+                # is what "repeating a malformed request is how a connector turns its own defect
+                # into somebody else's outage" says about the refusal case, and says here too.
+                logger.error("%s; leaving it in the mailbox and moving on", error)
+                _mark_seen(mail, identifier)
+                refused += 1
+                continue
             except Unnormalisable as error:
                 # Left unseen on purpose: this is a message somebody may want to look at, and a
                 # connector that swallowed it would make it disappear without a record anywhere.
@@ -164,6 +175,16 @@ def run_once(
                 # Left unseen, so the next pass tries again. The idempotency key makes that safe.
                 logger.error("WorkOS unreachable for %s: %s", message.source_ref, error)
                 break
+
+            if message.oversized_attachments:
+                logger.warning(
+                    "%s: %s left behind, over the %d-byte per-file limit",
+                    message.source_ref,
+                    ", ".join(
+                        f"{name} ({size} bytes)" for name, size in message.oversized_attachments
+                    ),
+                    MAX_ATTACHMENT_BYTES,
+                )
 
             if message.attachments:
                 # After the Event exists, because an attachment is attached *to* something

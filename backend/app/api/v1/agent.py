@@ -64,6 +64,7 @@ from app.platform.http.deps import (
     ObjectStoreDep,
     PrincipalDep,
     SessionDep,
+    may_reach,
 )
 from app.platform.http.idempotency import Idempotency, replay_response
 
@@ -520,6 +521,10 @@ def list_ai_interactions(
     principal: PrincipalDep,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> AIInteractionList:
+    # An AIInteraction has no row in the matrix: it is the record of a run that produced
+    # Proposals, so it is gated on the same grant those are. Reading it is reading how a
+    # Proposal came to exist — which prompt, which model, what the model was given.
+    may_reach(principal, Action.LIST, ResourceType.PROPOSAL)
     return AIInteractionList(
         items=[
             AIInteractionResource.model_validate(row)
@@ -535,6 +540,7 @@ def read_ai_interaction(
     interaction_id: uuid.UUID, session: SessionDep, principal: PrincipalDep
 ) -> Any:
     """One run, with every tool call it made — including the refused ones."""
+    may_reach(principal, Action.READ, ResourceType.PROPOSAL)
     interaction = intelligence.get_interaction(
         session, org_id=principal.org_id, interaction_id=interaction_id
     )
@@ -581,6 +587,11 @@ def read_capability_policy(
     Readable organization-wide: somebody asked to review an AI-raised Proposal is entitled to know
     what the AI was permitted to do in the first place.
     """
+    # Organization-wide among the roles that hold the grant, which is not the same as everyone. A
+    # connector holds none of it (ADR-0060) and read the whole policy until CP24, because this
+    # handler scoped to the tenant and asked the matrix nothing. Said here rather than in the
+    # docstring, which is published as the endpoint's description.
+    may_reach(principal, Action.LIST, ResourceType.AGENT_CAPABILITY_POLICY)
     return CapabilityPolicyList(
         items=[
             CapabilityPolicyResource.model_validate(row)

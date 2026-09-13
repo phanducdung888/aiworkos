@@ -192,3 +192,52 @@ class TestPrecisionAgreesWithTheDomain:
                 assert date is not None, phrase
             else:
                 assert date is None, phrase
+
+
+class TestACalendarDayItCannotPlace:
+    """CP24. A phrase that names a day and a month is declined, not answered by a weekday rule.
+
+    The failure was silent and the wrong direction. A real message read "I will finish the
+    migration runbook and send it to you by Friday 18 September", the model quoted the whole
+    phrase, and `_WEEKDAY` matched "Friday" — resolving to the Friday of the week the message was
+    sent, the 11th. Seven days early, `week` precision, and nothing anywhere saying the date had
+    been guessed.
+    """
+
+    REFERENCE = dt.date(2026, 9, 11)  # itself a Friday, which is what made it invisible
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "by Friday 18 September",
+            "Friday, September 18th",
+            "18 September",
+            "September 18",
+            "by the 18th of September",
+            "by Monday 5 Oct",
+        ],
+    )
+    def test_it_is_vague_rather_than_a_date_nobody_agreed_to(self, phrase: str) -> None:
+        reading = read_due_phrase(phrase, reference=self.REFERENCE)
+        assert reading.date is None
+        assert reading.precision is DuePrecision.VAGUE
+
+    def test_an_iso_date_still_reads(self) -> None:
+        """The guard sits after the ISO branch, so the one calendar form this table *can* read is
+        untouched."""
+        reading = read_due_phrase("by 2026-09-18", reference=self.REFERENCE)
+        assert reading.date == dt.date(2026, 9, 18)
+        assert reading.precision is DuePrecision.EXACT
+
+    @pytest.mark.parametrize(
+        ("phrase", "expected"),
+        [
+            ("by Friday", dt.date(2026, 9, 11)),
+            ("next Friday", dt.date(2026, 9, 18)),
+            ("it may be ready by Friday", dt.date(2026, 9, 11)),
+        ],
+    )
+    def test_the_relative_readings_are_unchanged(self, phrase: str, expected: dt.date) -> None:
+        """A day number is required, so "may" the modal is not May the month and the guard stays
+        narrow enough to change nothing that already worked."""
+        assert read_due_phrase(phrase, reference=self.REFERENCE).date == expected

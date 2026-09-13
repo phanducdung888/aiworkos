@@ -39,12 +39,14 @@ from app.contexts.commitment.public import (
     get_commitment,
     list_commitments,
 )
+from app.platform.authz import Action, ResourceType
 from app.platform.errors import EntityNotFound
 from app.platform.http.deps import (
     ActorDep,
     IdempotencyKeyDep,
     PrincipalDep,
     SessionDep,
+    may_reach,
 )
 from app.platform.http.etag import etag_for, require_if_match
 from app.platform.http.idempotency import Idempotency, replay_response
@@ -106,6 +108,11 @@ def list_all_commitments(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
 ) -> CommitmentList:
+    # The matrix, before a row is selected. Scoping to the organization is not
+    # authorization: until CP24 a role with no grant on this resource type reached all
+    # of it, because every role that could read anything could read it organization-wide
+    # and the two questions had never given different answers.
+    may_reach(principal, Action.LIST, ResourceType.COMMITMENT)
     page = list_commitments(
         session,
         principal,
@@ -130,6 +137,7 @@ def list_all_commitments(
 def read_commitment(
     commitment_id: uuid.UUID, response: Response, session: SessionDep, principal: PrincipalDep
 ) -> Any:
+    may_reach(principal, Action.READ, ResourceType.COMMITMENT)
     commitment = get_commitment(session, principal, commitment_id)
     if commitment is None:
         raise EntityNotFound("commitment", commitment_id)
@@ -193,6 +201,7 @@ def overdue_commitments(
     audit entry, and a read that performed it would make a status change appear from nowhere.
     Vague-precision promises are absent by rule — they age into a review prompt instead.
     """
+    may_reach(principal, Action.LIST, ResourceType.COMMITMENT)
     return CommitmentList(
         items=[
             CommitmentResource.model_validate(row)

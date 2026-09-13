@@ -78,6 +78,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0061 | Email over IMAP is the first connector; PQ-1 amended | accepted, amends Decision Pack v1.0 | PQ-1, ADR-0058, ADR-0059 |
 | 0062 | A connector is an untrusted edge, confined and tested like one | accepted | ADR-0002, ADR-0058, ADR-0061 |
 | 0063 | Attachment delivery by a connector | accepted (CP23) | ADR-0039, ADR-0060, ADR-0062 |
+| 0064 | Tenant scoping is not authorization | accepted (CP24) | ADR-0008, ADR-0027, ADR-0060 |
+| 0065 | The connector's per-message ceiling, measured | accepted (CP24) | ADR-0058, ADR-0061, ADR-0063 |
 
 ---
 
@@ -1849,3 +1851,107 @@ convenience); putting the connector or the store on each other's networks (rever
 ADR-0020); accepting attachment bytes through the capture API (reverses ADR-0039, which exists
 because an API process is the wrong place for file transfer); rewriting the host of a presigned URL
 after signing (does not work, and the test says so).
+
+---
+
+### ADR-0064 — Tenant scoping is not authorization
+
+**Status:** accepted (CP24) · **Supersedes nothing** · **Related:** ADR-0008, ADR-0027, ADR-0060
+
+**Context.** Every read path in this system narrows rows to the caller's organization, and for the
+whole of Phase 1 that was indistinguishable from authorization: every role in the matrix held an
+`ORG` grant on everything it could read at all, so "scope to the tenant" and "consult the matrix"
+returned the same rows for every query anybody wrote. Several read paths therefore never consulted
+the matrix. `app/contexts/commitment/queries.py` said so in its own module docstring, as a decision
+rather than an omission — and it was correct, at the time it was written.
+
+ADR-0060 added `ingestion`, the first role for which the two questions differ. It holds three cells
+out of eighty-three. CP24 asked the running system what a connector's token could actually read.
+
+**Measured, against the pilot stack.** A connector token could read every Proposal in the
+organization with its full action and arguments, every Commitment, every AI interaction, the
+organization's autonomy policy, and any Evidence row by id. The matrix denied all of it. Nothing
+consulted the matrix.
+
+Two things made it invisible. The first is the equivalence above. The second is that the test which
+existed to catch exactly this — `test_a_connector_reads_no_business_data` — asserted `items == []`
+against a fixture that created one Work and nothing else, so for `/proposals` and `/commitments` it
+was asserting that an empty table is empty.
+
+**Decision.**
+
+1. **A read path authorizes, or narrows, and says which.** Where a role's grant is genuinely
+   narrower than the tenant — `EVENT.READ = PERSONAL` for a connector — it stays a predicate in the
+   query, because that is the only place it can be one. Where every role that holds the grant holds
+   it organization-wide, the handler gates on the matrix before selecting a row
+   (`app.platform.http.deps.may_reach`). Scoping to `org_id` is neither of these and never stands
+   in for either.
+
+2. **A published cell means something.** `EVENT.LIST` is denied to `ingestion`, and CP23 left the
+   listing answering on the grounds that the reach predicate — derived from `EVENT.READ` — made the
+   page uninteresting anyway. That reasoning was sound about that pair and unsound as a habit: it
+   is what left the rest of the surface open. The cell is now enforced. This changes nothing for
+   any human role; all seven hold `ORG` on it.
+
+3. **An empty answer is not evidence of a control.** A test that asserts emptiness must first make
+   the endpoint non-empty for somebody, or it is asserting nothing. The boundary tests now populate
+   a row of every listed type, assert an administrator sees it, and assert the connector does not.
+
+**Consequences.** `ApprovalRecord` and `AIInteraction` have no resource type of their own in the
+matrix and are gated on `PROPOSAL`, which is what they are the provenance of: reading who approved
+what, or which prompt and model produced a Proposal, is reading that Proposal's history.
+
+Rejected: adding matrix rows for `ApprovalRecord` and `AIInteraction` (new policy surface, and the
+grant would be identical to the Proposal's in every cell); re-deriving the narrowing inside each
+query module (there is nothing to narrow — the answer is all of the tenant or none of it); leaving
+it and documenting the limitation (ADR-0060 promised the opposite in writing, and CP20 made
+verifying it an explicit condition of accepting the role).
+
+---
+
+### ADR-0065 — The connector's per-message ceiling, measured
+
+**Status:** accepted (CP24) · **Amends:** ADR-0063 · **Related:** ADR-0058, ADR-0061
+
+**Context.** `MAX_ATTACHMENT_BYTES = 10 MB` was introduced in CP22 with the justification that "a
+message is whole in memory by the time it is parsed, so this is what keeps that bounded". CP24 was
+asked to justify the number from measurement or change it.
+
+**Measured, in the deployed connector image, one child process per size so each peak is its own:**
+
+| attachment | on the wire | peak RSS | parse |
+| --- | --- | --- | --- |
+| 1 MB | 1.35 MB | 26 MB | 0.02 s |
+| 5 MB | 6.75 MB | 73 MB | 0.12 s |
+| 10 MB | 13.51 MB | 132 MB | 0.23 s |
+| 25 MB | 33.77 MB | 313 MB | 0.56 s |
+| 64 MB | 86.46 MB | 773 MB | 1.49 s |
+
+Peak memory is close to twelve times the file: base64 puts 1.35× on the wire, and the raw document,
+the decoded payload and the `Attachment` copy are live at once. So 10 MB is a ~130 MB process, and
+that is the number the limit was actually choosing.
+
+**And the claim it was justified by was false.** The same measurement with ten 10 MB files in one
+message — every file inside the per-file ceiling — peaked at **1.13 GB**. A per-file limit bounds
+nothing about a message.
+
+**Decision.** `MAX_ATTACHMENT_BYTES` stays at 10 MB, now on the evidence above: it covers the
+quotes, decks and scanned invoices the connector exists for, at a cost per message that a small
+container can hold. A second limit, `MAX_MESSAGE_BYTES = 32 MB`, is checked on the wire **before
+parsing**, which is where the amplification happens. 32 MB on the wire is roughly 24 MB of content
+and a ~350 MB peak, and is above what the large providers will deliver (Gmail and Outlook both stop
+around 25–35 MB), so a message refused here is one a mail server would very likely have refused
+first.
+
+A message past the ceiling is marked seen and reported as refused, not left for the next pass: it
+will be exactly as large next time, and the connector's existing rule for a permanent refusal is
+that repeating it turns a connector's own limit into somebody else's outage.
+
+An oversized *file* is still skipped rather than truncated — half a PDF is not a smaller PDF — but
+it is now named, with its size, on the message that carried it. It was dropped silently before,
+which made "the attachment never arrived" a question with no answer anywhere in the system.
+
+Rejected: raising the per-file limit without a per-message one (leaves the real bound unstated);
+streaming attachments out of the parsed message (IMAP hands over the whole document; there is
+nothing to stream from); refusing the message and leaving it unseen (an infinite retry on a
+condition that cannot change).

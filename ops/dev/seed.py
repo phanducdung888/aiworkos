@@ -36,12 +36,26 @@ from app.platform.ids import uuid7
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-#: Matches the usernames in `ops/keycloak/realm.json`, so somebody who signs in through the dev
-#: realm lands on the Person this created rather than on a 404.
+#: The people in the development realm, keyed by the subject Keycloak actually puts in a token.
+#:
+#: The subjects are the pinned `id`s in `ops/keycloak/realm.json`, not the usernames. Until CP24
+#: this list held usernames, and `resolve_principal` therefore found no Person for any real token:
+#: Keycloak issues a UUID as `sub`. Every test signed its own tokens with whatever subject it had
+#: seeded, so nothing failed until the stack was run end to end.
+#:
+#: `service-account-workos-connector` is the connector's identity (ADR-0060). It is a Person with
+#: the `ingestion` role and nothing else — it may capture Events and attach to its own, and cannot
+#: read anyone else's, approve anything, or execute a tool.
 PEOPLE = [
-    ("avery.admin", "Avery Admin", "org_admin"),
-    ("tomas.lead", "Tomas Lead", "team_lead"),
-    ("mira.member", "Mira Member", "member"),
+    ("00000000-0000-4000-8000-00000000a001", "avery.admin", "Avery Admin", "org_admin"),
+    ("00000000-0000-4000-8000-00000000a002", "tomas.lead", "Tomas Lead", "team_lead"),
+    ("00000000-0000-4000-8000-00000000a003", "mira.member", "Mira Member", "member"),
+    (
+        "00000000-0000-4000-8000-00000000a009",
+        "service-account-workos-connector",
+        "Mail Connector",
+        "ingestion",
+    ),
 ]
 
 
@@ -62,6 +76,14 @@ def seed(session: Session, slug: str) -> dict[str, str]:
     ).scalar_one_or_none()
     if existing is not None:
         scope(session, existing)
+        align_subjects(session, existing)
+        # People are added to this list as the system grows a new kind of principal — the
+        # connector's service account is the first — so an organization seeded by an earlier
+        # checkpoint is missing them. Idempotent means "ends in the state this script describes",
+        # not "does nothing the second time".
+        upsert_people(session, existing)
+        session.commit()
+        scope(session, existing)
         return describe(session, existing)
 
     org_id = uuid7()
@@ -71,37 +93,7 @@ def seed(session: Session, slug: str) -> dict[str, str]:
         {"i": org_id, "n": slug.replace("-", " ").title(), "s": slug},
     )
 
-    people: dict[str, uuid.UUID] = {}
-    for subject, display_name, role in PEOPLE:
-        person_id = uuid7()
-        people[subject] = person_id
-        session.execute(
-            text(
-                "INSERT INTO person (id, org_id, display_name, email, keycloak_subject, status) "
-                "VALUES (:i, :o, :n, :e, :k, 'active')"
-            ),
-            {
-                "i": person_id,
-                "o": org_id,
-                "n": display_name,
-                "e": f"{subject}@example.test",
-                "k": subject,
-            },
-        )
-        session.execute(
-            text(
-                "INSERT INTO organization_membership (id, org_id, person_id, status) "
-                "VALUES (:i, :o, :p, 'active')"
-            ),
-            {"i": uuid7(), "o": org_id, "p": person_id},
-        )
-        session.execute(
-            text(
-                "INSERT INTO role_assignment (id, org_id, person_id, role, scope_type) "
-                "VALUES (:i, :o, :p, :r, 'organization')"
-            ),
-            {"i": uuid7(), "o": org_id, "p": person_id, "r": role},
-        )
+    people = upsert_people(session, org_id)
 
     department_id = uuid7()
     session.execute(
@@ -119,13 +111,15 @@ def seed(session: Session, slug: str) -> dict[str, str]:
         ),
         {"i": team_id, "o": org_id, "d": department_id, "l": people["tomas.lead"]},
     )
-    for subject in ("mira.member", "tomas.lead"):
+    # Humans only. The connector's service account belongs to the organization and to no team:
+    # nothing is ever assigned to it and it leads nothing.
+    for username in ("mira.member", "tomas.lead"):
         session.execute(
             text(
                 "INSERT INTO team_membership (id, org_id, team_id, person_id, role) "
                 "VALUES (:i, :o, :t, :p, 'member')"
             ),
-            {"i": uuid7(), "o": org_id, "t": team_id, "p": people[subject]},
+            {"i": uuid7(), "o": org_id, "t": team_id, "p": people[username]},
         )
 
     result = describe(session, org_id)
@@ -133,9 +127,76 @@ def seed(session: Session, slug: str) -> dict[str, str]:
     return result
 
 
+def upsert_people(session: Session, org_id: uuid.UUID) -> dict[str, uuid.UUID]:
+    """Every person in `PEOPLE`, with their membership and their organization-scoped role.
+
+    Keyed on email, which is what identifies a seeded person across runs: the id is minted here and
+    the subject is the thing most likely to have been wrong.
+    """
+    people: dict[str, uuid.UUID] = {}
+    for subject, username, display_name, role in PEOPLE:
+        email = f"{username}@example.test"
+        person_id = session.execute(
+            text("SELECT id FROM person WHERE org_id = :o AND email = :e"),
+            {"o": org_id, "e": email},
+        ).scalar_one_or_none()
+        if person_id is None:
+            person_id = uuid7()
+            session.execute(
+                text(
+                    "INSERT INTO person "
+                    "(id, org_id, display_name, email, keycloak_subject, status) "
+                    "VALUES (:i, :o, :n, :e, :k, 'active')"
+                ),
+                {"i": person_id, "o": org_id, "n": display_name, "e": email, "k": subject},
+            )
+        people[username] = person_id
+        session.execute(
+            text(
+                "INSERT INTO organization_membership (id, org_id, person_id, status) "
+                "SELECT :i, :o, :p, 'active' WHERE NOT EXISTS ("
+                "  SELECT 1 FROM organization_membership WHERE org_id = :o AND person_id = :p)"
+            ),
+            {"i": uuid7(), "o": org_id, "p": person_id},
+        )
+        session.execute(
+            text(
+                "INSERT INTO role_assignment (id, org_id, person_id, role, scope_type) "
+                "SELECT :i, :o, :p, :r, 'organization' WHERE NOT EXISTS ("
+                "  SELECT 1 FROM role_assignment "
+                "  WHERE org_id = :o AND person_id = :p AND role = :r)"
+            ),
+            {"i": uuid7(), "o": org_id, "p": person_id, "r": role},
+        )
+    return people
+
+
+def align_subjects(session: Session, org_id: uuid.UUID) -> list[str]:
+    """Repair a Person whose `keycloak_subject` predates the realm's pinned ids.
+
+    Development databases seeded before CP24 hold usernames where a token carries a UUID, which
+    makes every real sign-in a 404 on an organization the person is plainly a member of. Matching
+    on email rather than on the old subject, because the old subject is exactly what is wrong.
+    """
+    repaired: list[str] = []
+    for subject, username, _display_name, _role in PEOPLE:
+        changed = session.execute(
+            text(
+                "UPDATE person SET keycloak_subject = :k "
+                "WHERE org_id = :o AND email = :e AND keycloak_subject <> :k"
+            ),
+            {"k": subject, "o": org_id, "e": f"{username}@example.test"},
+        ).rowcount
+        if changed:
+            repaired.append(username)
+    if repaired:
+        session.commit()
+    return repaired
+
+
 def describe(session: Session, org_id: uuid.UUID) -> dict[str, str]:
     rows = session.execute(
-        text("SELECT keycloak_subject, id FROM person WHERE org_id = :o"), {"o": org_id}
+        text("SELECT split_part(email, '@', 1), id FROM person WHERE org_id = :o"), {"o": org_id}
     ).all()
     team = session.execute(
         text("SELECT id FROM team WHERE org_id = :o AND name = 'Platform'"), {"o": org_id}

@@ -232,6 +232,27 @@ _THIS_WEEK = re.compile(r"\b(?:end\s+of\s+(?:the\s+)?week|this\s+week)\b")
 _TOMORROW = re.compile(r"\btomorrow\b")
 _TODAY = re.compile(r"\btoday\b")
 
+#: A day and a named month — "18 September", "September 18th". Not a form this table reads, and
+#: that is exactly why it is matched here.
+#:
+#: A phrase naming a calendar day names *that* day, and none of the relative rules below can see
+#: it. Without this guard "Friday 18 September" falls through to the bare-weekday rule and resolves
+#: to the Friday of the week the message was sent: CP24 watched a real message promising the 18th
+#: become a commitment due the 11th — a week early, `week` precision, and reported as read
+#: successfully. Declining is what this module does everywhere else, because a date nobody agreed
+#: to produces a missed-deadline alert about a deadline that was never set.
+#:
+#: A day number is required rather than a bare month name, so that "may" the modal verb is not
+#: mistaken for May the month, and so the guard stays narrow: "by May" was already vague.
+_MONTHS = (
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?"
+    r"|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+)
+_DAY_AND_MONTH = re.compile(
+    rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:{_MONTHS})\b"
+    rf"|\b(?:{_MONTHS})\s+\d{{1,2}}(?:st|nd|rd|th)?\b"
+)
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class DueReading:
@@ -317,6 +338,11 @@ def _read(text: str, reference: dt.date) -> DueReading:
         except ValueError:
             # A well-formed string that is not a day — 2026-02-30. Not a date, so not a deadline.
             return UNREAD_DUE
+
+    if _DAY_AND_MONTH.search(text):
+        # After the ISO branch, so `2026-09-18` still reads, and before every relative rule, so a
+        # phrase naming a calendar day is never answered by a rule that cannot see it.
+        return UNREAD_DUE
 
     if _TODAY.search(text):
         return DueReading(date=reference, precision=DuePrecision.EXACT)

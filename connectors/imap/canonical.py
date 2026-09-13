@@ -29,10 +29,35 @@ from typing import Any
 
 #: The largest file this connector will carry, per attachment.
 #:
-#: A message is whole in memory by the time it is parsed, so this is what keeps that bounded. Ten
-#: megabytes covers the quotes, decks and scanned invoices this exists for; anything larger is
+#: Ten megabytes covers the quotes, decks and scanned invoices this exists for; anything larger is
 #: skipped and reported rather than truncated.
+#:
+#: Measured in CP24, inside the deployed image, one child process per size so each peak is that
+#: size's own:
+#:
+#:     file      on the wire   peak RSS   parse
+#:      1 MB        1.35 MB      26 MB    0.02 s
+#:      5 MB        6.75 MB      73 MB    0.12 s
+#:     10 MB       13.51 MB     132 MB    0.23 s
+#:     25 MB       33.77 MB     313 MB    0.56 s
+#:     64 MB       86.46 MB     773 MB    1.49 s
+#:
+#: Peak memory is close to twelve times the file: base64 puts 1.35× on the wire, and the raw
+#: document, the decoded payload and the `Attachment` copy are all live at once. Ten megabytes is
+#: therefore a ~130 MB process, which is the number this limit is actually choosing.
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+
+#: The largest message this connector will parse, measured on the wire before anything is decoded.
+#:
+#: `MAX_ATTACHMENT_BYTES` is per file and so bounds nothing on its own — the same measurement, with
+#: ten 10 MB files in one message, peaked at 1.13 GB while every individual file was inside the
+#: limit. The claim that the per-file ceiling kept memory bounded was in this module's own comment
+#: and was simply untrue.
+#:
+#: 32 MB on the wire is about 24 MB of content and a ~350 MB peak. It is above what the large mail
+#: providers will deliver (Gmail and Outlook both stop around 25–35 MB), so a message refused here
+#: is one a mail server would very likely have refused first.
+MAX_MESSAGE_BYTES = 32 * 1024 * 1024
 
 #: What this connector calls itself. Half of BR-E-02's key, so it is stable by contract: changing it
 #: makes every message already delivered look like a message from somewhere else.
@@ -54,6 +79,15 @@ _WHITESPACE = re.compile(r"[ \t]*\n[ \t]*")
 
 class Unnormalisable(Exception):
     """This message cannot be expressed as an Event without inventing something."""
+
+
+class TooLarge(Unnormalisable):
+    """The message is past what this connector will hold in memory.
+
+    A subclass, because it is a refusal to normalise — but a *permanent* one, and the caller has to
+    tell the difference. Everything else `Unnormalisable` covers is worth leaving in the mailbox
+    for somebody to look at; a message that is too large will be exactly as large on the next pass.
+    """
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -90,6 +124,14 @@ class CanonicalMessage:
     body_text: str
     participants: tuple[dict[str, str], ...]
     idempotency_key: str
+    #: Files that were left behind because they were over `MAX_ATTACHMENT_BYTES`, as
+    #: `(filename, size_bytes)`.
+    #:
+    #: Carried rather than logged, because this module has no logger and should not acquire one:
+    #: it is bytes in, a value out. The caller reports them. Before CP24 an oversized file was
+    #: dropped with no trace anywhere, which made "the attachment never arrived" unanswerable.
+    oversized_attachments: tuple[tuple[str, int], ...] = ()
+
     #: The files this message carried, with their bytes.
     #:
     #: Deliberately *not* in `as_event()`. Attachments are a separate flow — a presigned upload
@@ -117,6 +159,7 @@ def parse_message(
     source_system: str = DEFAULT_SOURCE_SYSTEM,
     received_at: dt.datetime | None = None,
     max_attachment_bytes: int = MAX_ATTACHMENT_BYTES,
+    max_message_bytes: int = MAX_MESSAGE_BYTES,
 ) -> CanonicalMessage:
     """Normalise one message, or refuse it.
 
@@ -124,10 +167,18 @@ def parse_message(
     `Date`. It is a fact from the transport rather than a guess, which is the difference between a
     fallback and an invention.
     """
+    if len(raw) > max_message_bytes:
+        # Before parsing, because parsing is the expensive half: the measurement above puts peak
+        # memory at roughly nine times the wire size once the payload is decoded.
+        raise TooLarge(
+            f"the message is {len(raw)} bytes on the wire, over the {max_message_bytes}-byte limit"
+        )
     parsed = BytesParser(policy=email.policy.default).parsebytes(raw)
     body = _newlines(_body_of(parsed))
     if not body.strip():
         raise Unnormalisable("the message has no readable text body")
+
+    carried, oversized = _attachments(parsed, limit=max_attachment_bytes)
 
     return CanonicalMessage(
         source_system=source_system,
@@ -137,7 +188,8 @@ def parse_message(
         body_text=body,
         participants=_participants(parsed),
         idempotency_key=idempotency_key(source_system, _reference(parsed, raw), body),
-        attachments=_attachments(parsed, limit=max_attachment_bytes),
+        attachments=carried,
+        oversized_attachments=oversized,
     )
 
 
@@ -236,18 +288,21 @@ def _body_of(parsed: email.message.Message) -> str:
 
 def _attachments(
     parsed: email.message.Message, *, limit: int
-) -> tuple[Attachment, ...]:
-    """The files a message carried, with their bytes.
+) -> tuple[tuple[Attachment, ...], tuple[tuple[str, int], ...]]:
+    """The files a message carried, and the ones that were too large to carry.
 
     A part is an attachment when it has a filename. That is the same test the body extraction uses
     to skip it, so the two cannot disagree about which parts are prose and which are files.
 
     Oversized parts are skipped rather than truncated. Half a PDF is not a smaller PDF, and an
-    Event whose attachment is silently corrupt is worse than one that says a file was too large.
+    Event whose attachment is silently corrupt is worse than one that says a file was too large —
+    which is why the second half of this return value exists: saying so was the part that was
+    missing.
     """
     if not parsed.is_multipart():
-        return ()
+        return (), ()
     found: list[Attachment] = []
+    skipped: list[tuple[str, int]] = []
     for part in parsed.walk():
         if part.get_content_maintype() == "multipart":
             continue
@@ -255,7 +310,10 @@ def _attachments(
         if not name:
             continue
         payload = part.get_payload(decode=True)
-        if not isinstance(payload, bytes) or not payload or len(payload) > limit:
+        if not isinstance(payload, bytes) or not payload:
+            continue
+        if len(payload) > limit:
+            skipped.append((_safe_filename(name), len(payload)))
             continue
         found.append(
             Attachment(
@@ -264,7 +322,7 @@ def _attachments(
                 content=payload,
             )
         )
-    return tuple(found)
+    return tuple(found), tuple(skipped)
 
 
 def _safe_filename(name: str) -> str:

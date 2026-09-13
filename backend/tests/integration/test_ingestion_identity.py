@@ -112,15 +112,24 @@ def test_a_connector_may_write_nothing_but_an_event(
     assert response.status_code == 403, f"POST {path} returned {response.status_code}"
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/api/v1/work",
-        "/api/v1/commitments",
-        "/api/v1/proposals",
-        "/api/v1/people",
-    ],
-)
+#: Paths a connector must not read, and whether the denial is a refusal or an empty page.
+#:
+#: Both are denials. `work`, `people` and `events` narrow rows in the query, because the grants
+#: there are genuinely narrower than the tenant for some role and a predicate is the only place
+#: that can be expressed; the rest are refused outright, because no role reaches them at all
+#: unless it reaches them organization-wide.
+DENIED_TO_A_CONNECTOR = [
+    ("/api/v1/work", "empty"),
+    ("/api/v1/people", "empty"),
+    ("/api/v1/commitments", "refused"),
+    ("/api/v1/proposals", "refused"),
+    ("/api/v1/events", "refused"),
+    ("/api/v1/ai-interactions", "refused"),
+    ("/api/v1/agent-policy", "refused"),
+]
+
+
+@pytest.mark.parametrize(("path", "shape"), DENIED_TO_A_CONNECTOR)
 def test_a_connector_reads_no_business_data(
     api: TestClient,
     as_admin: dict[str, str],
@@ -128,16 +137,41 @@ def test_a_connector_reads_no_business_data(
     roles: None,
     work_org: WorkOrg,
     path: str,
+    shape: str,
 ) -> None:
-    """Nothing reaches it through a listing, including the messages it delivered itself.
+    """Nothing reaches it through a listing, and the organization is populated first.
 
-    CP23 gave it `(EVENT, READ) = PERSONAL` so it can complete an attachment, and left `LIST`
-    denied. Reading one Event it captured and paging through an organization are different
-    powers, and only the first is needed to attach a file to something.
+    This test existed before CP24 and passed while a connector could read every Proposal in the
+    organization with its full action, every Commitment, every AI run and the autonomy policy. It
+    asserted `items == []` against a fixture that had created one Work and nothing else — so for
+    `/api/v1/proposals` and `/api/v1/commitments` it was asserting that an empty table is empty.
 
-    The organization is populated first, so an empty answer means "narrowed to nothing" rather than
-    "there was nothing".
+    An empty answer is only evidence of a control if something would otherwise have been in it, so
+    every path here is also asked as an administrator and must come back non-empty.
     """
+    populate(api, as_admin, as_connector, work_org)
+
+    visible = api.get(path, headers=as_admin)
+    assert visible.status_code == 200, visible.text
+    assert visible.json()["items"], (
+        f"GET {path} is empty for an administrator, so a connector seeing nothing proves nothing"
+    )
+
+    response = api.get(path, headers=as_connector)
+    if shape == "refused":
+        assert response.status_code == 403, f"GET {path} answered a connector"
+    else:
+        assert response.status_code == 200, response.text
+        assert response.json()["items"] == [], f"GET {path} leaked rows to a connector"
+
+
+def populate(
+    api: TestClient,
+    as_admin: dict[str, str],
+    as_connector: dict[str, str],
+    work_org: WorkOrg,
+) -> dict[str, str]:
+    """One row of everything the paths above list, so that an empty page means something."""
     assert (
         api.post(
             "/api/v1/work",
@@ -146,29 +180,116 @@ def test_a_connector_reads_no_business_data(
         ).status_code
         == 201
     )
-    deliver(api, as_connector, parse_message(an_email()))
+    event = deliver(api, as_connector, parse_message(an_email())).json()
+    commitment = api.post(
+        "/api/v1/commitments",
+        json={
+            "statement": "Something a person promised",
+            "committed_by_person_id": str(work_org.member),
+            "due_precision": "exact",
+            "due_date": "2020-01-01",
+            "origin_event_id": event["id"],
+        },
+        headers={**as_admin, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert commitment.status_code == 201, commitment.text
+    evidence = api.post(
+        "/api/v1/evidence",
+        json={
+            "event_id": event["id"],
+            "target_type": "commitment",
+            "target_id": commitment.json()["id"],
+            "assertion": "creates",
+            "confidence": 100,
+            "excerpt": parse_message(an_email()).body_text[:12],
+            "text_locator": {"char_start": 0, "char_end": 12},
+        },
+        headers={**as_admin, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert evidence.status_code == 201, evidence.text
+    policy = api.put(
+        "/api/v1/agent-policy",
+        json={
+            "capability": "extract",
+            "entity_type": "commitment",
+            "action": "create",
+            "mode": "level_1_propose",
+        },
+        headers=as_admin,
+    )
+    assert policy.status_code == 200, policy.text
+    proposal = api.post(
+        "/api/v1/proposals",
+        json={
+            "kind": "create",
+            "target_type": "commitment",
+            "summary": "A promise somebody might have made",
+            "tool": "create_commitment",
+            "tool_version": "v1",
+            "routed_to_person_id": str(work_org.admin),
+            "source_event_id": event["id"],
+            "evidence_ids": [evidence.json()["id"]],
+            "confidence": 80,
+            "arguments": {
+                "statement": "A promise somebody might have made",
+                "committed_by_person_id": str(work_org.member),
+                "due_precision": "vague",
+                "origin_event_id": event["id"],
+                "evidence_ids": [evidence.json()["id"]],
+            },
+        },
+        headers={**as_admin, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert proposal.status_code == 201, proposal.text
+    # An AIInteraction, through the agent path the deployment actually uses.
+    run = api.post(f"/api/v1/events/{event['id']}/analyze", json={}, headers=as_admin)
+    assert run.status_code == 201, run.text
+    return {"event": event["id"], "commitment": commitment.json()["id"],
+            "evidence": evidence.json()["id"], "proposal": proposal.json()["id"]}
 
-    response = api.get(path, headers=as_connector)
-    assert response.status_code in (200, 403), response.text
-    if response.status_code == 200:
-        assert response.json()["items"] == [], f"GET {path} leaked rows to a connector"
 
-
-def test_listing_events_shows_a_connector_only_its_own(
+def test_a_connector_reads_nothing_the_ai_path_produced(
     api: TestClient,
     as_admin: dict[str, str],
     as_connector: dict[str, str],
     roles: None,
     work_org: WorkOrg,
 ) -> None:
-    """The listing narrows by the `(EVENT, READ)` grants, not by `(EVENT, LIST)`.
+    """The same rule for a single row, with the rows actually present.
 
-    So denying `LIST` in the matrix does not stop this endpoint answering — what stops it returning
-    anything interesting is the reach predicate, and after CP23 that is `PERSONAL`. The outcome is
-    the same information a connector can already fetch one Event at a time, which is why this is an
-    assertion about *scope* rather than about an empty page.
+    The listing tests above are about collection endpoints. These are the detail reads the
+    provenance walk uses, and each was open to a connector until CP24 for the same reason: the
+    handler scoped the query to the organization and asked the matrix nothing.
     """
-    theirs = api.post(
+    rows = populate(api, as_admin, as_connector, work_org)
+    for path in (
+        f"/api/v1/commitments/{rows['commitment']}",
+        f"/api/v1/evidence/{rows['evidence']}",
+    ):
+        assert api.get(path, headers=as_connector).status_code == 403, f"GET {path} was answered"
+        assert api.get(path, headers=as_admin).status_code == 200, f"GET {path} is not a real path"
+
+
+def test_listing_events_is_refused_to_a_connector(
+    api: TestClient,
+    as_admin: dict[str, str],
+    as_connector: dict[str, str],
+    roles: None,
+    work_org: WorkOrg,
+) -> None:
+    """`(EVENT, LIST)` is a cell of its own, and the matrix denies it to `ingestion`.
+
+    CP23 left this endpoint answering and relied on the reach predicate — derived from
+    `(EVENT, READ)` — to make the page uninteresting. That reasoning was sound about *this* pair
+    and unsound as a habit: it makes a published cell decorative, and it is the same reasoning that
+    left Proposals, Commitments, AI runs and the autonomy policy fully readable by a connector
+    until CP24 asked the running system rather than the code.
+
+    The narrowing still exists and is still what governs what a connector can read one Event at a
+    time — `test_a_connector_reads_back_only_the_events_it_delivered` is that test. This one is
+    about the cell.
+    """
+    api.post(
         "/api/v1/events",
         json={
             "type": "MANUAL_CAPTURE",
@@ -176,14 +297,12 @@ def test_listing_events_shows_a_connector_only_its_own(
             "body_text": "written down by a person",
         },
         headers={**as_admin, "Idempotency-Key": str(uuid.uuid4())},
-    ).json()
-    mine = deliver(api, as_connector, parse_message(an_email())).json()
+    )
+    deliver(api, as_connector, parse_message(an_email()))
 
     listed = api.get("/api/v1/events", headers=as_connector)
-    assert listed.status_code == 200, listed.text
-    ids = {row["id"] for row in listed.json()["items"]}
-    assert mine["id"] in ids
-    assert theirs["id"] not in ids, "a connector paged an Event it did not deliver"
+    assert listed.status_code == 403, listed.text
+    assert api.get("/api/v1/events", headers=as_admin).status_code == 200
 
 
 def test_a_connector_reads_back_only_the_events_it_delivered(

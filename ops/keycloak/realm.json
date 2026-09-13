@@ -1,15 +1,4 @@
 {
-  "_comment": [
-    "Development realm for AI WorkOS. Imported by the Compose `keycloak` service at start-up",
-    "(`start-dev --import-realm`). For running the stack by hand only: the test suite never starts",
-    "Keycloak, it signs its own tokens with a throwaway RSA key and stubs the JWKS endpoint",
-    "(testing-strategy T-3, resolved as option (a)). Production code validates identically either",
-    "way — issuer, audience, expiry and signature.",
-    "One realm serves every organization (PQ-2, ADR-0031). There is deliberately no organization",
-    "claim anywhere below: membership is resolved from local rows, because a claim would keep",
-    "asserting a membership after it was revoked (security-model §2).",
-    "Every secret and password here is a development placeholder and is meant to be visible."
-  ],
   "realm": "workos",
   "enabled": true,
   "displayName": "AI WorkOS (development)",
@@ -19,7 +8,6 @@
   "duplicateEmailsAllowed": false,
   "accessTokenLifespan": 900,
   "ssoSessionIdleTimeout": 1800,
-
   "roles": {
     "realm": [
       {
@@ -28,7 +16,6 @@
       }
     ]
   },
-
   "clients": [
     {
       "clientId": "workos-web",
@@ -43,9 +30,24 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:5173/*"
       },
-      "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:5173"],
-      "defaultClientScopes": ["profile", "email", "roles", "workos-audience"]
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "protocolMappers": [
+        {
+          "name": "workos-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "workos-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     },
     {
       "clientId": "workos-api",
@@ -66,16 +68,6 @@
       "secret": "dev-connector-secret",
       "standardFlowEnabled": false,
       "serviceAccountsEnabled": true,
-      "defaultClientScopes": ["roles", "workos-audience"]
-    }
-  ],
-
-  "clientScopes": [
-    {
-      "name": "workos-audience",
-      "description": "Puts `workos-api` in the `aud` claim. Without it every token would be rejected, because audience is one of the four things the API checks on every request.",
-      "protocol": "openid-connect",
-      "attributes": { "include.in.token.scope": "false" },
       "protocolMappers": [
         {
           "name": "workos-api-audience",
@@ -90,37 +82,69 @@
       ]
     }
   ],
-
   "users": [
     {
+      "id": "00000000-0000-4000-8000-00000000a001",
       "username": "avery.admin",
       "email": "avery.admin@example.test",
       "firstName": "Avery",
       "lastName": "Admin",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "workos", "temporary": false }],
-      "realmRoles": ["workos-user"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "workos",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "workos-user"
+      ]
     },
     {
+      "id": "00000000-0000-4000-8000-00000000a002",
       "username": "tomas.lead",
       "email": "tomas.lead@example.test",
       "firstName": "Tomas",
       "lastName": "Lead",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "workos", "temporary": false }],
-      "realmRoles": ["workos-user"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "workos",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "workos-user"
+      ]
     },
     {
+      "id": "00000000-0000-4000-8000-00000000a003",
       "username": "mira.member",
       "email": "mira.member@example.test",
       "firstName": "Mira",
       "lastName": "Member",
       "enabled": true,
       "emailVerified": true,
-      "credentials": [{ "type": "password", "value": "workos", "temporary": false }],
-      "realmRoles": ["workos-user"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "workos",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "workos-user"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-00000000a009",
+      "username": "service-account-workos-connector",
+      "enabled": true,
+      "serviceAccountClientId": "workos-connector"
     }
   ]
 }

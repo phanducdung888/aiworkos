@@ -170,7 +170,13 @@ class AgentRuntime:
         *,
         prompt_version: str = "2026-09-12",
         confidence_policy: ConfidencePolicy | None = None,
-        model: str = "default",
+        # Empty means "whichever model this deployment configured its adapter with", which is the
+        # contract `CompletionRequest.model` states. It used to default to the literal string
+        # `"default"`, and a real adapter passed that straight through as the model name: CP24's
+        # first analysis against a real provider came back 404, because no vendor has a model
+        # called `default`. Nothing caught it — the fake provider ignores the field, and the
+        # real-provider tests build their own request rather than going through this.
+        model: str = "",
     ) -> None:
         self._provider = provider
         self._prompt_version = prompt_version

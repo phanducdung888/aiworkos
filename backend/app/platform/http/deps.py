@@ -28,7 +28,13 @@ from sqlalchemy.orm import Session
 
 from app.platform.actor import Actor, ActorType
 from app.platform.auth import TokenError, TokenVerifier, build_verifier
-from app.platform.authz import Principal
+from app.platform.authz import (
+    Action,
+    Principal,
+    ResourceRef,
+    ResourceType,
+    authorize,
+)
 from app.platform.config import get_settings
 from app.platform.db import session_factory, set_org_context
 from app.platform.http.errors import AuthenticationRequired
@@ -150,3 +156,30 @@ SessionDep = Annotated[Session, Depends(scoped_session)]
 PrincipalDep = Annotated[Principal, Depends(current_principal)]
 ActorDep = Annotated[Actor, Depends(current_actor)]
 ObjectStoreDep = Annotated[ObjectStore, Depends(object_store)]
+
+
+def may_reach(principal: Principal, action: Action, resource: ResourceType) -> None:
+    """Gate a read on the matrix before any row is selected. Raises if the matrix says no.
+
+    Every read path in this system narrows rows to the caller's organization, and for a long time
+    that was indistinguishable from authorization: every role in the matrix held an organization
+    grant on everything it could read, so "scope to the tenant" and "check the matrix" gave the
+    same answer on every query anyone wrote.
+
+    `ingestion` (ADR-0060) is the first role for which they differ — it holds three cells out of
+    eighty-three — and CP24 asked the running system what a connector token could read. The answer
+    was every Proposal with its full action, every Commitment, every AI run and the organization's
+    autonomy policy: the matrix denied all of it and nothing consulted the matrix.
+
+    Used at the top of a handler rather than inside the query, because there is nothing to narrow
+    — a role either reaches this resource type organization-wide or does not reach it at all. Where
+    a grant is genuinely narrower than the tenant (`EVENT.READ` for a connector), that stays a
+    predicate in the query, which is the only place it can be one.
+    """
+    authorize(
+        principal,
+        action,
+        ResourceRef(
+            type=resource, org_id=principal.org_id, id=None, relations=frozenset()
+        ),
+    )

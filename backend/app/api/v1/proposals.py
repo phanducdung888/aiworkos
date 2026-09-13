@@ -55,12 +55,14 @@ from app.contexts.intelligence.public import (
     get_proposal,
     list_proposals,
 )
+from app.platform.authz import Action, ResourceType
 from app.platform.errors import EntityNotFound
 from app.platform.http.deps import (
     ActorDep,
     IdempotencyKeyDep,
     PrincipalDep,
     SessionDep,
+    may_reach,
 )
 from app.platform.http.etag import etag_for, require_if_match
 from app.platform.http.idempotency import Idempotency, replay_response
@@ -157,6 +159,11 @@ def list_all_proposals(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
 ) -> ProposalList:
+    # The matrix, before a row is selected. Scoping to the organization is not
+    # authorization: until CP24 a role with no grant on this resource type reached all
+    # of it, because every role that could read anything could read it organization-wide
+    # and the two questions had never given different answers.
+    may_reach(principal, Action.LIST, ResourceType.PROPOSAL)
     page = list_proposals(
         session,
         principal,
@@ -182,6 +189,7 @@ def list_all_proposals(
 def read_proposal(
     proposal_id: uuid.UUID, response: Response, session: SessionDep, principal: PrincipalDep
 ) -> Any:
+    may_reach(principal, Action.READ, ResourceType.PROPOSAL)
     proposal = get_proposal(session, principal, proposal_id)
     if proposal is None:
         raise EntityNotFound("proposal", proposal_id)
@@ -264,6 +272,11 @@ def decide_proposal(
 def read_approval(
     proposal_id: uuid.UUID, session: SessionDep, principal: PrincipalDep
 ) -> Any:
+    # An ApprovalRecord is the decision made about a Proposal, and the matrix has no row of
+    # its own for one — so it is gated on the Proposal it belongs to. Reading who approved
+    # what is reading the Proposal's provenance; a caller who may not see the Proposal has no
+    # business seeing its approved action or what the execution produced.
+    may_reach(principal, Action.READ, ResourceType.PROPOSAL)
     record = approval_for(session, principal, proposal_id)
     if record is None:
         raise EntityNotFound("approval_record", proposal_id)
@@ -280,6 +293,11 @@ def read_approval_record(
     execution outcome is written by a worker after the request that approved it has ended — so the
     record is the thing a client polls.
     """
+    # An ApprovalRecord is the decision made about a Proposal, and the matrix has no row of
+    # its own for one — so it is gated on the Proposal it belongs to. Reading who approved
+    # what is reading the Proposal's provenance; a caller who may not see the Proposal has no
+    # business seeing its approved action or what the execution produced.
+    may_reach(principal, Action.READ, ResourceType.PROPOSAL)
     record = approval_for_id(session, principal, approval_id)
     if record is None:
         raise EntityNotFound("approval_record", approval_id)

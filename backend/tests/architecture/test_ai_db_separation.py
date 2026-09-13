@@ -23,6 +23,7 @@ pytestmark = pytest.mark.architecture
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BACKEND_ROOT = REPO_ROOT / "backend"
 COMPOSE = REPO_ROOT / "docker-compose.yml"
+OBJECT_PROXY = REPO_ROOT / "ops" / "proxy" / "objects.conf"
 
 DATA_NETWORK = "data"
 AGENT_SERVICE_NAMES = {"agent-runtime", "agent", "openclaw"}
@@ -249,3 +250,21 @@ def test_the_api_signs_urls_for_a_host_a_client_can_reach() -> None:
     assert "WORKOS_S3_PUBLIC_ENDPOINT_URL" in environment
     assert "objects" in environment["WORKOS_S3_PUBLIC_ENDPOINT_URL"]
     assert "minio" in environment["WORKOS_S3_ENDPOINT_URL"]
+
+
+def test_the_object_proxy_does_not_log_presigned_urls() -> None:
+    """A presigned URL is a credential, and an access log is a file anyone with the host can read.
+
+    nginx's default `combined` format logs `$request` — the whole request line, query string
+    included — so every upload and download left a working capability for that object in
+    `docker compose logs objects`. CP24 found twenty of them. `$uri` is the same line with the
+    query removed.
+    """
+    config = OBJECT_PROXY.read_text()
+    assert "$uri" in config, "the proxy must log the path without its query string"
+    assert "$request " not in config and "$request'" not in config, (
+        "`$request` is the whole request line; a presigned URL's signature is in the query string"
+    )
+    assert "access_log" in config, (
+        "without an explicit access_log directive nginx uses `combined`, which logs `$request`"
+    )

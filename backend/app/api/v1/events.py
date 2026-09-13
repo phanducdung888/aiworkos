@@ -58,6 +58,7 @@ from app.contexts.signal.public import (
     participants_for,
 )
 from app.contexts.signal.public import read_event as read_readable_event
+from app.platform.authz import Action, ResourceType
 from app.platform.errors import EntityNotFound
 from app.platform.http.deps import (
     ActorDep,
@@ -65,6 +66,7 @@ from app.platform.http.deps import (
     ObjectStoreDep,
     PrincipalDep,
     SessionDep,
+    may_reach,
 )
 from app.platform.http.etag import etag_for
 from app.platform.http.idempotency import Idempotency, replay_response
@@ -176,6 +178,11 @@ def list_captured_events(
     cursor: Annotated[str | None, Query()] = None,
 ) -> EventList:
     """Newest first. Restricted Events the caller is not part of are absent, not forbidden."""
+    # `EVENT.LIST` is a cell of its own and the matrix denies it to `ingestion`, which reads what
+    # it captured one Event at a time. The row narrowing below would have produced the right rows
+    # anyway — it is derived from `EVENT.READ` — but answering a question the matrix refuses is
+    # not something to leave resting on a predicate that happens to agree.
+    may_reach(principal, Action.LIST, ResourceType.EVENT)
     page = list_events(
         session,
         principal,

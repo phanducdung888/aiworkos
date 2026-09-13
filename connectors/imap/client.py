@@ -12,6 +12,7 @@ needs nothing else.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import time
@@ -26,6 +27,20 @@ logger = logging.getLogger("connectors.imap")
 #: Retried, because they say "not now". Everything else says "not like this", and repeating a
 #: malformed request is how a connector turns its own bug into somebody else's outage.
 _RETRYABLE_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504})
+
+#: Not about the message at all. A rejected credential says something about *this connector* —
+#: the token expired, was rotated, or was revoked — and the message in hand is as valid as it was
+#: a second ago.
+#:
+#: It is called out separately because the alternative is silent data loss, which is what CP24
+#: watched happen: the pilot's token reached its 15-minute lifespan, the API answered 401, the
+#: connector read that as "the message is wrong", marked it seen, and moved on. The message was
+#: gone from the mailbox and had never reached WorkOS.
+#:
+#: Not retried in-process either. Retrying a 401 five times with backoff achieves nothing except
+#: delay; the pass stops, the messages stay unseen, and whoever operates this has a log line that
+#: names the actual problem.
+_CREDENTIAL_STATUS = frozenset({401, 403})
 
 DEFAULT_ATTEMPTS = 5
 DEFAULT_BACKOFF = 0.5
@@ -139,6 +154,11 @@ class IngestionClient:
                 )
                 self._wait(attempt)
                 continue
+            if status in _CREDENTIAL_STATUS:
+                raise DeliveryUnavailable(
+                    f"{status}: the credential was rejected; {message.source_ref} is left in the "
+                    f"mailbox ({_detail(body)})"
+                )
             # 4xx that is not a "not now": the message is wrong, not the moment. Raised so the
             # caller can quarantine it instead of the connector retrying a defect forever.
             raise DeliveryRefused(status, _detail(body))
@@ -196,7 +216,7 @@ class IngestionClient:
                     },
                     # Derived from what is being uploaded, so a retried pass reserves the same
                     # attachment rather than a second copy of the same file.
-                    key=f"{event_id}:{attachment.filename}:{attachment.size_bytes}",
+                    key=_attachment_key(event_id, attachment),
                 )
                 self._upload(ticket["upload_url"], attachment)
                 self._request(
@@ -204,11 +224,17 @@ class IngestionClient:
                     f"/api/v1/events/{event_id}/attachments/"
                     f"{ticket['attachment']['id']}/complete",
                 )
-            except (DeliveryRefused, DeliveryUnavailable, OSError) as error:
+            except Exception as error:  # noqa: BLE001
+                # Every failure, not only the three that were anticipated. The promise this method
+                # makes — the rest continue, the one that failed is named — is worth exactly as
+                # much as its widest `except`, and CP24 found the gap by sending a message with a
+                # Vietnamese filename: the `UnicodeEncodeError` escaped, aborted the pass, and left
+                # the message unseen to be retried every interval for as long as the service ran.
                 logger.error(
-                    "attachment %s of event %s was not delivered: %s",
+                    "attachment %s of event %s was not delivered: %s: %s",
                     attachment.filename,
                     event_id,
+                    type(error).__name__,
                     error,
                 )
                 failed.append(attachment.filename)
@@ -248,6 +274,11 @@ class IngestionClient:
                     return dict(json.loads(response.read() or b"{}"))
             except urllib.error.HTTPError as error:
                 status, payload = error.code, _read(error)
+                if status in _CREDENTIAL_STATUS:
+                    # Same reasoning as in `deliver`: this is about the connector, not the file.
+                    raise DeliveryUnavailable(
+                        f"{status}: the credential was rejected ({_detail(payload)})"
+                    ) from error
                 if status not in _RETRYABLE_STATUS:
                     raise DeliveryRefused(status, _detail(payload)) from error
                 last = DeliveryUnavailable(f"{status}: {_detail(payload)}")
@@ -285,3 +316,15 @@ def _detail(body: dict[str, Any]) -> str:
     rule = body.get("rule")
     detail = body.get("detail") or body.get("title") or "no detail"
     return f"{rule}: {detail}" if rule else str(detail)
+
+
+def _attachment_key(event_id: str, attachment: Attachment) -> str:
+    """The idempotency key for one file: a hash of what identifies it, not the name itself.
+
+    A header value is latin-1 on the wire, and a filename is whatever the sender typed — CP24 sent
+    `kế-hoạch.txt` and `http.client` raised before the request left the process. Hashing keeps the
+    property the key is for (the same file reserves the same attachment) and makes the value
+    representable, which a filename is not.
+    """
+    material = f"{event_id}:{attachment.filename}:{attachment.size_bytes}".encode()
+    return "sha256:" + hashlib.sha256(material).hexdigest()

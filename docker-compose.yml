@@ -55,15 +55,58 @@ services:
       retries: 10
     networks: [data]
 
+  # Creates the attachment bucket, once, and exits. Nothing else does: the API signs URLs into a
+  # bucket it assumes exists, and every test makes its own — so CP24 was the first time anything
+  # uploaded into the bucket a deployment actually uses, and the presigned PUT came back 404.
+  #
+  # A one-shot rather than something the application does at start-up: creating a bucket is an
+  # administrative act, and an application that can create one is an application whose credential
+  # can also delete one.
+  minio-init:
+    # The server image, because `mc` is already in it — the healthcheck above uses it. One image
+    # rather than two, and the client is guaranteed to match the server it talks to.
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-workos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-workos-dev-secret}
+      WORKOS_S3_BUCKET: ${WORKOS_S3_BUCKET:-workos-attachments}
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        mc alias set store http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing "store/$$WORKOS_S3_BUCKET" &&
+        echo "bucket $$WORKOS_S3_BUCKET ready"
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    networks: [data]
+
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
     command: ["start-dev", "--import-realm"]
     environment:
+      # Both spellings, because the image is pinned to 25.0 and the rename happened in 26. Only
+      # `KEYCLOAK_ADMIN*` is read here; with the 26 names alone — which is what this file carried
+      # until CP24 — no administrator is created at all, and the first sign of it is an admin
+      # console that rejects every password.
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_RELATIVE_PATH: /
+      # `start-dev` derives `iss` from the request's Host header and ignores the hostname options
+      # (measured in CP24: `KC_HOSTNAME_URL` had no effect). So a token is issued for whichever
+      # address it was asked for, and there is exactly one rule that keeps that consistent:
+      # **tokens are always obtained through the published address below**. The connector never
+      # talks to Keycloak — it is handed a bearer token by operations (ADR-0058) — so nothing
+      # inside the network mints one.
     volumes:
       - ./ops/keycloak:/opt/keycloak/data/import:ro
+    # Loopback only, like PostgreSQL and MinIO. The browser signs in against this address, which is
+    # also the issuer above; nothing here is reachable off the developer's machine.
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORT:-8080}:8080"
     networks: [app, edge]
 
   # A real IMAP server for developing and testing the connector (ADR-0061). Never part of a
@@ -155,10 +198,54 @@ services:
       # host, so these cannot be reconciled after the fact (ADR-0063). `objects` is the proxy above.
       WORKOS_S3_ENDPOINT_URL: ${WORKOS_S3_ENDPOINT_URL:-http://minio:9000}
       WORKOS_S3_PUBLIC_ENDPOINT_URL: ${WORKOS_S3_PUBLIC_ENDPOINT_URL:-http://objects:9000}
+      WORKOS_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-workos}
+      WORKOS_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-workos-dev-secret}
+      # The issuer is a string this process compares; the JWKS address is one it fetches. They are
+      # different values on purpose — see the Keycloak service above.
+      WORKOS_OIDC_ISSUER: ${KEYCLOAK_ISSUER_BASE:-http://localhost:8080}/realms/workos
+      # ...which is not an address this process can resolve, and does not need to be.
+      WORKOS_OIDC_JWKS_URL: http://keycloak:8080/realms/workos/protocol/openid-connect/certs
+      # `fake` unless an environment says otherwise, so the real adapter is never on a default
+      # path (ADR-0049). No default for the key: it is passed through or it is absent.
+      WORKOS_LLM_PROVIDER: ${WORKOS_LLM_PROVIDER:-fake}
+      WORKOS_OPENAI_API_KEY: ${OPENAI_API_KEY}
+      WORKOS_OPENAI_MODEL: ${WORKOS_OPENAI_MODEL:-gpt-4o}
+    # Loopback only. The pilot drives the API from the host the way the frontend does.
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     depends_on:
       postgres:
         condition: service_healthy
     networks: [app, data, agent]
+
+  # The job worker (ADR-0044, ADR-0046). Same image as the API, different command: an approved
+  # action must be executed by the same code the API validated it against.
+  #
+  # `data` only. It claims rows and runs handlers; nothing calls it and it calls nothing over HTTP,
+  # so it has no reason to be on `app` — and being on one network rather than two is the difference
+  # between a service that straddles the boundary and one that sits behind it.
+  worker:
+    build:
+      context: ./backend
+    command: ["python", "-m", "app.workers.runner"]
+    environment:
+      WORKOS_DATABASE_URL: postgresql+psycopg://workos_owner:${OWNER_DB_PASSWORD:-workos_owner}@postgres:5432/${POSTGRES_DB:-workos}
+      WORKOS_APP_DATABASE_URL: postgresql+psycopg://workos_app:${APP_DB_PASSWORD:-workos_app}@postgres:5432/${POSTGRES_DB:-workos}
+      WORKOS_WORKER_DATABASE_URL: postgresql+psycopg://workos_worker:${WORKER_DB_PASSWORD:-workos_worker}@postgres:5432/${POSTGRES_DB:-workos}
+      WORKOS_S3_ENDPOINT_URL: ${WORKOS_S3_ENDPOINT_URL:-http://minio:9000}
+      WORKOS_S3_PUBLIC_ENDPOINT_URL: ${WORKOS_S3_PUBLIC_ENDPOINT_URL:-http://objects:9000}
+      WORKOS_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-workos}
+      WORKOS_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-workos-dev-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [data]
 
 volumes:
   postgres-data:

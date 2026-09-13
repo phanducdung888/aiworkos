@@ -136,7 +136,7 @@ class TestRetries:
         )
         assert a_client(open_with).deliver(MESSAGE).event_id == "event-1"
 
-    @pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
+    @pytest.mark.parametrize("status", [400, 404, 422])
     def test_a_not_like_this_answer_is_not_retried(self, status: int) -> None:
         """Repeating a malformed request is how a connector turns its own bug into an outage."""
         open_with = opener(
@@ -146,6 +146,25 @@ class TestRetries:
             a_client(open_with).deliver(MESSAGE)
         assert refusal.value.status == status
         assert "BR-E-13" in refusal.value.detail
+        assert len(open_with.sent) == 1
+
+    @pytest.mark.parametrize("status", [401, 403])
+    def test_a_rejected_credential_is_neither_retried_nor_treated_as_a_bad_message(
+        self, status: int
+    ) -> None:
+        """401 and 403 sat in the list above until CP24, and that was silent data loss.
+
+        A refusal makes the caller mark the message seen. When the pilot's token reached its
+        lifespan the connector consumed every message it read and delivered none of them. The
+        credential is the connector's problem, not the message's, so this is unavailability — and
+        still not retried, because retrying a 401 achieves nothing but delay.
+        """
+        open_with = opener(
+            urllib.error.HTTPError("u", status, "no", Message(), io.BytesIO(b'{"detail":"nope"}'))
+        )
+        with pytest.raises(DeliveryUnavailable) as outage:
+            a_client(open_with).deliver(MESSAGE)
+        assert "credential" in str(outage.value)
         assert len(open_with.sent) == 1
 
     def test_giving_up_is_distinguishable_from_being_refused(self) -> None:
@@ -165,7 +184,16 @@ class TestSecrets:
         with pytest.raises(DeliveryRefused) as refusal:
             a_client(
                 opener(
-                    urllib.error.HTTPError("u", 403, "no", Message(), io.BytesIO(b"{}"))
+                    urllib.error.HTTPError("u", 422, "no", Message(), io.BytesIO(b"{}"))
                 )
             ).deliver(MESSAGE)
         assert "not-a-real-token" not in str(refusal.value)
+        # And in the answer that is specifically *about* the credential, which is the one place a
+        # well-meaning error message would be tempted to quote it.
+        with pytest.raises(DeliveryUnavailable) as outage:
+            a_client(
+                opener(
+                    urllib.error.HTTPError("u", 401, "no", Message(), io.BytesIO(b"{}"))
+                )
+            ).deliver(MESSAGE)
+        assert "not-a-real-token" not in str(outage.value)

@@ -33,6 +33,7 @@ from app.contexts.signal.public import (
     evidence_for_target,
     get_evidence,
 )
+from app.platform.authz import Action, ResourceType
 from app.platform.errors import EntityNotFound
 from app.platform.http.deps import (
     ActorDep,
@@ -40,6 +41,7 @@ from app.platform.http.deps import (
     ObjectStoreDep,
     PrincipalDep,
     SessionDep,
+    may_reach,
 )
 from app.platform.http.etag import etag_for
 from app.platform.http.idempotency import Idempotency, replay_response
@@ -109,6 +111,9 @@ def create_evidence(
 def read_evidence(
     evidence_id: uuid.UUID, response: Response, session: SessionDep, principal: PrincipalDep
 ) -> Any:
+    # `get_evidence` takes an org and no principal at all, which is the shape every read path
+    # here had before CP24: tenant scoping standing in for authorization.
+    may_reach(principal, Action.READ, ResourceType.EVIDENCE)
     evidence = get_evidence(session, org_id=principal.org_id, evidence_id=evidence_id)
     if evidence is None:
         raise EntityNotFound("evidence", evidence_id)
@@ -128,6 +133,7 @@ def list_evidence_for_target(
     Superseded evidence is not hidden. A reader asking why the system believes something is also
     entitled to see what it used to believe and what replaced it.
     """
+    may_reach(principal, Action.LIST, ResourceType.EVIDENCE)
     return EvidenceList(
         items=[
             EvidenceResource.model_validate(row)
