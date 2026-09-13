@@ -1553,13 +1553,20 @@ export interface components {
         AutonomyMode: "off" | "level_1_propose" | "level_2_approved_execution";
         /**
          * CapabilityPolicyList
-         * @description Only the cells an organization has decided.
+         * @description The cells an organization has decided, and the grid they sit in.
          *
-         *     An absent cell is `off` (ADR-0047) and is deliberately not rendered as a row: listing every
-         *     possible combination with a default would make the decided ones hard to see, which is the
-         *     opposite of what an autonomy policy is read for.
+         *     `items` is unchanged and still holds only decided rows: listing every possible combination
+         *     there would make the decided ones hard to see, which is the opposite of what an autonomy policy
+         *     is read for.
+         *
+         *     `available` is the whole decidable surface, derived from the code rather than from the table,
+         *     each cell carrying its effective mode. It is what an editor needs — an administrator cannot be
+         *     offered a switch the system has no tool behind, and cannot be left guessing that an absent row
+         *     means denial.
          */
         CapabilityPolicyList: {
+            /** Available */
+            available?: components["schemas"]["PolicyCellResource"][];
             /** Items */
             items: components["schemas"]["CapabilityPolicyResource"][];
         };
@@ -2564,6 +2571,37 @@ export interface components {
             keycloak_subject?: string | null;
             /** Timezone */
             timezone?: string | null;
+        };
+        /**
+         * PolicyCellResource
+         * @description One decidable cell, with whatever has been decided about it.
+         *
+         *     `mode` is `off` for a cell nobody has decided, because that is what absence means (ADR-0047) —
+         *     not because a row says so. `decided` distinguishes the two, so a reader can tell "somebody
+         *     turned this off" from "nobody has looked at it", which are different facts about an
+         *     organization.
+         */
+        PolicyCellResource: {
+            /** Action */
+            action: string;
+            /** Capability */
+            capability: string;
+            /** Decided */
+            decided: boolean;
+            /** Decided By Person Id */
+            decided_by_person_id?: string | null;
+            /** Entity Type */
+            entity_type: string;
+            /** Mode */
+            mode: string;
+            /** Reason */
+            reason?: string | null;
+            /** Tools */
+            tools?: string[];
+            /** Updated At */
+            updated_at?: string | null;
+            /** Version */
+            version?: number | null;
         };
         /**
          * Problem

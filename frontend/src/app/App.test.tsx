@@ -59,6 +59,7 @@ const quiet = [
   empty('proposals'),
   empty('work'),
   empty('projects'),
+  { match: 'GET /api/v1/agent-policy', body: { items: [], available: [] } },
 ]
 
 function renderAt(route: string) {
@@ -107,6 +108,7 @@ describe('App', () => {
       ['/commitments', 'Commitments'],
       ['/proposals', 'Proposals'],
       ['/projects', /projects/i],
+      ['/agent-policy', /agent policy/i],
     ] as const) {
       stubApi(quiet)
       const { unmount } = renderAt(path)
@@ -127,6 +129,8 @@ describe('App', () => {
 
     const nav = screen.getByRole('navigation', { name: 'Main' })
     expect(within(nav).queryByRole('link', { name: 'Projects' })).toBeNull()
+    // Writing the agent policy is `org_admin` and nothing else (ADR-0047).
+    expect(within(nav).queryByRole('link', { name: 'Agent policy' })).toBeNull()
     expect(within(nav).getByRole('link', { name: 'Commitments' })).toBeVisible()
   })
 })

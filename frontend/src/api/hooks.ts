@@ -37,6 +37,8 @@ export type Commitment = Schemas['CommitmentResource']
 export type CommitmentStatus = Schemas['CommitmentStatus']
 export type AIInteraction = Schemas['AIInteractionDetail']
 export type CapabilityPolicy = Schemas['CapabilityPolicyResource']
+export type PolicyCell = Schemas['PolicyCellResource']
+export type AutonomyMode = Schemas['AutonomyMode']
 /**
  * The enums, taken from the request schemas rather than the response ones.
  *
@@ -585,5 +587,42 @@ export function useAgentPolicy(): UseQueryResult<CapabilityPolicy[]> {
     queryKey: keys.agentPolicy,
     queryFn: async () => unwrap(await api.GET('/api/v1/agent-policy', {})).items,
     staleTime: 5 * 60 * 1000,
+  })
+}
+
+/**
+ * The whole decidable grid, each cell carrying its effective mode.
+ *
+ * The surface comes from the server, never from a list in this file. A client that hard-coded the
+ * capabilities would offer switches a future build had removed, and would miss ones it had gained
+ * — and the thing being edited is an authorization policy.
+ */
+export function useAgentPolicyGrid(): UseQueryResult<PolicyCell[]> {
+  return useQuery({
+    queryKey: [...keys.agentPolicy, 'grid'],
+    queryFn: async () => unwrap(await api.GET('/api/v1/agent-policy', {})).available ?? [],
+  })
+}
+
+export function useSetAgentPolicy(): UseMutationResult<
+  CapabilityPolicy,
+  Error,
+  { cell: PolicyCell; mode: AutonomyMode; reason?: string }
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ cell, mode, reason }) =>
+      unwrap(
+        await api.PUT('/api/v1/agent-policy', {
+          body: {
+            capability: cell.capability as never,
+            entity_type: cell.entity_type,
+            action: cell.action as never,
+            mode,
+            reason: reason ?? null,
+          },
+        }),
+      ),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.agentPolicy }),
   })
 }

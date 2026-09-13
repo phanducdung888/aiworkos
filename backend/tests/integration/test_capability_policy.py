@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.platform.errors import DomainRuleViolation
 from tests.integration.conftest import Realm, WorkOrg, auth, grant, subject_of
 
 pytestmark = pytest.mark.integration
@@ -255,3 +256,152 @@ def test_another_organizations_policy_is_invisible(
 
     listed = api.get("/api/v1/agent-policy", headers=as_admin).json()["items"]
     assert listed == [], "another organization's policy must not be visible, let alone effective"
+
+
+# --------------------------------------------------------------------------- the editable surface
+
+
+def surface_of(api: TestClient, headers: dict[str, str]) -> list[dict]:
+    response = api.get("/api/v1/agent-policy", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()["available"]
+
+
+def test_the_grid_shows_undecided_cells_as_off_and_says_they_are_undecided(
+    api: TestClient, as_admin: dict[str, str], roles: None
+) -> None:
+    """ADR-0047. Absence is denial, and an editor has to show the difference from a decided `off`.
+
+    "Somebody turned this off" and "nobody has looked at it" are different facts about an
+    organization, and only one of them means the safety review has happened.
+    """
+    before = surface_of(api, as_admin)
+    assert before, "the grid is empty; an administrator would have nothing to decide"
+    assert all(cell["mode"] == "off" for cell in before)
+    assert all(cell["decided"] is False for cell in before)
+
+    set_policy(api, as_admin, mode="off", reason="reviewed and declined")
+
+    after = {(cell["entity_type"], cell["action"]): cell for cell in surface_of(api, as_admin)}
+    decided = after[("work", "create")]
+    assert decided["mode"] == "off"
+    assert decided["decided"] is True
+    assert decided["reason"] == "reviewed and declined"
+
+
+def test_the_grid_names_what_each_cell_turns_on(
+    api: TestClient, as_admin: dict[str, str], roles: None
+) -> None:
+    """An administrator decides about tools, not about a triple of enum values."""
+    cells = {(cell["entity_type"], cell["action"]): cell for cell in surface_of(api, as_admin)}
+    assert cells[("work", "create")]["tools"] == ["create_work"]
+    assert cells[("commitment", "create")]["tools"] == ["create_commitment"]
+    assert cells[("work_assignment", "assign")]["tools"] == ["assign_work"]
+
+
+def test_the_grid_offers_nothing_the_system_cannot_do(
+    api: TestClient, as_admin: dict[str, str], roles: None
+) -> None:
+    """Derived from the code, never the table, so it cannot drift into offering a dead switch."""
+    for cell in surface_of(api, as_admin):
+        assert cell["tools"], f"{cell} is offered and turns nothing on"
+        assert cell["capability"] == "extract", "only capabilities with tools are decidable today"
+
+
+def test_a_cell_outside_the_surface_is_refused(
+    api: TestClient, as_admin: dict[str, str], roles: None, scoped_session: Session,
+    work_org: WorkOrg,
+) -> None:
+    """Not a narrower permission — a decision about something the system cannot act on.
+
+    Storing it would put a row in the policy table that reads like policy and grants nothing, which
+    is the worst of both: an administrator believes they decided something, and nothing changed.
+    """
+    refused = set_policy(api, as_admin, entity_type="unicorn")
+    assert refused.status_code == 422
+    assert refused.json()["rule"] == "BR-AI-30"
+
+    wrong_action = set_policy(api, as_admin, entity_type="work", action="reassign")
+    assert wrong_action.status_code == 422
+
+    scoped_session.rollback()
+    assert scoped_session.execute(
+        text("SELECT count(*) FROM agent_capability_policy WHERE org_id = :org"),
+        {"org": work_org.org_id},
+    ).scalar_one() == 0, "a refused decision left a row behind"
+
+
+def test_a_decision_about_creating_does_not_enable_changing(
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    scoped_session: Session,
+) -> None:
+    """CP19A's correction, end to end. The cell's action is consulted where it decides."""
+    from app.contexts.intelligence.policy import load
+    from app.platform.authz.agent import AgentCapability
+
+    set_policy(api, as_admin, entity_type="work", action="create")
+    scoped_session.rollback()
+    scoped_session.execute(
+        text("SELECT set_config('app.current_org_id', :org, true)"), {"org": str(work_org.org_id)}
+    )
+    policy = load(scoped_session, org_id=work_org.org_id)
+    enabled = policy.enabled_tools(frozenset({AgentCapability.EXTRACT}))
+
+    assert "create_work" in enabled
+    assert "update_work_status" not in enabled
+
+
+def test_an_agent_cannot_reach_the_policy_at_all(
+    api: TestClient, as_admin: dict[str, str], roles: None, work_org: WorkOrg,
+    scoped_session: Session,
+) -> None:
+    """ADR-0047. The component being constrained must not be able to edit the constraint.
+
+    Asserted at the service, because there is no HTTP route an agent could take: the router builds
+    its actor from the authenticated caller and an agent has no session. This is the backstop for
+    any future caller that does hold one.
+    """
+    from app.contexts.intelligence.policy import set_mode
+    from app.platform.actor import Actor, ActorType
+    from app.platform.authz import Action as PolicyAction
+    from app.platform.authz import Decision, Principal, Role
+    from app.platform.authz.agent import AgentCapability, AutonomyMode
+
+    ai_actor = Actor(
+        type=ActorType.AI,
+        person_id=work_org.admin,
+        ai_interaction_id=uuid.uuid4(),
+    )
+    principal = Principal(
+        person_id=work_org.admin,
+        org_id=work_org.org_id,
+        roles=frozenset({Role.ORG_ADMIN}),
+    )
+    with pytest.raises(DomainRuleViolation) as refusal:
+        set_mode(
+            scoped_session,
+            principal=principal,
+            actor=ai_actor,
+            decision=Decision(allowed=True, reason="test"),
+            capability=AgentCapability.EXTRACT,
+            entity_type="work",
+            action=PolicyAction.CREATE,
+            mode=AutonomyMode.APPROVED_EXECUTION,
+        )
+    assert refusal.value.rule == "BR-AI-23"
+
+
+def test_a_viewer_may_read_the_grid_but_not_change_it(
+    api: TestClient,
+    realm: Realm,
+    as_admin: dict[str, str],
+    roles: None,
+    work_org: WorkOrg,
+    scoped_session: Session,
+) -> None:
+    """Reading is organization-wide (BR-AI-30); writing is `org_admin` and nothing else."""
+    grant(scoped_session, work_org.org_id, work_org.dept_lead, "viewer")
+    viewer = auth(realm, subject_of(scoped_session, work_org.dept_lead), work_org.org_id)
+
+    assert surface_of(api, viewer)
+    assert set_policy(api, viewer).status_code == 403

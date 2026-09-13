@@ -9,6 +9,7 @@ import { NavLink, Route, Routes } from 'react-router-dom'
 import { useMe } from '@/api/hooks'
 import { useAuth } from '@/auth/AuthProvider'
 import { ErrorState, Loading } from '@/components/States'
+import { AgentPolicy } from '@/features/policy/AgentPolicy'
 import { Attention } from '@/features/attention/Attention'
 import { Capture } from '@/features/capture/Capture'
 import { CommitmentDetail, CommitmentList } from '@/features/commitments/Commitments'
@@ -51,6 +52,9 @@ export function App() {
   const canManageProjects = me.data.roles.some((role) =>
     ['org_admin', 'department_lead', 'team_lead'].includes(role),
   )
+  // Writing the policy is `org_admin` and nothing else (ADR-0047). Reading it is organization-wide,
+  // but a link that always leads to a read-only screen is not what this one is for.
+  const canManagePolicy = me.data.roles.includes('org_admin')
 
   return (
     <>
@@ -63,6 +67,7 @@ export function App() {
           <NavLink to="/commitments">Commitments</NavLink>
           <NavLink to="/proposals">Proposals</NavLink>
           {canManageProjects ? <NavLink to="/projects">Projects</NavLink> : null}
+          {canManagePolicy ? <NavLink to="/agent-policy">Agent policy</NavLink> : null}
         </nav>
         <p>
           <span data-testid="me-name">{me.data.display_name}</span>{' '}
@@ -86,6 +91,7 @@ export function App() {
           <Route path="/commitments/:commitmentId" element={<CommitmentDetail />} />
           <Route path="/projects" element={<ProjectList />} />
           <Route path="/projects/:projectId" element={<ProjectDetail />} />
+          <Route path="/agent-policy" element={<AgentPolicy />} />
         </Routes>
       </main>
     </>

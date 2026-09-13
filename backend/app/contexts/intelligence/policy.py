@@ -27,6 +27,8 @@ from app.platform.authz.agent import (
     AutonomyMode,
     CapabilityPolicy,
     PolicyCell,
+    policy_surface,
+    tools_for_cell,
 )
 from app.platform.db import Base
 from app.platform.errors import DomainRuleViolation
@@ -126,6 +128,16 @@ def set_mode(
             "BR-AI-23", "an agent may not change its own capability policy"
         )
 
+    # A cell outside the surface is not a narrower permission — it is a decision about something
+    # the system cannot act on, and storing one would put a row in the table that reads like policy
+    # and grants nothing. Refused here rather than in the router so no other caller can skip it.
+    if not tools_for_cell(capability, entity_type, action):
+        raise DomainRuleViolation(
+            "BR-AI-30",
+            f"no tool performs {action.value} on {entity_type} for the {capability.value} "
+            "capability; there is nothing to decide about",
+        )
+
     existing = session.scalars(
         select(AgentCapabilityPolicy).where(
             AgentCapabilityPolicy.org_id == principal.org_id,
@@ -192,3 +204,26 @@ def _snapshot(row: AgentCapabilityPolicy) -> dict[str, Any]:
             str(row.decided_by_person_id) if row.decided_by_person_id else None
         ),
     }
+
+
+DecidedCell = tuple[PolicyCell, AgentCapabilityPolicy | None]
+
+
+def surface(session: Session, *, org_id: uuid.UUID) -> list[DecidedCell]:
+    """Every decidable cell, paired with the row that decided it — or with nothing.
+
+    The grid an administrator actually needs: `off` is the answer for a cell nobody has decided
+    (ADR-0047), and a screen that only listed the decided rows would make the absent ones look like
+    missing data rather than like denial.
+
+    The surface comes from the code, not from the table. A capability the build does not implement
+    cannot appear here, so an organization is never offered a switch that does nothing.
+    """
+    decided = {
+        (row.capability, row.entity_type, row.action): row
+        for row in rows_for(session, org_id=org_id)
+    }
+    return [
+        (cell, decided.get((cell.capability.value, cell.entity_type, cell.action.value)))
+        for cell in policy_surface()
+    ]

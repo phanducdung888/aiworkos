@@ -523,6 +523,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 16 | Work brought to the same standard: provenance panel on Work, created-entity links, the four blanks the AI may not fill asserted | ✅ complete · 1109 backend + 81 frontend |
 | 17 | Attention view: six deterministic sections over existing endpoints, each stating the rule that produced it; no new API, no AI scores | ✅ complete · 1115 backend + 92 frontend |
 | 18 | Product integration: lands on Attention, decided proposals readable again, proposal history, "the agent is switched off" distinguished from "the agent found nothing", shell coherence tests | ✅ complete · 1115 backend + 101 frontend + 5 journeys |
+| 19A | Agent policy surface: derived editable grid, a cell's action made load-bearing, admin UI; ADR-0057 | ✅ complete · 1127 backend + 111 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

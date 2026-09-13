@@ -1199,15 +1199,44 @@ class CapabilityPolicyResource(BaseModel):
     version: int
 
 
-class CapabilityPolicyList(BaseModel):
-    """Only the cells an organization has decided.
+class PolicyCellResource(BaseModel):
+    """One decidable cell, with whatever has been decided about it.
 
-    An absent cell is `off` (ADR-0047) and is deliberately not rendered as a row: listing every
-    possible combination with a default would make the decided ones hard to see, which is the
-    opposite of what an autonomy policy is read for.
+    `mode` is `off` for a cell nobody has decided, because that is what absence means (ADR-0047) —
+    not because a row says so. `decided` distinguishes the two, so a reader can tell "somebody
+    turned this off" from "nobody has looked at it", which are different facts about an
+    organization.
+    """
+
+    capability: str
+    entity_type: str
+    action: str
+    mode: str
+    decided: bool
+    reason: str | None = None
+    decided_by_person_id: uuid.UUID | None = None
+    updated_at: dt.datetime | None = None
+    version: int | None = None
+    #: What this cell turns on, named so an administrator is deciding about something legible
+    #: rather than about a triple of enum values.
+    tools: list[str] = Field(default_factory=list)
+
+
+class CapabilityPolicyList(BaseModel):
+    """The cells an organization has decided, and the grid they sit in.
+
+    `items` is unchanged and still holds only decided rows: listing every possible combination
+    there would make the decided ones hard to see, which is the opposite of what an autonomy policy
+    is read for.
+
+    `available` is the whole decidable surface, derived from the code rather than from the table,
+    each cell carrying its effective mode. It is what an editor needs — an administrator cannot be
+    offered a switch the system has no tool behind, and cannot be left guessing that an absent row
+    means denial.
     """
 
     items: list[CapabilityPolicyResource]
+    available: list[PolicyCellResource] = Field(default_factory=list)
 
 
 class CapabilityPolicySet(BaseModel):

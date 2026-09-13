@@ -164,28 +164,76 @@ class CapabilityPolicy:
     def enabled_tools(self, capabilities: frozenset[AgentCapability]) -> frozenset[str]:
         """Which tools the policy turns on, for capabilities the agent actually holds.
 
-        The capability set is intersected here rather than trusted from the policy: a row naming a
-        capability this agent does not have grants nothing, which is what keeps a policy edit from
-        widening an agent that was never built to do the thing.
+        Three narrowings, all intersections, none of them trusting the row on its own:
+
+        * the **capability** must be one this agent holds — a row naming a capability it was never
+          built with grants nothing, so a policy edit cannot widen an agent past its own design;
+        * the **entity type and action together** must name tools that exist, which is what
+          `TOOLS_FOR_CELL` answers;
+        * the mode must not be `off`.
+
+        The action half of the second narrowing is CP19A's correction. This used to consult
+        `(capability, entity_type)` and ignore `cell.action` entirely, so a cell decided about
+        *creating* work also turned on every other tool touching work. Nothing widened in practice —
+        `EXTRACT` happens to hold no state-changing tool — but the policy's most specific field was
+        not consulted at the point that decides, so the row read as more precise than it was.
         """
         allowed: set[str] = set()
         for cell in self.cells:
             if cell.mode is AutonomyMode.OFF or cell.capability not in capabilities:
                 continue
-            allowed |= CAPABILITY_TOOLS[cell.capability] & TOOLS_FOR_ENTITY.get(
-                cell.entity_type, frozenset()
+            allowed |= CAPABILITY_TOOLS[cell.capability] & TOOLS_FOR_CELL.get(
+                (cell.entity_type, cell.action), frozenset()
             )
         return frozenset(allowed)
 
 
-#: Which tools produce which entity type. The policy is keyed on entity type (BR-AI-30) and the
-#: registry on tool name, so something has to relate them; keeping it here rather than importing the
-#: registry keeps `platform` free of a dependency on a context.
-TOOLS_FOR_ENTITY: dict[str, frozenset[str]] = {
-    "work": frozenset({"create_work", "update_work_status"}),
-    "work_assignment": frozenset({"assign_work"}),
-    "commitment": frozenset({"create_commitment", "change_commitment_status"}),
+#: Which tools perform which `(entity type, action)`. The policy is keyed that way (BR-AI-30) and
+#: the registry on tool name, so something has to relate them; keeping it here rather than importing
+#: the registry keeps `platform` free of a dependency on a context.
+#:
+#: This is also the *whole* surface a policy can be written about. A cell outside it is not a
+#: narrower permission — it is a row that can never grant anything, and CP19A refuses to store one
+#: rather than letting an administrator decide something the system cannot act on.
+TOOLS_FOR_CELL: dict[tuple[str, Action], frozenset[str]] = {
+    ("work", Action.CREATE): frozenset({"create_work"}),
+    ("work", Action.CHANGE_STATE): frozenset({"update_work_status"}),
+    ("work_assignment", Action.ASSIGN): frozenset({"assign_work"}),
+    ("commitment", Action.CREATE): frozenset({"create_commitment"}),
+    ("commitment", Action.CHANGE_STATE): frozenset({"change_commitment_status"}),
 }
+
+
+def tools_for_cell(
+    capability: AgentCapability, entity_type: str, action: Action
+) -> frozenset[str]:
+    """The tools one policy cell could turn on. Empty means the cell decides nothing."""
+    return CAPABILITY_TOOLS[capability] & TOOLS_FOR_CELL.get((entity_type, action), frozenset())
+
+
+def policy_surface() -> tuple[PolicyCell, ...]:
+    """Every cell that could ever grant a tool, with no mode attached.
+
+    Derived from the two tables above rather than written down a third time: a capability whose
+    tools never intersect a cell's tools cannot appear, so `link_evidence` — which holds no tools
+    yet — produces no rows and an administrator is not offered a switch that does nothing.
+
+    Ordered so the UI, the API and the tests all see the same grid in the same order.
+    """
+    cells = [
+        PolicyCell(
+            capability=capability, entity_type=entity_type, action=action, mode=AutonomyMode.OFF
+        )
+        for capability in AgentCapability
+        for entity_type, action in TOOLS_FOR_CELL
+        if tools_for_cell(capability, entity_type, action)
+    ]
+    return tuple(
+        sorted(
+            cells,
+            key=lambda cell: (cell.capability.value, cell.entity_type, cell.action.value),
+        )
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

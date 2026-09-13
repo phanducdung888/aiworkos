@@ -238,3 +238,86 @@ class TestAbsoluteRefusals:
             assert not any(word in tool for tool in every_tool), (
                 f"a capability reaches a tool containing '{word}'"
             )
+
+
+class TestPolicySurface:
+    """CP19A. What a policy may be written about, and what a cell actually turns on.
+
+    Two things are asserted here that the checkpoint depends on. The surface is **derived** from
+    the tables the enforcement reads, so an editor can never offer a switch with nothing behind it.
+    And a cell's `action` is **consulted** — it used to be ignored, which made the row read as more
+    precise than it was.
+    """
+
+    def test_the_surface_is_exactly_what_the_tools_can_do(self) -> None:
+        from app.platform.authz.agent import policy_surface, tools_for_cell
+
+        surface = policy_surface()
+        assert surface, "a policy with no decidable cell would be an editor with no switches"
+        for cell in surface:
+            assert tools_for_cell(cell.capability, cell.entity_type, cell.action), (
+                f"{cell} is on the surface and turns nothing on"
+            )
+            assert cell.mode is AutonomyMode.OFF, "the surface carries no decision of its own"
+
+    def test_a_capability_with_no_tools_is_not_offered(self) -> None:
+        """`link_evidence` is declared and holds no tools yet. An editor must not show it."""
+        from app.platform.authz.agent import policy_surface
+
+        offered = {cell.capability for cell in policy_surface()}
+        assert AgentCapability.LINK_EVIDENCE not in offered
+        assert AgentCapability.EXTRACT in offered
+
+    def test_the_surface_is_stable_in_order(self) -> None:
+        """The UI, the API and these tests all have to see the same grid the same way round."""
+        from app.platform.authz.agent import policy_surface
+
+        assert policy_surface() == policy_surface()
+        assert list(policy_surface()) == sorted(
+            policy_surface(),
+            key=lambda cell: (cell.capability.value, cell.entity_type, cell.action.value),
+        )
+
+    def test_a_cell_only_enables_the_action_it_names(self) -> None:
+        """The CP19A correction, pinned.
+
+        A decision about *creating* work is not a decision about changing its status. This passed
+        before the fix — `extract` holds no state-changing tool — and passed for the wrong reason.
+        """
+        from app.platform.authz.agent import TOOLS_FOR_CELL, CapabilityPolicy, PolicyCell
+
+        assert TOOLS_FOR_CELL[("work", Action.CREATE)] == frozenset({"create_work"})
+        assert TOOLS_FOR_CELL[("work", Action.CHANGE_STATE)] == frozenset(
+            {"update_work_status"}
+        )
+
+        creating = CapabilityPolicy(
+            cells=(
+                PolicyCell(
+                    capability=AgentCapability.EXTRACT,
+                    entity_type="work",
+                    action=Action.CREATE,
+                    mode=AutonomyMode.PROPOSE,
+                ),
+            )
+        )
+        enabled = creating.enabled_tools(frozenset({AgentCapability.EXTRACT}))
+        assert "create_work" in enabled
+        assert "update_work_status" not in enabled
+
+    def test_a_cell_naming_an_action_no_tool_performs_grants_nothing(self) -> None:
+        from app.platform.authz.agent import CapabilityPolicy, PolicyCell
+
+        nonsense = CapabilityPolicy(
+            cells=(
+                PolicyCell(
+                    capability=AgentCapability.EXTRACT,
+                    entity_type="work",
+                    # No tool reassigns work. The point is that the *policy* does not quietly
+                    # reinterpret an action nothing performs as the entity's other tools.
+                    action=Action.REASSIGN,
+                    mode=AutonomyMode.APPROVED_EXECUTION,
+                ),
+            )
+        )
+        assert nonsense.enabled_tools(frozenset({AgentCapability.EXTRACT})) == frozenset()

@@ -64,6 +64,9 @@ from app.contexts.intelligence.policy import (
 from app.contexts.intelligence.policy import (
     set_mode as set_capability_mode,
 )
+from app.contexts.intelligence.policy import (
+    surface as capability_policy_surface,
+)
 from app.contexts.intelligence.queries import (
     ProposalFilter,
     ProposalPage,
@@ -96,6 +99,7 @@ __all__ = [
     "set_capability_mode",
     "load_capability_policy",
     "capability_policy_rows",
+    "capability_policy_surface",
     "AgentCapabilityPolicy",
     "approval_for_id",
     "execute_queued_approval",

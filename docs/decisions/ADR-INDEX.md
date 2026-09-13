@@ -71,6 +71,7 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0054 | External identity resolution is lookup-only and attribution is threshold-gated | accepted | PQ-7, BR-I-06, BR-AI-34 |
 | 0055 | The model quotes a deadline phrase; WorkOS reads it against the Event | accepted | BR-C-05, BR-AI-17 |
 | 0056 | Provenance is a walk, not a denormalised column | accepted | BR-PR-08, ADR-0041 |
+| 0057 | The policy surface is derived from the tools, and a cell's action decides | accepted | ADR-0047, BR-AI-30 |
 
 ---
 
@@ -1446,3 +1447,50 @@ runs through `proposal.evidence_ids`, not through `evidence.target_id`. Recorded
 reader knows it is a decision rather than an oversight. Making `target_id` nullable is the honest
 long-term fix and is a migration that changes a NOT NULL on a table with an immutability trigger;
 it belongs to whichever checkpoint has a second reason to touch that table.
+
+
+### ADR-0057 — The policy surface is derived from the tools, and a cell's action decides
+
+**Context.** `agent_capability_policy` stores `(capability, entity_type, action) -> mode`, and
+CP19A set out to give an administrator a screen for it. Building the screen exposed two things about
+the table it edits.
+
+`PUT /agent-policy` accepted **any** `entity_type` string and any `Action`. An administrator could
+store `(extract, unicorn, reassign) = level_2`, and nothing would reject it — the row simply grants
+nothing, because `enabled_tools` finds no tool behind it. A row that reads like policy and decides
+nothing is the worst of both: somebody believes they made a decision and nothing changed.
+
+And `enabled_tools` consulted `(capability, entity_type)` and **ignored `cell.action` entirely**. A
+cell decided about *creating* work also turned on every other tool touching work. Nothing widened in
+practice — `EXTRACT` holds no state-changing tool, so the intersection came out right by luck — but
+the policy's most specific field was not consulted at the point that decides.
+
+**Decision.**
+
+1. **One table relates policy to tools**: `TOOLS_FOR_CELL: (entity_type, Action) -> tools`,
+   replacing the entity-only map. `enabled_tools` intersects the agent's capability tools with the
+   tools for the cell's **entity type *and* action**. Strictly narrowing; nothing that was denied
+   becomes allowed.
+2. **The decidable surface is derived, not written down**: `policy_surface()` is every
+   `(capability, entity_type, action)` whose tool intersection is non-empty. A capability with no
+   tools — `link_evidence` today — produces no cells, so an administrator is never offered a switch
+   with nothing behind it.
+3. **A write outside the surface is refused** (BR-AI-30, 422), in `policy.set_mode` rather than in
+   the router, so no other caller can skip it.
+4. **The read publishes the grid**: `GET /agent-policy` keeps `items` (decided rows only) and gains
+   `available` — every decidable cell with its effective mode, its tools, and a `decided` flag.
+
+**`decided` is the field worth arguing about.** An absent cell is `off`, and so is a cell somebody
+reviewed and switched off. Those are different facts about an organization — one of them means the
+safety review happened — and a screen that rendered both as "off" would erase the difference at
+exactly the moment it matters (BR-AI-32's promotion process).
+
+**Consequences.** The editable surface has one source, and it is the code that enforces it, so the
+screen cannot drift into offering something the system cannot do. Deny-by-default is untouched: the
+surface carries no mode of its own, a new organization still has no rows, and every cell still
+starts off. `AutonomyMode` still stops at level 2 — not disabled, absent from the type.
+
+Rejected: validating the surface in the router (a second caller would skip it); a `policy_surface`
+table in the database (a migration to store something the code already knows, which could then
+disagree with it); rendering every combination as a row in `items` (the existing docstring is right
+— it would bury the decided ones).

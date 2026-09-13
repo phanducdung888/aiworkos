@@ -849,8 +849,15 @@
         "type": "string"
       },
       "CapabilityPolicyList": {
-        "description": "Only the cells an organization has decided.\n\nAn absent cell is `off` (ADR-0047) and is deliberately not rendered as a row: listing every\npossible combination with a default would make the decided ones hard to see, which is the\nopposite of what an autonomy policy is read for.",
+        "description": "The cells an organization has decided, and the grid they sit in.\n\n`items` is unchanged and still holds only decided rows: listing every possible combination\nthere would make the decided ones hard to see, which is the opposite of what an autonomy policy\nis read for.\n\n`available` is the whole decidable surface, derived from the code rather than from the table,\neach cell carrying its effective mode. It is what an editor needs \u2014 an administrator cannot be\noffered a switch the system has no tool behind, and cannot be left guessing that an absent row\nmeans denial.",
         "properties": {
+          "available": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyCellResource"
+            },
+            "title": "Available",
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/CapabilityPolicyResource"
@@ -3579,6 +3586,93 @@
           }
         },
         "title": "PersonUpdate",
+        "type": "object"
+      },
+      "PolicyCellResource": {
+        "description": "One decidable cell, with whatever has been decided about it.\n\n`mode` is `off` for a cell nobody has decided, because that is what absence means (ADR-0047) \u2014\nnot because a row says so. `decided` distinguishes the two, so a reader can tell \"somebody\nturned this off\" from \"nobody has looked at it\", which are different facts about an\norganization.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "capability": {
+            "title": "Capability",
+            "type": "string"
+          },
+          "decided": {
+            "title": "Decided",
+            "type": "boolean"
+          },
+          "decided_by_person_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Person Id"
+          },
+          "entity_type": {
+            "title": "Entity Type",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "capability",
+          "entity_type",
+          "action",
+          "mode",
+          "decided"
+        ],
+        "title": "PolicyCellResource",
         "type": "object"
       },
       "Problem": {

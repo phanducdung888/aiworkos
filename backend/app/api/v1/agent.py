@@ -43,13 +43,19 @@ from app.api.v1.schemas import (
     CapabilityPolicyList,
     CapabilityPolicyResource,
     CapabilityPolicySet,
+    PolicyCellResource,
     ToolCallResource,
 )
 from app.platform.actor import Actor
 from app.platform.agentkit.confidence import ConfidencePolicy
 from app.platform.agentkit.contract import AgentAnalysis, IntentKind, PersonReference
 from app.platform.authz import Action, Principal, ResourceType, authorize
-from app.platform.authz.agent import AgentCapability, AgentIdentity, AgentPrincipal
+from app.platform.authz.agent import (
+    AgentCapability,
+    AgentIdentity,
+    AgentPrincipal,
+    tools_for_cell,
+)
 from app.platform.authz.model import ResourceRef
 from app.platform.errors import EntityNotFound, UpstreamProviderError
 from app.platform.http.deps import (
@@ -564,7 +570,29 @@ def read_capability_policy(
             for row in intelligence.capability_policy_rows(
                 session, org_id=principal.org_id
             )
-        ]
+        ],
+        # The grid as well as the decisions. An editor that had to infer the surface from the
+        # decided rows could only ever offer what was already decided, which is the one thing an
+        # administrator does not need help with (ADR-0047).
+        available=[
+            PolicyCellResource(
+                capability=cell.capability.value,
+                entity_type=cell.entity_type,
+                action=cell.action.value,
+                mode=row.mode if row is not None else cell.mode.value,
+                decided=row is not None,
+                reason=row.reason if row is not None else None,
+                decided_by_person_id=row.decided_by_person_id if row is not None else None,
+                updated_at=row.updated_at if row is not None else None,
+                version=row.version if row is not None else None,
+                tools=sorted(
+                    tools_for_cell(cell.capability, cell.entity_type, cell.action)
+                ),
+            )
+            for cell, row in intelligence.capability_policy_surface(
+                session, org_id=principal.org_id
+            )
+        ],
     )
 
 
