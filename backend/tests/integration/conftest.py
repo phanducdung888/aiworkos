@@ -464,6 +464,11 @@ class ExecutionOutcome:
     body: dict
 
 
+#: Generous, because the suite shares one queue and a drain legitimately runs other tests'
+#: leftovers. Small enough that a retry loop is caught in seconds rather than by a timeout.
+DRAIN_LIMIT = 200
+
+
 def execute_approval(
     api: TestClient,
     headers: dict[str, str],
@@ -480,8 +485,16 @@ def execute_approval(
     from app.workers.runner import run_once
 
     queued = api.post(f"/api/v1/approvals/{approval_id}/queue", headers=headers)
-    while run_once(worker_factory).claimed:
-        pass
+    # Bounded. The queue is shared across the suite and a job that failed and rescheduled itself
+    # would otherwise spin here forever — a hang, which is the one failure mode worse than a
+    # failure, because it says nothing about which test caused it.
+    for _ in range(DRAIN_LIMIT):
+        if not run_once(worker_factory).claimed:
+            break
+    else:  # pragma: no cover - a poisoned queue, not a normal run
+        raise AssertionError(
+            f"the job queue did not drain in {DRAIN_LIMIT} runs; a job is probably retrying"
+        )
 
     record = api.get(f"/api/v1/approvals/{approval_id}", headers=headers)
     body = record.json() if record.status_code == 200 else {}

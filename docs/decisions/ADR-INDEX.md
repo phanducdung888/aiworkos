@@ -72,6 +72,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0055 | The model quotes a deadline phrase; WorkOS reads it against the Event | accepted | BR-C-05, BR-AI-17 |
 | 0056 | Provenance is a walk, not a denormalised column | accepted | BR-PR-08, ADR-0041 |
 | 0057 | The policy surface is derived from the tools, and a cell's action decides | accepted | ADR-0047, BR-AI-30 |
+| 0058 | Ingestion has no in-process port; the connector boundary is the capture API | accepted | BR-E-02, ADR-0054 |
+| 0059 | OpenClaw publishes no outbound delivery contract; the integration direction reverses | accepted, supersedes part of 0053 | A-3, ADR-0027, ADR-0053 |
 
 ---
 
@@ -1494,3 +1496,107 @@ Rejected: validating the surface in the router (a second caller would skip it); 
 table in the database (a migration to store something the code already knows, which could then
 disagree with it); rendering every combination as a row in `items` (the existing docstring is right
 — it would bury the decided ones).
+
+
+### ADR-0058 — Ingestion has no in-process port; the connector boundary is the capture API
+
+**Context.** CP19B set out to design the abstraction for
+`external message → Event → participants → identity resolution → AI analysis`. Every stage of that
+already exists and is tested: `POST /api/v1/events` captures, BR-E-02 decides new-versus-duplicate
+from `(source_system, source_ref)`, ADR-0054 resolves participants, and
+`POST /api/v1/events/{id}/analyze` runs the agent.
+
+So the real question was not what to build but **where the seam is**, and whether a connector port
+belongs in the codebase at all.
+
+**Decision. There is no in-process connector port, and no `ConnectorPort` protocol is introduced.**
+The boundary is the HTTP capture API a connector already has.
+
+A connector is a separate process that speaks a vendor's protocol and speaks HTTP to WorkOS. Giving
+it an in-process interface would mean either importing vendor code into this repository — which
+ADR-0027 put behind a separate identity precisely to avoid — or shipping a protocol with no
+implementation, which is a shape nobody has checked (the CP12 finding, repeated).
+
+**What a connector is responsible for.** Receiving and normalising, and nothing else:
+
+1. map the vendor payload to `POST /api/v1/events`, with `type=EXTERNAL_MESSAGE`,
+   `origin=external`, the vendor's own message identifier as `source_ref` and a stable
+   `source_system`;
+2. put each sender and recipient in `participants` as a **bare `external_handle`** with a role —
+   never a `person_id`, which it has no way to know and no authority to assert;
+3. send an `Idempotency-Key` **derived deterministically from `(source_system, source_ref, body)`**;
+4. authenticate as an ingestion-only identity (ADR-0027), which holds no tool permissions;
+5. stop. It calls no analysis, makes no judgement about content, and never calls the Tool Gateway.
+
+**What the platform is responsible for**, unchanged and untouched by this ADR: duplicate and
+revision detection (BR-E-02), identity resolution and attribution (ADR-0054, BR-I-06), extraction
+eligibility (BR-E-11), the whole agent path, and every authorization decision.
+
+**Why the key is derived, and why it includes the body.** Every message transport redelivers — that
+is what an unacknowledged message *means* — so a connector sends the same message twice as a matter
+of normal operation. A random key per attempt would make each redelivery a new action, which is the
+failure the header exists to prevent.
+
+Deriving it from `(source_system, source_ref)` alone fails the other way, and CP19B's conformance
+suite is what found it: an **edited** message legitimately carries the original's reference, so the
+guard would refuse it as "the same key with a different body" and a correction could never be
+captured. It is a revision (BR-E-02), not a retry. The key therefore covers the content as well —
+same bytes, same key, clean replay; different bytes under the same reference, a different action
+that the platform classifies.
+
+**Two independent guarantees, not one.** The derived key gives a *clean* redelivery: the connector
+receives the original response rather than an error. Underneath it, `ux_event_source_ref` — a
+partial unique index on `(org_id, source_system, source_ref)` over rows that are originals and not
+deleted, added with the Signal schema in migration 0009 — is what makes BR-E-02 true regardless of
+whether a caller kept the contract. Two concurrent deliveries that both skipped the header race
+there, and one of them loses. The index is partial precisely so a revision may share its original's
+reference.
+
+That pairing is why CP19B needed no migration and no new mechanism: the guarantee was already at the
+right level, and what was missing was a written contract and something that executes it.
+
+**Consequences.** The contract is executable: `tests/integration/test_ingestion_contract.py` is the
+conformance suite, and it is the artefact a connector author works against. Writing it found the
+key-derivation defect above, which is the argument for an executed contract over a described one.
+
+Rejected: a `ConnectorPort` protocol with no implementation (an unchecked shape — the CP12 finding);
+an ingestion worker consuming a queue directly (a second write path into Signal, and the one that
+would bypass the idempotency guard); a `connectors/` package (nothing would go in it).
+
+### ADR-0059 — OpenClaw publishes no outbound delivery contract; the integration direction reverses
+
+**Context.** ADR-0053 recorded **SPIKE FURTHER** on OpenClaw and said, accurately at the time, that
+"what this repository knows about OpenClaw: nothing verifiable". CP19B was asked to investigate
+properly rather than restate that.
+
+**What the spike found.** OpenClaw's own channel documentation describes WhatsApp as an **inbound
+channel inside OpenClaw's gateway runtime**: a CLI (`openclaw channels login`, `openclaw gateway`),
+JSON5 configuration for access policy and routing, and Baileys session credentials on disk per
+account. Messages are handled *within* that runtime.
+
+It documents **no outbound delivery mechanism**: no webhook, no HTTP callback, no event payload
+schema for external consumption, no WebSocket event contract intended for a third-party system.
+There is therefore nothing for a WorkOS-side adapter to be written against.
+
+On ADR-0027's specific question — can OpenClaw present two distinct identities, one for the channel
+adapter and one for the capability runtime — the separation that exists is *internal*: per-account
+credential directories inside one gateway. That is not the external adapter-to-system credential
+boundary ADR-0027 required, and ADR-0027 said that would be "a reportable conflict, not something to
+work around". This is that report.
+
+**Decision. No OpenClaw code enters this repository, and the direction of integration reverses.**
+
+The only shape specifiable today is **OpenClaw as an HTTP client of WorkOS**: something running
+beside the gateway calls `POST /api/v1/events` under the contract in ADR-0058. That requires no
+OpenClaw API, no adapter, and no assumption about a payload nobody has published — and WorkOS needs
+no code for it, because the contract is the API it already serves.
+
+**Consequences.** ADR-0053's spike is closed on its capability-runtime question and on its
+channel-adapter question, with evidence rather than with an absence. `test_openclaw_is_not_on_any_path`
+continues to keep the name out of `app/`. Nothing in this ADR licenses writing an adapter; if
+OpenClaw later publishes an outbound contract, ADR-0058's boundary is where it would arrive, and the
+decision to adopt it would be a new record.
+
+Sources consulted: `docs.openclaw.ai/channels/whatsapp` (fetched 2026-09-13). Several other domains
+present themselves as OpenClaw documentation; none was treated as authoritative, and no field name,
+endpoint or schema from any of them appears in this repository.

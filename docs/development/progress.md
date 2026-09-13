@@ -314,6 +314,16 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 
 ### Resolved
 
+**A-3 / OpenClaw's channel-adapter question (closed in CP19B, ADR-0059).** The spike ADR-0053
+called for was done against the published documentation rather than against expectation.
+OpenClaw documents WhatsApp as an inbound channel *inside its own gateway runtime* — a CLI,
+JSON5 routing config, Baileys credentials on disk — and publishes **no outbound delivery
+mechanism**: no webhook, no callback, no event schema for external consumption. There is
+nothing for an adapter to be written against, and the credential separation ADR-0027 asked
+about is internal to one gateway rather than the external boundary it required. The only shape
+specifiable today reverses the direction: something beside the gateway calls WorkOS's capture
+API under ADR-0058. The capability-runtime half of A-3 stays open.
+
 **Commitments had no deadlines (closed in CP15, ADR-0055).** `due_date` and `due_precision` were
 on the agent's allow-list, accepted by the Tool Gateway and present on the table, and nothing
 populated any of it — the extraction schema never asked. Asking the model for a date was the
@@ -524,6 +534,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 17 | Attention view: six deterministic sections over existing endpoints, each stating the rule that produced it; no new API, no AI scores | ✅ complete · 1115 backend + 92 frontend |
 | 18 | Product integration: lands on Attention, decided proposals readable again, proposal history, "the agent is switched off" distinguished from "the agent found nothing", shell coherence tests | ✅ complete · 1115 backend + 101 frontend + 5 journeys |
 | 19A | Agent policy surface: derived editable grid, a cell's action made load-bearing, admin UI; ADR-0057 | ✅ complete · 1127 backend + 111 frontend |
+| 19B | Ingestion contract: no connector port, the capture API is the seam; executable conformance suite; OpenClaw spike closed on evidence; ADR-0058/0059 | ✅ complete · 1139 backend + 111 frontend |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application
@@ -671,6 +682,24 @@ ceiling and 16 ms is noise beside the provider call that precedes it in the same
 **Index deferred.** `ix_commitment_statement_trgm` becomes worth a migration at roughly 5,000
 standing commitments per committer (~70 ms), or if the committer filter is ever relaxed. Neither is
 true, so CP15 added no migration for it.
+
+### Test isolation and the shared job queue (CP16 flake, investigated in CP19B)
+
+A single full-suite run during CP16 reported one failure whose name was not captured. It did not
+reproduce in **eleven** subsequent full or integration-wide runs, nine of them in shuffled file
+order.
+
+The mechanism that *could* produce it is understood and is worth writing down. `job` is the one
+table a worker reads across organizations by design (`claim()` has no `org_id` predicate, because a
+worker serves every tenant and scopes itself from the row it claims). `execute_approval` in the test
+conftest therefore drains jobs other tests left behind. Every assertion those tests make is
+org-scoped, so a foreign job cannot corrupt a count — but a job that failed and rescheduled itself
+would have spun the drain loop forever.
+
+**Fixed at that level and no further**: the drain is now bounded, so a retry loop fails by name in
+seconds instead of hanging. Test isolation was *not* restructured — `work_org` already gives each
+test its own organization, and rebuilding isolation for a defect that would not reproduce would be
+changing a working design on a hypothesis.
 
 ### Future signals available from data that already exists
 
