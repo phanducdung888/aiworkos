@@ -314,6 +314,13 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 
 ### Resolved
 
+**The connector's IMAP conversation was untested (closed in CP21, ADR-0062).** CP20 covered the
+normaliser and the delivery client and left the `imaplib` loop with no test at all. Driving it
+against a real mail server found a real defect on the first run: `Internaldate2tuple` returns a
+local-time struct, and the fallback timestamp was being relabelled UTC rather than converted —
+seven hours out on the machine it was found on, on exactly the field CP15 reads deadlines
+against. Pinned now by a test that needs no server.
+
 **PQ-1 had no buildable external connector (closed in CP20, ADR-0061).** Its only sanctioned
 external-message source was OpenClaw/WhatsApp, which ADR-0059 showed publishes no outbound
 delivery mechanism; its named non-goals covered every alternative with a verified protocol.
@@ -550,6 +557,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 19A | Agent policy surface: derived editable grid, a cell's action made load-bearing, admin UI; ADR-0057 | ✅ complete · 1127 backend + 111 frontend |
 | 19B | Ingestion contract: no connector port, the capture API is the seam; executable conformance suite; OpenClaw spike closed on evidence; ADR-0058/0059 | ✅ complete · 1139 backend + 111 frontend |
 | 20 | First real connector: IMAP email, ingestion-only role, migration 0014, PQ-1 amended; ADR-0060/0061 | ✅ complete · 1169 backend + 111 frontend + 45 connector |
+| 21 | Connector operations: real mail-server tests (found a timezone defect), TLS modes, service loop, connector topology confined and asserted; ADR-0062 | ✅ complete · 1169 backend + 111 frontend + 81 connector |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

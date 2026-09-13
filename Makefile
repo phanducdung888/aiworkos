@@ -10,7 +10,7 @@ DEV_DB := workos
 TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast connector-test connector-types lint types imports check dev-db test-db seed web-install web-check web-test e2e
+.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast connector-test connector-types connector-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -62,6 +62,12 @@ test-fast: test-unit  ## Alias
 
 connector-test:  ## The connectors' own tests. No database, no mail server, no network.
 	.venv/bin/python -m pytest connectors/tests -q
+
+mail:  ## Start the development mail server (GreenMail) for the IMAP connector
+	docker compose --profile dev up -d mail
+
+connector-smoke:  ## Drive the IMAP connector against a real mail server. Needs `make mail`.
+	RUN_IMAP_TESTS=1 .venv/bin/python -m pytest connectors/tests -q -m imap
 
 connector-types:  ## mypy --strict over the connectors
 	.venv/bin/mypy --strict connectors/

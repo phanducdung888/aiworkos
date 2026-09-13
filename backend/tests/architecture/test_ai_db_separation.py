@@ -26,6 +26,10 @@ COMPOSE = REPO_ROOT / "docker-compose.yml"
 
 DATA_NETWORK = "data"
 AGENT_SERVICE_NAMES = {"agent-runtime", "agent", "openclaw"}
+#: Anything that delivers messages in from outside (ADR-0058). Named the same way the agent
+#: services are, and for the same reason: the rule has to hold for the service that does not
+#: exist yet.
+CONNECTOR_SERVICE_SUFFIX = "-connector"
 DB_ENV_MARKERS = ("DATABASE_URL", "POSTGRES_", "PGHOST", "PGPASSWORD", "REDIS_URL", "MINIO_")
 
 
@@ -109,3 +113,59 @@ def test_no_autonomy_level_above_two_is_representable() -> None:
                 f"{module.relative_to(REPO_ROOT)} contains '{token}'; the MVP ceiling is "
                 "level_2_approved_execution (BR-AI-30, BR-AI-31)"
             )
+
+
+def _connectors(services: dict) -> list[str]:
+    return [name for name in services if name.endswith(CONNECTOR_SERVICE_SUFFIX)]
+
+
+def test_no_connector_is_attached_to_the_data_network() -> None:
+    """ADR-0058, as topology rather than as discipline.
+
+    A connector speaks a vendor's protocol on one side, which is the least trustworthy input this
+    system has. It reaches WorkOS over HTTP like any other client, so it has no business on the
+    network where PostgreSQL, Redis and MinIO live — the same argument ADR-0002 makes about the
+    agent runtime, applied to the other untrusted edge.
+    """
+    services = _compose().get("services", {})
+    for name in _connectors(services):
+        networks = set(services[name].get("networks") or [])
+        assert DATA_NETWORK not in networks, (
+            f"{name} is attached to the {DATA_NETWORK} network; a connector posts to the API"
+        )
+
+
+def test_no_connector_receives_data_tier_credentials() -> None:
+    """It holds a bearer token for one organization and nothing else (ADR-0060)."""
+    services = _compose().get("services", {})
+    for name in _connectors(services):
+        environment = services[name].get("environment") or {}
+        keys = (
+            environment.keys()
+            if isinstance(environment, dict)
+            else [entry.split("=", 1)[0] for entry in environment]
+        )
+        for key in keys:
+            assert not any(marker in key for marker in DB_ENV_MARKERS), (
+                f"{name} is given {key}; a connector holds no data-tier credential"
+            )
+
+
+def test_no_connector_service_carries_a_default_credential() -> None:
+    """A default for a password or a token in this file would be a secret in the repository.
+
+    `${VAR:?...}` fails the deploy with an explanation instead, which is the behaviour worth having
+    when the alternative is a connector silently starting with somebody's example password.
+    """
+    import re
+
+    raw = COMPOSE.read_text()
+    services = _compose().get("services", {})
+    for name in _connectors(services):
+        block = raw[raw.index(f"  {name}:") :]
+        block = block[: block.find("\n  api:")] if "\n  api:" in block else block
+        for secret in ("PASSWORD", "TOKEN", "SECRET"):
+            for match in re.finditer(rf"\$\{{\w*{secret}\w*(:?[-?])", block):
+                assert match.group(1) == ":?", (
+                    f"{name} defaults a {secret.lower()}; it must be required, not defaulted"
+                )

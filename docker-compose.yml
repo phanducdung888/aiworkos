@@ -56,6 +56,58 @@ services:
       - ./ops/keycloak:/opt/keycloak/data/import:ro
     networks: [app, edge]
 
+  # A real IMAP server for developing and testing the connector (ADR-0061). Never part of a
+  # deployment: it is started by `make mail` and the tests that use it are opt-in, for the same
+  # reason the real-provider tests are — CI stays offline and nothing is skipped in the environment
+  # that should run it.
+  #
+  # Attached to `edge` only. A connector reaches WorkOS over HTTP like any other client, so a mail
+  # server has no business on `data` and this file is where that is visible.
+  mail:
+    image: greenmail/standalone:2.1.0
+    profiles: ["dev"]
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.smtp
+        -Dgreenmail.setup.test.imap
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.auth.disabled
+    ports:
+      - "127.0.0.1:${GREENMAIL_SMTP_PORT:-3025}:3025"
+      - "127.0.0.1:${GREENMAIL_IMAP_PORT:-3143}:3143"
+    networks: [edge]
+
+  # The IMAP connector, as it would actually be deployed (ADR-0058, ADR-0061).
+  #
+  # No build step, because there is nothing to install: the connector is standard library only, so
+  # a stock Python image with the source mounted read-only *is* the deployment. That is a statement
+  # about the connector rather than a shortcut — it shares no dependency with the application it
+  # posts to.
+  #
+  # `edge` only, and no data-tier credential anywhere in its environment. It reaches WorkOS over
+  # HTTP like any other client, and `test_no_connector_touches_the_data_tier` asserts this file
+  # keeps that shape.
+  imap-connector:
+    image: python:3.12-slim
+    profiles: ["pilot"]
+    working_dir: /srv
+    volumes:
+      - ./connectors:/srv/connectors:ro
+    command: ["python", "-m", "connectors.imap.run", "--interval", "${IMAP_INTERVAL:-60}"]
+    environment:
+      IMAP_HOST: ${IMAP_HOST:?set the mail server}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_SECURITY: ${IMAP_SECURITY:-ssl}
+      IMAP_USERNAME: ${IMAP_USERNAME:?set the mailbox}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:?from your secret store, never from a file in this repository}
+      IMAP_MAILBOX: ${IMAP_MAILBOX:-INBOX}
+      WORKOS_URL: ${WORKOS_URL:-http://api:8000}
+      WORKOS_INGESTION_TOKEN: ${WORKOS_INGESTION_TOKEN:?an ingestion-role credential (ADR-0060)}
+      WORKOS_ORGANIZATION_ID: ${WORKOS_ORGANIZATION_ID:?which organization this mailbox feeds}
+    depends_on: [api]
+    restart: unless-stopped
+    networks: [edge]
+
   api:
     build:
       context: ./backend

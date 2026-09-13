@@ -65,6 +65,16 @@ class CanonicalMessage:
     body_text: str
     participants: tuple[dict[str, str], ...]
     idempotency_key: str
+    #: Filenames this message carried and this connector did not deliver.
+    #:
+    #: Attachments are a separate flow — a presigned upload against the Event, not a field on it
+    #: (ADR-0039) — and CP21 does not implement it. They are named here so the loop can say what it
+    #: left behind: a message whose substance is in a PDF arrives as its covering note, and an
+    #: operator who cannot see that has no way to know why the analysis found so little.
+    #:
+    #: Deliberately *not* in `as_event()`. Mentioning them in `body_text` would put words into the
+    #: Event that nobody wrote, and Evidence is quoted from that body (BR-E-05).
+    dropped_attachments: tuple[str, ...] = ()
 
     def as_event(self) -> dict[str, Any]:
         """The JSON body. `type` and `origin` are fixed: a connector reports what it received."""
@@ -104,6 +114,7 @@ def parse_message(
         body_text=body,
         participants=_participants(parsed),
         idempotency_key=idempotency_key(source_system, _reference(parsed, raw), body),
+        dropped_attachments=_attachments(parsed),
     )
 
 
@@ -198,6 +209,17 @@ def _body_of(parsed: email.message.Message) -> str:
         if part.get_content_type() == "text/html" and html is None:
             html = _decode(part)
     return _strip_html(html) if html else ""
+
+
+def _attachments(parsed: email.message.Message) -> tuple[str, ...]:
+    """What was attached, by name only. The bytes are not read and not sent."""
+    if not parsed.is_multipart():
+        return ()
+    return tuple(
+        name
+        for part in parsed.walk()
+        if part.get_content_maintype() != "multipart" and (name := part.get_filename())
+    )
 
 
 def _decode(part: email.message.Message) -> str:

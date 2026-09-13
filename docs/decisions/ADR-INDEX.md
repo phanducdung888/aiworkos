@@ -76,6 +76,7 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0059 | OpenClaw publishes no outbound delivery contract; the integration direction reverses | accepted, supersedes part of 0053 | A-3, ADR-0027, ADR-0053 |
 | 0060 | An ingestion-only role, holding one grant | accepted | ADR-0027, ADR-0058, migration 0014 |
 | 0061 | Email over IMAP is the first connector; PQ-1 amended | accepted, amends Decision Pack v1.0 | PQ-1, ADR-0058, ADR-0059 |
+| 0062 | A connector is an untrusted edge, confined and tested like one | accepted | ADR-0002, ADR-0058, ADR-0061 |
 
 ---
 
@@ -1699,3 +1700,60 @@ speaking the same contract, with no change to WorkOS.
 
 Not decided here: whether email is a source the product *wants* long-term, which is a product
 question the pilot will answer. This ADR records that it is permitted and that it is first.
+
+
+### ADR-0062 — A connector is an untrusted edge, confined and tested like one
+
+**Context.** CP20 shipped the IMAP connector with its normaliser and its delivery client covered and
+its actual IMAP conversation covered by nothing — 198 lines whose only verification was that they
+type-checked. CP21's recommendation was to run it against a real mailbox and fix what broke. A
+production mailbox was not available; a real mail server was.
+
+**Decision, in three parts.**
+
+**1. A connector is confined by topology, not by discipline.** ADR-0002 argues the agent runtime
+must be unable to reach the database, and enforces it in `docker-compose.yml` rather than in
+review. A connector is the system's *other* untrusted edge — it speaks a vendor's protocol to the
+open internet — and gets the same treatment: `edge` network only, no data-tier credential in its
+environment, and no defaulted password or token in the compose file.
+`test_no_connector_is_attached_to_the_data_network` and its two siblings assert this file keeps that
+shape, matching the agent tests that have guarded the same property since Phase 1.
+
+**2. Its tests are layered the way the provider tests are.** `test_canonical` and `test_client` need
+nothing and always run. `test_mailbox` drives the real `imaplib` client against a real IMAP server
+(GreenMail, a `dev` profile in compose) and is **opt-in** — `RUN_IMAP_TESTS=1` — because a suite
+that needs a service to be up is a suite that gets skipped in the environment which should run it.
+That is the same argument, and the same shape, as the real-provider smoke tests.
+
+**It found a real defect immediately**, which is the argument for the layer existing.
+`imaplib.Internaldate2tuple` returns a *local-time* struct for the correct instant; the connector
+was treating those fields as UTC, so a message with no `Date` header arrived with a timestamp shifted
+by the connector host's own offset — seven hours on the machine it was found on. CP15 reads
+deadlines against `occurred_at` (ADR-0055), so that would have become a wrong date on somebody's
+promise, silently. It is now pinned by a test that needs no server, using an INTERNALDATE with a
+non-zero offset so it fails on a UTC host too.
+
+**A test server is not a real mailbox**, and this ADR does not claim otherwise. GreenMail is an
+independent implementation of RFC 3501, so it catches assumptions a fake written alongside the
+client would have shared; it does not catch what a particular provider does with folder names, flags
+or fetch responses. That risk is closed by a pilot, not by another test.
+
+**3. TLS is the default and clear text has to be asked for.** `IMAP_SECURITY` is `ssl` (implicit TLS
+on 993), `starttls` (the 143 upgrade many servers offer, performed before `login` so the password
+never crosses in clear), or `none`. `none` exists because the test server needs it, and it is the one
+value with no default path to it — a mailbox password in clear text is not something to arrive at by
+leaving a setting unset.
+
+**Consequences.** The connector runs as a service (`--interval`) and stops cleanly on SIGTERM, so a
+pass in flight finishes and a message is never marked seen by a process killed before WorkOS had it;
+the reverse is harmless because the redelivery carries the same derived key.
+
+Attachments are still not delivered — that is the presigned-upload flow of ADR-0039 and a piece of
+work in its own right — but they are no longer dropped in silence: the loop names what it left
+behind. They are deliberately absent from the Event body, because mentioning them there would put
+words into a record nobody wrote and Evidence is quoted from it (BR-E-05).
+
+Rejected: an in-process IMAP fake as the only server-side test (it would share the client's
+assumptions, which is precisely what the defect above was); making the mail server a default compose
+service (a test dependency in a deployment); a `--once` flag (one pass is what you get by not asking
+for a service).

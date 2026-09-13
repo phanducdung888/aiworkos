@@ -271,3 +271,39 @@ class TestIdempotencyKey:
         assert idempotency_key("email.imap", "m1", "hello") != idempotency_key(
             "email.support", "m1", "hello"
         )
+
+
+class TestAttachments:
+    """CP21 names what it does not deliver, rather than dropping it in silence."""
+
+    def an_attached_message(self) -> bytes:
+        return (
+            b"From: mai@example.test\r\nTo: khoa@example.test\r\n"
+            b"Message-ID: <att@example.test>\r\n"
+            b"Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n"
+            b'Content-Type: multipart/mixed; boundary="b"\r\n\r\n'
+            b"--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+            b"The quote is attached.\r\n"
+            b"--b\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="quote.pdf"\r\n\r\n'
+            b"%PDF-1.4 not really\r\n"
+            b"--b--\r\n"
+        )
+
+    def test_the_attachment_is_named(self) -> None:
+        assert parse_message(self.an_attached_message()).dropped_attachments == ("quote.pdf",)
+
+    def test_the_body_is_the_message_and_not_the_attachment(self) -> None:
+        message = parse_message(self.an_attached_message())
+        assert message.body_text.strip() == "The quote is attached."
+        assert "PDF" not in message.body_text
+
+    def test_the_event_says_nothing_about_them(self) -> None:
+        """Mentioning them in `body_text` would put words into the Event nobody wrote, and Evidence
+        is quoted from that body (BR-E-05)."""
+        event = parse_message(self.an_attached_message()).as_event()
+        assert "quote.pdf" not in str(event)
+        assert "dropped_attachments" not in event
+
+    def test_a_message_with_no_attachment_names_none(self) -> None:
+        assert parse_message(a_message()).dropped_attachments == ()
