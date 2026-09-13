@@ -83,7 +83,8 @@ describe('Attention', () => {
     renderSurface(<Attention />)
 
     const section = await screen.findByTestId('overdue-commitments')
-    expect(within(section).getByRole('heading')).toHaveTextContent('Lời hứa quá hạn (1)')
+    expect(within(section).getByRole('heading')).toHaveTextContent('Lời hứa quá hạn')
+    expect(within(section).getByRole('heading')).toHaveTextContent('1')
     expect(within(section).getByRole('link')).toHaveAttribute('href', `/commitments/${COMMITMENT}`)
     expect(section).toHaveTextContent('Mai Tran')
     expect(section).toHaveTextContent('2020-01-01')
@@ -104,8 +105,9 @@ describe('Attention', () => {
       'overdue-work',
     ]) {
       const section = screen.getByTestId(testId)
-      expect(section.textContent).toMatch(/\(0\)/)
-      // A stated rule, not just a heading and a count.
+      expect(section.querySelector('.panel__count')?.textContent).toBe('0')
+      // A stated rule, not just a heading and a count. Settled sections collapse to one line
+      // and hide the rule visually (CP28), so this reads the DOM rather than the screen.
       expect(section.querySelector('.field__hint')?.textContent ?? '').not.toBe('')
     }
     expect(screen.getByTestId('overdue-commitments')).toHaveTextContent(/hạn chót không ai đặt ra/i)
@@ -124,8 +126,10 @@ describe('Attention', () => {
     // `captured` is what the system heard, not what anybody agreed (BR-C-05) — a different kind of
     // attention from a missed deadline, so a different section.
     const section = await screen.findByTestId('unacknowledged')
-    expect(section).toHaveTextContent('(1)')
-    expect(screen.getByTestId('overdue-commitments')).toHaveTextContent('(0)')
+    expect(section.querySelector('.panel__count')?.textContent).toBe('1')
+    expect(
+      screen.getByTestId('overdue-commitments').querySelector('.panel__count')?.textContent,
+    ).toBe('0')
   })
 
   it('points at proposals whose decision window is nearly up', async () => {
@@ -174,7 +178,7 @@ describe('Attention', () => {
     renderSurface(<Attention />)
 
     const section = await screen.findByTestId('overdue-work')
-    expect(section).toHaveTextContent('(1)')
+    expect(section.querySelector('.panel__count')?.textContent).toBe('1')
   })
 
   it('has no accessibility violations', async () => {

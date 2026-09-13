@@ -13,7 +13,7 @@ import { useState } from 'react'
 import { useAttachmentContent } from '@/api/hooks'
 import type { EventAttachment } from '@/api/hooks'
 import { ApiProblem } from '@/api/problem'
-import { attachmentStatus } from '@/components/vocabulary'
+import { Badge } from '@/components/Badge'
 
 function size(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined) return ''
@@ -68,8 +68,10 @@ export function Attachments({
             <span className="field__hint">
               {attachment.media_type}
               {size(attachment.size_bytes) ? ` · ${size(attachment.size_bytes)}` : ''}
-              {attachment.status === 'available' ? '' : ` · ${attachmentStatus(attachment.status)}`}
-            </span>
+            </span>{' '}
+            {attachment.status === 'available' ? null : (
+              <Badge kind="attachment" value={attachment.status} />
+            )}
           </li>
         ))}
       </ul>

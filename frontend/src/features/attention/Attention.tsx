@@ -25,6 +25,8 @@ import {
 } from '@/api/hooks'
 import { ErrorState, Loading } from '@/components/States'
 import { nameOf } from '@/components/Provenance'
+import { Badge } from '@/components/Badge'
+import { targetType } from '@/components/vocabulary'
 import { due } from '@/features/commitments/Commitments'
 
 /** How far ahead "soon" looks. A working week, and stated rather than tuned in silence. */
@@ -118,7 +120,7 @@ export function Attention() {
           <>
             <Link to={`/proposals/${proposal.id}`}>{proposal.summary}</Link>{' '}
             <span className="field__hint">
-              tạo ra {proposal.target_type}
+              tạo ra {targetType(proposal.target_type)}
               {isExpiringSoon(proposal) ? ' · sắp hết hạn' : ''}
             </span>
           </>
@@ -151,9 +153,8 @@ export function Attention() {
         render={(item) => (
           <>
             <Link to={`/work/${item.id}`}>{item.title}</Link>{' '}
-            <span className="field__hint">
-              hạn {item.due_date} · {item.status}
-            </span>
+            <span className="field__hint">hạn {item.due_date}</span>{' '}
+            <Badge kind="work" value={item.status} />
           </>
         )}
       />
@@ -166,7 +167,8 @@ function CommitmentRow({ promise, people }: { promise: Commitment; people?: Pers
     <>
       <Link to={`/commitments/${promise.id}`}>{promise.statement}</Link>{' '}
       <span className="field__hint">
-        {nameOf(people, promise.committed_by_person_id)} · {due(promise)} · {promise.status}
+        {nameOf(people, promise.committed_by_person_id)} · {due(promise)}{' '}
+        <Badge kind="commitment" value={promise.status} />
       </span>
     </>
   )
@@ -196,16 +198,27 @@ function Section<T extends Commitment | Proposal | Work>({
   note?: string
 }) {
   return (
-    <section aria-labelledby={`${testId}-heading`} data-testid={testId}>
+    // Mục rỗng vẫn hiện, nhưng thu lại thành một dòng. "Không lời hứa nào quá hạn" là câu trả lời
+    // người ta đến đây để nghe — giấu nó đi thì màn hình im lặng, còn để nó chiếm cả một tấm thẻ
+    // thì sáu mục mà bốn rỗng sẽ đẩy phần thật sự cần đọc xuống dưới màn hình.
+    <section
+      aria-labelledby={`${testId}-heading`}
+      data-testid={testId}
+      className={items.length === 0 ? 'panel panel--settled' : 'panel'}
+    >
       <h2 id={`${testId}-heading`}>
-        {title} ({items.length})
+        {title} <span className="panel__count">{items.length}</span>
       </h2>
       <p className="field__hint">{why}</p>
-      {note ? <p data-testid={`${testId}-note`}>{note}</p> : null}
+      {note ? (
+        <p className="panel__note" data-testid={`${testId}-note`}>
+          {note}
+        </p>
+      ) : null}
       {items.length === 0 ? (
-        <p>Không có.</p>
+        <p className="panel__settled">Không có.</p>
       ) : (
-        <ul>
+        <ul className="rows">
           {items.map((item) => (
             <li key={item.id}>{render(item)}</li>
           ))}

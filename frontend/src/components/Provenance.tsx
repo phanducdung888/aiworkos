@@ -146,7 +146,7 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
           {approval.data ? (
             <p data-testid="provenance-approval">
               {nameOf(people, approval.data.approver_person_id)} lúc{' '}
-              {formatted(approval.data.decided_at)} · thực thi{' '}
+              {formatted(approval.data.decided_at)} ·{' '}
               {executionStatus(approval.data.execution_status)}
               {approval.data.execution_error ? ` (${approval.data.execution_error})` : ''}
             </p>

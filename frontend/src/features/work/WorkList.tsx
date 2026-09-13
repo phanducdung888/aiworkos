@@ -11,7 +11,7 @@ import { useWork } from '@/api/hooks'
 import type { WorkFilters, WorkStatus } from '@/api/hooks'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { Field } from '@/components/Field'
-import { workStatus } from '@/components/vocabulary'
+import { Badge } from '@/components/Badge'
 
 const STATUSES: WorkStatus[] = [
   'proposed',
@@ -95,7 +95,9 @@ export function WorkList() {
                 <th scope="row">
                   <Link to={`/work/${item.id}`}>{item.title}</Link>
                 </th>
-                <td>{workStatus(item.status)}</td>
+                <td>
+                  <Badge kind="work" value={item.status} />
+                </td>
                 <td>{item.project_id === null ? 'Ngoài dự án' : 'Trong dự án'}</td>
                 <td>{item.due_date ?? '—'}</td>
               </tr>

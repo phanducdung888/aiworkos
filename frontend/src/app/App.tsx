@@ -30,11 +30,19 @@ export function App() {
   }
   if (auth.status === 'signed-out') {
     return (
-      <main>
-        <h1>AI WorkOS</h1>
-        <button type="button" onClick={auth.signIn}>
-          Đăng nhập
-        </button>
+      <main className="gate">
+        <div className="gate__card">
+          <span className="brand brand--large">
+            <span className="brand__mark" aria-hidden="true" />
+            AI WorkOS
+          </span>
+          <p className="gate__lead">
+            Hệ thống quản trị công việc. Ghi nhận từ hoạt động thật, không phải từ biểu mẫu.
+          </p>
+          <button type="button" className="button button--primary" onClick={auth.signIn}>
+            Đăng nhập
+          </button>
+        </div>
       </main>
     )
   }
@@ -51,21 +59,37 @@ export function App() {
   const canManagePolicy = me.data.roles.includes('org_admin')
 
   return (
-    <>
-      <header>
+    <div className="shell">
+      <header className="shell__bar">
+        <span className="brand">
+          <span className="brand__mark" aria-hidden="true" />
+          AI WorkOS
+        </span>
+        {/* Grouped by what a person came to do, not by entity. "Cần xử lý" is where the day starts;
+            "Ghi nhận" is how things get in; "Quản trị" is rare and deliberately last. */}
         <nav aria-label="Điều hướng chính">
-          <NavLink to="/attention">Cần chú ý</NavLink>
-          <NavLink to="/work">Công việc</NavLink>
-          <NavLink to="/work/new">Tạo công việc</NavLink>
-          <NavLink to="/capture">Ghi nhận tin nhắn</NavLink>
-          <NavLink to="/commitments">Lời hứa</NavLink>
-          <NavLink to="/proposals">Đề xuất</NavLink>
-          {canManageProjects ? <NavLink to="/projects">Dự án</NavLink> : null}
-          {canManagePolicy ? <NavLink to="/agent-policy">Quyền của AI</NavLink> : null}
+          <span className="nav__group">
+            <NavLink to="/attention">Cần chú ý</NavLink>
+            <NavLink to="/proposals">Đề xuất</NavLink>
+            <NavLink to="/commitments">Lời hứa</NavLink>
+          </span>
+          <span className="nav__group">
+            <NavLink to="/work">Công việc</NavLink>
+            {canManageProjects ? <NavLink to="/projects">Dự án</NavLink> : null}
+          </span>
+          <span className="nav__group">
+            <NavLink to="/work/new">Tạo công việc</NavLink>
+            <NavLink to="/capture">Ghi nhận tin nhắn</NavLink>
+          </span>
+          {canManagePolicy ? (
+            <span className="nav__group">
+              <NavLink to="/agent-policy">Quyền của AI</NavLink>
+            </span>
+          ) : null}
         </nav>
-        <p>
-          <span data-testid="me-name">{me.data.display_name}</span>{' '}
-          <button type="button" onClick={auth.signOut}>
+        <p className="shell__who">
+          <span data-testid="me-name">{me.data.display_name}</span>
+          <button type="button" className="button button--quiet" onClick={auth.signOut}>
             Đăng xuất
           </button>
         </p>
@@ -88,6 +112,6 @@ export function App() {
           <Route path="/agent-policy" element={<AgentPolicy />} />
         </Routes>
       </main>
-    </>
+    </div>
   )
 }

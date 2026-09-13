@@ -1,21 +1,441 @@
-/* Phase 1 is not a visual design (contract §14). This is legibility and focus visibility, and it
-   stops there so that nobody mistakes it for a decision about how the product should look. */
-:root { color-scheme: light dark; --edge: color-mix(in oklab, currentColor 22%, transparent); }
-body { margin: 0; font: 16px/1.5 system-ui, sans-serif; }
-header { display: flex; gap: 1rem; justify-content: space-between; align-items: baseline;
-         padding: .75rem 1rem; border-bottom: 1px solid var(--edge); flex-wrap: wrap; }
-nav { display: flex; gap: 1rem; }
-nav a[aria-current='page'] { font-weight: 700; text-decoration-thickness: 2px; }
-main { padding: 1rem; max-width: 70rem; }
-table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--edge); }
-.partitions { display: flex; gap: 2rem; margin: 0 0 1rem; }
-.partitions dt { font-size: .85rem; opacity: .75; }
-.partitions dd { margin: 0; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
-.field { display: flex; flex-direction: column; gap: .25rem; max-width: 28rem; }
-.field__hint, .state__hint { font-size: .85rem; opacity: .75; }
-.field__error { max-width: 28rem; border-left: 3px solid currentColor; padding-left: .75rem; }
-.actions { display: flex; gap: .5rem; flex-wrap: wrap; }
-.state--error, .state--forbidden { border-left: 3px solid currentColor; padding-left: .75rem; }
-:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* AI WorkOS — giao diện.
+ *
+ * Một công cụ quản trị, không phải một trang giới thiệu. Nguyên tắc của bảng màu và khoảng cách ở
+ * đây là: mật độ thông tin cao nhưng đọc được, phân cấp rõ bằng khoảng trắng và đường kẻ mảnh thay
+ * vì bằng đổ bóng, và đúng một màu nhấn — dùng cho hành động chính và trạng thái đang chọn, không
+ * dùng để trang trí.
+ *
+ * Không có framework CSS. Không phải vì nguyên tắc, mà vì toàn bộ giao diện này là mười chín màn
+ * hình dùng chung khoảng hai mươi thành phần; một framework sẽ là phụ thuộc lớn hơn thứ nó thay thế.
+ *
+ * Mọi màu đều khai báo bằng token ở `:root` và khai báo lại cho chế độ tối. Không màu nào được viết
+ * thẳng vào thành phần — đó là cách một bảng màu giữ được tính nhất quán khi có người thêm màn hình
+ * thứ hai mươi.
+ */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-sunken: #f2f4f7;
+  --ink: #14181f;
+  --ink-soft: #5a6272;
+  --ink-faint: #858c9a;
+  --line: #e3e6ec;
+  --line-strong: #cdd2dc;
+
+  --accent: #3056d3;
+  --accent-ink: #ffffff;
+  --accent-soft: #eef2ff;
+  --accent-line: #c7d2fe;
+
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --danger-line: #fecdca;
+  --warn: #b54708;
+  --warn-soft: #fffaeb;
+  --warn-line: #fedf89;
+  --good: #067647;
+  --good-soft: #ecfdf3;
+  --good-line: #abefc6;
+
+  --radius: 8px;
+  --radius-sm: 5px;
+  --gap: 1rem;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%);
+
+  --font: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0f1218;
+    --surface: #171b23;
+    --surface-sunken: #1e232c;
+    --ink: #e8eaee;
+    --ink-soft: #a2aab8;
+    --ink-faint: #79818f;
+    --line: #262c36;
+    --line-strong: #354050;
+    --accent: #7b93f5;
+    --accent-ink: #0f1218;
+    --accent-soft: #1b2340;
+    --accent-line: #2f3d69;
+    --danger: #f97066;
+    --danger-soft: #2a1614;
+    --danger-line: #5b2320;
+    --warn: #fdb022;
+    --warn-soft: #2a1d0c;
+    --warn-line: #5c3d10;
+    --good: #47cd89;
+    --good-soft: #0d2620;
+    --good-line: #1a4b3a;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.6 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- khung ứng dụng ------------------------------------------------------------------------ */
+
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.shell__bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0 1.25rem;
+  min-height: 56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.brand__mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, var(--accent), color-mix(in oklab, var(--accent) 55%, #7c3aed));
+}
+.brand--large { font-size: 1.15rem; }
+.brand--large .brand__mark { width: 24px; height: 24px; border-radius: 7px; }
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex: 1;
+  flex-wrap: wrap;
+}
+/* Nhóm theo việc người dùng đến để làm. Dấu phân cách là một đường mảnh, không phải một tiêu đề:
+   nhóm ở đây để mắt đỡ phải quét tám mục ngang hàng, chứ không phải để đặt tên cho chúng. */
+.nav__group { display: flex; gap: 1rem; padding-right: 1.25rem; border-right: 1px solid var(--line); }
+.nav__group:last-of-type { border-right: 0; padding-right: 0; }
+
+nav a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: .9rem;
+  padding: .35rem 0;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+nav a:hover { color: var(--ink); }
+nav a[aria-current='page'] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+.shell__who {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin: 0;
+  font-size: .9rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+main { padding: 1.75rem 1.25rem 4rem; max-width: 78rem; width: 100%; margin: 0 auto; }
+
+/* --- cổng vào (đăng nhập, chọn tổ chức) ---------------------------------------------------- */
+
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 1.25rem; }
+.gate__card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 2rem;
+  width: min(30rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.gate__card h2 { margin: 0; font-size: 1.05rem; }
+.gate__lead { margin: 0; color: var(--ink-soft); }
+
+/* --- chữ ----------------------------------------------------------------------------------- */
+
+h1 { font-size: 1.5rem; line-height: 1.3; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
+h2 { font-size: 1.05rem; letter-spacing: -0.01em; margin: 0 0 .6rem; }
+h3 { font-size: .95rem; margin: 0 0 .4rem; }
+p { margin: 0 0 .75rem; }
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* Mỗi mục là một tấm thẻ. Ranh giới nhìn thấy được là thứ khiến một màn hình dày đặc vẫn đọc được:
+   người đọc biết chỗ nào một ý kết thúc mà không cần đọc hết. */
+main > section,
+main > form > section,
+section[aria-labelledby] {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin: 0 0 1rem;
+}
+section[aria-labelledby] section[aria-labelledby] {
+  background: var(--surface-sunken);
+  margin: 1rem 0 0;
+}
+
+/* --- danh sách mô tả ----------------------------------------------------------------------- */
+
+dl {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: .4rem 1.5rem;
+  margin: 0 0 .5rem;
+  align-items: baseline;
+}
+dl > div { display: contents; }
+dt { color: var(--ink-soft); font-size: .85rem; }
+dd { margin: 0; }
+
+.partitions {
+  display: flex;
+  gap: 2.5rem;
+  margin: 0 0 1.25rem;
+  grid-template-columns: none;
+}
+.partitions dt { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.partitions dd { font-size: 1.6rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* --- bảng ---------------------------------------------------------------------------------- */
+
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+caption { text-align: left; color: var(--ink-soft); font-size: .85rem; padding-bottom: .6rem; }
+th {
+  text-align: left;
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ink-faint);
+  font-weight: 600;
+  padding: .5rem .75rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+td { padding: .65rem .75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-sunken); }
+
+/* --- biểu mẫu ------------------------------------------------------------------------------ */
+
+.field { display: flex; flex-direction: column; gap: .3rem; max-width: 30rem; margin: 0 0 1rem; }
+.field > label { font-size: .85rem; font-weight: 550; color: var(--ink); }
+.field__hint, .state__hint { font-size: .82rem; color: var(--ink-soft); }
+
+input, select, textarea {
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: .5rem .65rem;
+  width: 100%;
+  max-width: 30rem;
+}
+textarea { min-height: 7rem; resize: vertical; }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft); }
+fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin: 0 0 1rem; }
+legend { font-size: .85rem; font-weight: 600; padding: 0 .4rem; color: var(--ink-soft); }
+
+/* --- nút ----------------------------------------------------------------------------------- */
+
+button {
+  font: inherit;
+  font-size: .9rem;
+  font-weight: 550;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: .45rem .85rem;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--surface-sunken); border-color: var(--ink-faint); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.button--primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent) 88%, black);
+  border-color: color-mix(in oklab, var(--accent) 88%, black);
+}
+.button--quiet { background: transparent; border-color: transparent; color: var(--ink-soft); padding: .3rem .5rem; }
+.button--quiet:hover:not(:disabled) { background: var(--surface-sunken); color: var(--ink); }
+
+.actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0 0; }
+
+/* --- trạng thái ---------------------------------------------------------------------------- */
+
+.state { color: var(--ink-soft); }
+.state--empty { padding: 1.25rem; text-align: center; background: var(--surface-sunken);
+  border-radius: var(--radius); color: var(--ink-soft); }
+
+.state--error, .state--forbidden, .field__error, [role='alert'] {
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  padding: .7rem .9rem;
+  margin: .5rem 0;
+  max-width: none;
+}
+.state--error p, .state--forbidden p, [role='alert'] p { margin: 0; }
+.state--error .state__hint, .state--forbidden .state__hint { color: inherit; opacity: .85; }
+.state--error button { margin-top: .5rem; }
+
+blockquote {
+  margin: 0 0 .75rem;
+  padding: .75rem 1rem;
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--accent-line);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-style: normal;
+}
+
+/* Chuỗi nguồn gốc: bốn bước, đánh số, mỗi bước là một mắt xích nhìn thấy được. */
+.provenance { list-style: none; counter-reset: step; padding: 0; margin: 0; }
+.provenance > li {
+  counter-increment: step;
+  position: relative;
+  padding: 0 0 1.25rem 2.25rem;
+  border-left: 1px solid var(--line-strong);
+  margin-left: .7rem;
+}
+.provenance > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.provenance > li::before {
+  content: counter(step);
+  position: absolute;
+  left: -.7rem;
+  top: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-size: .75rem;
+  font-weight: 650;
+  display: grid;
+  place-items: center;
+}
+
+/* --- nhãn trạng thái ------------------------------------------------------------------------ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .78rem;
+  font-weight: 550;
+  line-height: 1.4;
+  padding: .1rem .5rem;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.badge--danger { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger); }
+.badge--warn { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn); }
+.badge--good { background: var(--good-soft); border-color: var(--good-line); color: var(--good); }
+
+/* --- mục trên màn hình "Cần chú ý" --------------------------------------------------------- */
+
+.panel__count {
+  display: inline-block;
+  min-width: 1.5rem;
+  text-align: center;
+  margin-left: .4rem;
+  padding: 0 .4rem;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  font-size: .78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+section.panel:not(.panel--settled) .panel__count {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
+/* Mục đã yên: vẫn hiện, nhưng nhẹ đi và chỉ chiếm một dòng. */
+section.panel--settled { padding: .85rem 1.25rem; }
+section.panel--settled h2 { margin: 0; font-size: .95rem; color: var(--ink-soft); font-weight: 550; }
+section.panel--settled .field__hint { display: none; }
+section.panel--settled .panel__settled { margin: 0; font-size: .85rem; color: var(--ink-faint); }
+
+.panel__note {
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-line);
+  color: var(--warn);
+  border-radius: var(--radius-sm);
+  padding: .5rem .75rem;
+  font-size: .85rem;
+}
+
+/* Danh sách dòng: một liên kết đậm, phần còn lại là chú thích. */
+.rows { list-style: none; padding: 0; margin: .75rem 0 0; }
+.rows > li {
+  padding: .6rem 0;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.rows > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.rows a { font-weight: 550; text-decoration: none; }
+.rows a:hover { text-decoration: underline; }
+
+/* --- linh tinh ----------------------------------------------------------------------------- */
+
+code, .mono { font-family: var(--mono); font-size: .85em; }
+details > summary { cursor: pointer; color: var(--ink-soft); font-size: .9rem; }
+ul { padding-left: 1.1rem; }
+li { margin: .2rem 0; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+
+@media (max-width: 860px) {
+  .shell__bar { padding: .6rem 1rem; gap: .75rem; }
+  nav { order: 3; width: 100%; gap: .85rem; }
+  .nav__group { border-right: 0; padding-right: 0; gap: .85rem; }
+  main { padding: 1.25rem 1rem 3rem; }
+  dl { grid-template-columns: 1fr; gap: .1rem .75rem; }
+  dl > div { display: block; margin-bottom: .5rem; }
+  .partitions { gap: 1.5rem; }
+  table { display: block; overflow-x: auto; }
+}

@@ -25,7 +25,7 @@ import { Empty, ErrorState, Loading } from '@/components/States'
 import { PersonPicker } from '@/components/PersonPicker'
 import { Provenance, nameOf } from '@/components/Provenance'
 import { useCommitments, usePeople } from '@/api/hooks'
-import { commitmentStatus, workStatus } from '@/components/vocabulary'
+import { Badge } from '@/components/Badge'
 
 /** BR-W-03. The client offers exactly the edges the domain declares — no more, and no fewer. */
 const TRANSITIONS: Record<string, WorkStatus[]> = {
@@ -52,7 +52,9 @@ export function WorkDetail() {
       <h1 id="work-title">{item.title}</h1>
       <dl>
         <dt>Trạng thái</dt>
-        <dd data-testid="work-status">{workStatus(item.status)}</dd>
+        <dd data-testid="work-status">
+          <Badge kind="work" value={item.status} />
+        </dd>
         <dt>Phân nhóm</dt>
         <dd>{item.project_id === null ? 'Ngoài dự án' : 'Trong dự án'}</dd>
         <dt>Phạm vi xem</dt>
@@ -280,7 +282,8 @@ function Promises({ workId }: { workId: string }) {
             <li key={promise.id}>
               <Link to={`/commitments/${promise.id}`}>{promise.statement}</Link>{' '}
               <span className="field__hint">
-                {nameOf(people.data, promise.committed_by_person_id)} · {commitmentStatus(promise.status)}
+                {nameOf(people.data, promise.committed_by_person_id)}{' '}
+                <Badge kind="commitment" value={promise.status} />
                 {promise.due_date ? ` · hạn ${promise.due_date}` : ''}
               </span>
             </li>

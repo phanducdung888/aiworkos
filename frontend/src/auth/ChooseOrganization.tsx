@@ -70,9 +70,12 @@ export function ChooseOrganization() {
   }
 
   return (
-    <main>
-      <h1>AI WorkOS</h1>
-      <section aria-labelledby="choose-org-heading">
+    <main className="gate">
+      <section className="gate__card" aria-labelledby="choose-org-heading">
+        <span className="brand brand--large">
+          <span className="brand__mark" aria-hidden="true" />
+          AI WorkOS
+        </span>
         <h2 id="choose-org-heading">Chọn tổ chức bạn đang làm việc</h2>
         <p>
           WorkOS không bao giờ tự đoán mục này. Mã tổ chức được hiển thị khi tổ chức được tạo; sau
@@ -100,12 +103,12 @@ export function ChooseOrganization() {
               {problem}
             </p>
           ) : null}
-          <button type="submit" disabled={checking || !value.trim()}>
+          <button type="submit" className="button button--primary" disabled={checking || !value.trim()}>
             {checking ? 'Đang kiểm tra…' : 'Tiếp tục'}
           </button>
         </form>
         <p>
-          <button type="button" onClick={auth.signOut}>
+          <button type="button" className="button button--quiet" onClick={auth.signOut}>
             Đăng xuất
           </button>
         </p>

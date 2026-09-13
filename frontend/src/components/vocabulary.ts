@@ -76,3 +76,12 @@ export const executionStatus = (v: string | null | undefined): string =>
 export const eventType = (v: string | null | undefined): string => lookup(EVENT_TYPE, v)
 export const attachmentStatus = (v: string | null | undefined): string =>
   lookup(ATTACHMENT_STATUS, v)
+
+const TARGET_TYPE: Record<string, string> = {
+  commitment: 'một lời hứa',
+  work: 'một công việc',
+  work_assignment: 'một phân công',
+  project: 'một dự án',
+}
+
+export const targetType = (v: string | null | undefined): string => lookup(TARGET_TYPE, v)

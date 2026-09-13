@@ -32,7 +32,7 @@ import {
 import { Attachments } from '@/components/Attachments'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { Field } from '@/components/Field'
-import { executionStatus } from '@/components/vocabulary'
+import { Badge } from '@/components/Badge'
 
 /**
  * The band, from the same floors the backend publishes (`BAND_FLOOR`, ADR-0050).
@@ -308,7 +308,9 @@ function Outcome({ proposalId }: { proposalId: string }) {
         <dt>Uỷ quyền đến</dt>
         <dd>{formatted(record.execution_expires_at)}</dd>
         <dt>Thực thi</dt>
-        <dd data-testid="execution-status">{executionStatus(record.execution_status)}</dd>
+        <dd data-testid="execution-status">
+          <Badge kind="execution" value={record.execution_status} />
+        </dd>
       </dl>
       {record.execution_error ? (
         <p role="alert">Hành động không được thực hiện: {record.execution_error}</p>

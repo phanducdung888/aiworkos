@@ -24,6 +24,7 @@ import { Empty, ErrorState, Loading } from '@/components/States'
 import { Field } from '@/components/Field'
 import { Provenance, nameOf } from '@/components/Provenance'
 import { commitmentStatus, duePrecision } from '@/components/vocabulary'
+import { Badge } from '@/components/Badge'
 
 /**
  * BR-C-04's table, as the UI needs it.
@@ -112,7 +113,9 @@ export function CommitmentList() {
                   <Link to={`/commitments/${commitment.id}`}>{commitment.statement}</Link>
                 </td>
                 <td>{nameOf(people.data, commitment.committed_by_person_id)}</td>
-                <td>{commitmentStatus(commitment.status)}</td>
+                <td>
+                  <Badge kind="commitment" value={commitment.status} />
+                </td>
                 <td>{due(commitment)}</td>
               </tr>
             ))}
@@ -144,7 +147,9 @@ export function CommitmentDetail() {
         <dt>Người hứa</dt>
         <dd data-testid="committer">{nameOf(people.data, promise.committed_by_person_id)}</dd>
         <dt>Trạng thái</dt>
-        <dd data-testid="status">{commitmentStatus(promise.status)}</dd>
+        <dd data-testid="status">
+          <Badge kind="commitment" value={promise.status} />
+        </dd>
         <dt>Hạn</dt>
         <dd data-testid="due">{due(promise)}</dd>
         <dt>Độ tin cậy</dt>
