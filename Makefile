@@ -10,12 +10,23 @@ DEV_DB := workos
 TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help up down logs install openapi migrate downgrade analyse test test-unit test-fast connector-test connector-types connector-smoke store-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
+.PHONY: help start up down logs install openapi migrate downgrade analyse test test-unit test-fast connector-test connector-types connector-smoke store-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-up:  ## Start PostgreSQL, Redis, MinIO, Keycloak
+start:  ## Start the whole system — nothing else is needed to run it
+	# Migrations, seed data and the web surface are services now, so this is the only command
+	# between a clone and a working WorkOS. `--build` because the API, the worker and the web
+	# surface are built from this tree and a stale image is a confusing way to test a change.
+	docker compose --profile pilot --profile dev up -d --build
+	@echo
+	@echo "  web       http://localhost:$${WEB_PORT:-5173}"
+	@echo "  api       http://127.0.0.1:$${API_PORT:-8000}/health"
+	@echo "  keycloak  http://127.0.0.1:$${KEYCLOAK_PORT:-8080}"
+	@echo "  objects   http://127.0.0.1:$${OBJECTS_PORT:-9002}"
+
+up:  ## Start the data tier only (what the host-run tests need)
 	docker compose up -d postgres redis minio
 
 down:  ## Stop everything

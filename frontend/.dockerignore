@@ -1,0 +1,16 @@
+# The build installs its own dependencies from the lockfile. Copying the host's `node_modules` in
+# would be slow, would defeat layer caching, and on a machine whose architecture differs from the
+# image's would ship binaries that cannot run.
+node_modules
+dist
+test-results
+playwright-report
+.vite
+
+# Build-time configuration arrives as a build argument, not as a file (see Dockerfile). A local
+# `.env.local` copied into the context would be a second source of truth for the same three values,
+# and the one that is harder to see.
+.env.local
+.env.*.local
+
+.DS_Store

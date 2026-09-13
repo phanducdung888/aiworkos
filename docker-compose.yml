@@ -30,6 +30,53 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     networks: [data]
 
+  # The schema, applied before anything opens a connection expecting one.
+  #
+  # This ran on the host until now (`make migrate`, against 127.0.0.1:5432), which meant a working
+  # Python environment was a prerequisite for starting a system that otherwise needs none. A
+  # one-shot service with the API's own image runs the same Alembic revisions the same way, and
+  # `api` and `worker` wait for it to finish rather than racing an empty database.
+  #
+  # As workos_owner, never as the image superuser: FORCE ROW LEVEL SECURITY does not apply to a
+  # superuser, so a superuser owning the schema silently disables one of ADR-0008's two controls.
+  migrate:
+    build:
+      context: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      WORKOS_DATABASE_URL: postgresql+psycopg://workos_owner:${OWNER_DB_PASSWORD:-workos_owner}@postgres:5432/${POSTGRES_DB:-workos}
+      WORKOS_APP_DATABASE_URL: postgresql+psycopg://workos_app:${APP_DB_PASSWORD:-workos_app}@postgres:5432/${POSTGRES_DB:-workos}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [data]
+
+  # The development organization, its people and its team (ops/dev/seed.py).
+  #
+  # Not a migration, for the reason that script sets out at length: seed data is environment, not
+  # schema. It is here because without it a real token resolves to no Person and the product is a
+  # sign-in that dead-ends — and because it is idempotent by slug, so starting the stack twice
+  # leaves one organization.
+  #
+  # The script is mounted rather than built in: it lives in ops/ and belongs to the deployment, not
+  # to the backend image. It connects as the cluster superuser and has to — "which organization has
+  # this slug?" is a question from outside every tenant, and RLS means no tenant-scoped role can
+  # answer it.
+  seed:
+    build:
+      context: ./backend
+    command: ["python", "ops/dev/seed.py"]
+    volumes:
+      - ./ops/dev:/srv/ops/dev:ro
+    environment:
+      WORKOS_SEED_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-workos}:${POSTGRES_PASSWORD:-workos}@postgres:5432/${POSTGRES_DB:-workos}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+    networks: [data]
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "no"]
@@ -241,6 +288,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Not merely "the database is up" but "the schema this build expects is present". Without
+      # it the API answers /health on an empty database and fails every real request.
+      migrate:
+        condition: service_completed_successfully
     networks: [app, data, agent]
 
   # The job worker (ADR-0044, ADR-0046). Same image as the API, different command: an approved
@@ -271,10 +322,44 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     # `data` only for the database, and outbound for the model provider. It reaches no other
     # service and nothing reaches it.
     networks: [data]
+
+  # The web surface (frontend/Dockerfile, ops/proxy/web.conf).
+  #
+  # A static build behind nginx, which also forwards `/api` to the API so the browser sees one
+  # origin — the arrangement `vite.config.ts` describes as "the reverse proxy does the same job" in
+  # the pilot, now actually present. This is the last thing that had to be started by hand.
+  #
+  # `edge` because a browser reaches it, `app` because that is where the API it forwards to lives.
+  # Never `data`: it serves files and proxies HTTP, and holds no credential of any kind.
+  #
+  # The three OIDC values are build arguments rather than environment: Vite inlines them into the
+  # bundle, so a static file has no runtime to read an environment from. Changing one is a rebuild.
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_OIDC_AUTHORITY: ${VITE_OIDC_AUTHORITY:-http://localhost:8080/realms/workos}
+        VITE_OIDC_CLIENT_ID: ${VITE_OIDC_CLIENT_ID:-workos-web}
+        VITE_OIDC_REDIRECT_URI: ${VITE_OIDC_REDIRECT_URI:-http://localhost:5173/auth/callback}
+    profiles: ["pilot"]
+    volumes:
+      - ./ops/proxy/web.conf:/etc/nginx/conf.d/default.conf:ro
+    # 5173 by default, which is the port the dev server used and therefore the one already in
+    # Keycloak's redirect URIs, in `.env.example` and in people's bookmarks. Loopback only, like
+    # everything else here.
+    ports:
+      - "127.0.0.1:${WEB_PORT:-5173}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [edge, app]
 
 volumes:
   postgres-data:

@@ -305,3 +305,54 @@ def test_the_object_proxy_does_not_log_presigned_urls() -> None:
     assert "access_log" in config, (
         "without an explicit access_log directive nginx uses `combined`, which logs `$request`"
     )
+
+
+# --------------------------------------------------------------------------- the web surface
+
+
+def test_the_web_surface_holds_no_data_tier_credential() -> None:
+    """It serves static files and forwards HTTP. Nothing it does needs a database.
+
+    Stated here rather than assumed because the temptation is specific and recurring: the surface a
+    person looks at is the one somebody eventually wants to "just read one more field" from.
+    """
+    web = _compose()["services"]["web"]
+    assert DATA_NETWORK not in set(web.get("networks") or []), (
+        "the web surface is on the data network; it proxies to the API like any other client"
+    )
+    environment = web.get("environment") or {}
+    keys = (
+        environment.keys()
+        if isinstance(environment, dict)
+        else [entry.split("=", 1)[0] for entry in environment]
+    )
+    for key in keys:
+        assert not any(marker in key for marker in DB_ENV_MARKERS), f"web is given {key}"
+
+
+def test_the_sign_in_redirect_matches_the_port_the_web_surface_is_published_on() -> None:
+    """Three files have to agree, and two of them fail silently when they do not.
+
+    The redirect URI is baked into the bundle at build time, Keycloak checks it against the realm's
+    list, and the browser has to be able to reach it. A mismatch is an identity provider refusing a
+    sign-in that looks correct, with the wrong port visible only in a query string — so it is
+    cheaper to fail here.
+    """
+    import json
+    import re
+
+    services = _compose()["services"]
+    published = [_defaults(str(entry)) for entry in services["web"].get("ports") or []]
+    host_ports = {entry.split(":")[-2] for entry in published}
+
+    redirect = _defaults(services["web"]["build"]["args"]["VITE_OIDC_REDIRECT_URI"])
+    port = re.search(r"://[^/:]+:(\d+)", redirect)
+    assert port and port.group(1) in host_ports, (
+        f"sign-in returns to {redirect} but the web surface publishes {sorted(host_ports)}"
+    )
+
+    realm = json.loads((REPO_ROOT / "ops" / "keycloak" / "realm.json").read_text())
+    web_client = next(c for c in realm["clients"] if c["clientId"] == "workos-web")
+    assert any(
+        redirect.startswith(uri.rstrip("*")) for uri in web_client["redirectUris"]
+    ), f"{redirect} is not covered by {web_client['redirectUris']}"

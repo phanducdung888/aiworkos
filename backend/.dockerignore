@@ -1,0 +1,10 @@
+# Caches from running the tools on the host. None of them belongs in an image, and every one of
+# them invalidates a layer whenever it changes — which is on every local test run.
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.hypothesis
+.import_linter_cache
+**/__pycache__
+*.egg-info
+.DS_Store
