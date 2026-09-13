@@ -10,7 +10,7 @@ DEV_DB := workos
 TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast connector-test connector-types connector-smoke store-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
+.PHONY: help up down logs install openapi migrate downgrade analyse test test-unit test-fast connector-test connector-types connector-smoke store-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -90,6 +90,12 @@ seed:  ## Create the development organization, people and team (idempotent)
 	# Runs as the superuser: "which organization has this slug?" is a question from outside every
 	# tenant, and RLS means no tenant-scoped role can answer it. See ops/dev/seed.py.
 	PYTHONPATH=$(BACKEND) .venv/bin/python ops/dev/seed.py
+
+analyse:  ## Ask the AI to read delivered messages nobody has analysed yet. ARGS=--dry-run to look first.
+	# The act a connector deliberately does not perform: capture and analysis are separate, and
+	# nothing yet decides on the organization's behalf which delivered messages are worth a model
+	# call. Until that is a policy, it is an operator. See ops/dev/analyse.py.
+	.venv/bin/python ops/dev/analyse.py $(ARGS)
 
 web-install:  ## Install frontend dependencies
 	cd $(FRONTEND) && npm ci
