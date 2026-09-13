@@ -314,6 +314,17 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 
 ### Resolved
 
+**The attachment flow had never been executed (closed in CP22).** `S3ObjectStore` is the only
+module importing boto3 and the one that issues credential-bearing URLs, and it had no test of
+any kind — every attachment test installs the in-memory store. MinIO also published no ports,
+so a presigned URL was unreachable from the host by any client. Both fixed; the whole ADR-0039
+sequence now runs against a real store, including expiry, key tampering and unsigned access.
+
+**CP21's compose file broke every `docker compose` command (closed in CP22).** `${VAR:?...}` on
+the `pilot`-profile connector service failed interpolation for the whole file — including
+`up postgres` — because compose interpolates before it applies profiles. The variables are
+passed through plainly now; the connector already refuses to start naming what is missing.
+
 **The connector's IMAP conversation was untested (closed in CP21, ADR-0062).** CP20 covered the
 normaliser and the delivery client and left the `imaplib` loop with no test at all. Driving it
 against a real mail server found a real defect on the first run: `Internaldate2tuple` returns a
@@ -558,6 +569,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 19B | Ingestion contract: no connector port, the capture API is the seam; executable conformance suite; OpenClaw spike closed on evidence; ADR-0058/0059 | ✅ complete · 1139 backend + 111 frontend |
 | 20 | First real connector: IMAP email, ingestion-only role, migration 0014, PQ-1 amended; ADR-0060/0061 | ✅ complete · 1169 backend + 111 frontend + 45 connector |
 | 21 | Connector operations: real mail-server tests (found a timezone defect), TLS modes, service loop, connector topology confined and asserted; ADR-0062 | ✅ complete · 1169 backend + 111 frontend + 81 connector |
+| 22 | Attachment substrate: `S3ObjectStore` and the whole ADR-0039 flow verified against real MinIO for the first time; compose interpolation defect fixed; connector attachment delivery blocked and specified (ADR-0063) | ✅ complete · 1183 backend + 111 frontend + 81 connector |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application
@@ -720,7 +732,32 @@ org-scoped, so a foreign job cannot corrupt a count — but a job that failed an
 would have spun the drain loop forever.
 
 **Fixed at that level and no further**: the drain is now bounded, so a retry loop fails by name in
-seconds instead of hanging. Test isolation was *not* restructured — `work_org` already gives each
+seconds instead of hanging.
+
+**It recurred once in CP22** — one shuffled run in seven, fourteen execution tests failing together
+with "expected executed, got pending". Still not reproducible: six clean runs before and after, and
+targeted orderings of the implicated files pass. The queue table held nothing pathological
+afterwards.
+
+**CP22 reproduced it and instrumented it, and it is still open.** Across roughly seventeen shuffled
+full runs, three failed — always the same signature: an approval left `pending` because its job was
+not executed by the drain. Targeted orderings of the implicated files pass every time, and the queue
+table holds nothing pathological afterwards.
+
+`execute_approval` now does two things it did not. It asserts on its own queue call, because a queue
+request that failed left no job and the test then failed several assertions later describing the
+symptom rather than the cause. And when an approval is still pending after a drain, it **prints the
+job row** — status, attempts, `run_after`, the clock, and `last_error`. Printed rather than
+asserted, because several tests legitimately expect a pending approval (a refused mutation, an
+expired window, a mismatched hash); captured stdout is shown for failures and hidden for passes.
+
+The one capture obtained so far was from a test that expects failure, and showed a job claimed,
+failed and rescheduled thirty seconds out. The capture that matters — a test expecting success —
+has not yet occurred. **The next occurrence will carry it**, which is the proportionate answer to a
+fault that reproduces about one run in six and not on demand.
+
+This is a pre-existing suite condition rather than something CP22 introduced: it was first seen in
+CP16, before the object-store tests existed. Test isolation was *not* restructured — `work_org` already gives each
 test its own organization, and rebuilding isolation for a defect that would not reproduce would be
 changing a working design on a hypothesis.
 

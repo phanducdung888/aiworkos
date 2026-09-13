@@ -154,8 +154,12 @@ def test_no_connector_receives_data_tier_credentials() -> None:
 def test_no_connector_service_carries_a_default_credential() -> None:
     """A default for a password or a token in this file would be a secret in the repository.
 
-    `${VAR:?...}` fails the deploy with an explanation instead, which is the behaviour worth having
-    when the alternative is a connector silently starting with somebody's example password.
+    `${VAR}` with nothing after it is what that looks like: the variable is passed through, and the
+    connector refuses to start with a message naming what is missing.
+
+    Not `${VAR:?...}`, which CP21 used and CP22 removed. Compose interpolates the whole file before
+    it applies profiles, so a required-variable marker on a `pilot`-profile service failed every
+    `docker compose` command — including `up postgres` — for anyone who had not set it.
     """
     import re
 
@@ -163,9 +167,11 @@ def test_no_connector_service_carries_a_default_credential() -> None:
     services = _compose().get("services", {})
     for name in _connectors(services):
         block = raw[raw.index(f"  {name}:") :]
-        block = block[: block.find("\n  api:")] if "\n  api:" in block else block
+        end = block.find("\n  api:")
+        block = block[:end] if end != -1 else block
         for secret in ("PASSWORD", "TOKEN", "SECRET"):
-            for match in re.finditer(rf"\$\{{\w*{secret}\w*(:?[-?])", block):
-                assert match.group(1) == ":?", (
-                    f"{name} defaults a {secret.lower()}; it must be required, not defaulted"
+            for match in re.finditer(rf"\$\{{(\w*{secret}\w*)([^}}]*)\}}", block):
+                assert match.group(2) == "", (
+                    f"{name} gives {match.group(1)} a default or a marker: "
+                    f"a credential is passed through or not at all"
                 )

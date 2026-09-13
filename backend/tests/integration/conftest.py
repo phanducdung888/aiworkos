@@ -469,11 +469,31 @@ class ExecutionOutcome:
 DRAIN_LIMIT = 200
 
 
+def _job_row(worker_factory: sessionmaker[Session], approval_id: str) -> str:
+    """The job for this approval, as the worker role sees it. Diagnostics only."""
+    session = worker_factory()
+    try:
+        row = session.execute(
+            text(
+                "SELECT status, attempts, max_attempts, run_after, now() AS clock, last_error "
+                "FROM job WHERE dedupe_key = :key"
+            ),
+            {"key": approval_id},
+        ).mappings().first()
+        return "no job row exists" if row is None else str(dict(row))
+    except Exception as error:  # pragma: no cover - diagnostics must not mask the real failure
+        return f"could not read the job row: {error}"
+    finally:
+        session.close()
+
+
 def execute_approval(
     api: TestClient,
     headers: dict[str, str],
     approval_id: str,
     worker_factory: sessionmaker[Session],
+    *,
+    expect_queued: bool = True,
 ) -> ExecutionOutcome:
     """Queue an approved action and run the worker until the queue is empty.
 
@@ -485,6 +505,15 @@ def execute_approval(
     from app.workers.runner import run_once
 
     queued = api.post(f"/api/v1/approvals/{approval_id}/queue", headers=headers)
+    # Checked here, and this is not ceremony. A queue call that fails leaves no job, so the drain
+    # below claims nothing and the approval stays `pending` — and the test then fails several
+    # assertions later with "expected executed, got pending", which describes the symptom and not
+    # the cause. A caller that *wants* to queue something it may not is rare enough to say so.
+    if queued.status_code >= 400 and expect_queued:
+        raise AssertionError(
+            f"queueing approval {approval_id} failed with {queued.status_code}: {queued.text}"
+        )
+
     # Bounded. The queue is shared across the suite and a job that failed and rescheduled itself
     # would otherwise spin here forever — a hang, which is the one failure mode worse than a
     # failure, because it says nothing about which test caused it.
@@ -498,6 +527,22 @@ def execute_approval(
 
     record = api.get(f"/api/v1/approvals/{approval_id}", headers=headers)
     body = record.json() if record.status_code == 200 else {}
+    if body.get("execution_status") == "pending":
+        # Attached, never raised. Several tests *expect* this — a refused mutation, an expired
+        # window, a mismatched hash — so a pending approval is a normal outcome here and only the
+        # caller knows whether it wanted one.
+        #
+        # What is never normal is not knowing *why*. Every caller already reports `outcome.body` in
+        # its assertion message, so putting the job row there means the next unexplained
+        # "expected executed, got pending" arrives with the job's status, attempts, `run_after` and
+        # last error — which is what separates never-claimed from claimed-and-rescheduled.
+        # Printed rather than folded into `body`: pytest truncates a long dict in an assertion
+        # message with "...", which is exactly where the diagnosis would end up. Captured stdout is
+        # shown for failing tests and hidden for passing ones, so this is silent until it matters.
+        print(
+            f"[execute_approval] approval {approval_id} is still pending after draining; "
+            f"job row: {_job_row(worker_factory, approval_id)}"
+        )
     return ExecutionOutcome(
         status_code=queued.status_code,
         entity_type=body.get("resulting_entity_type"),

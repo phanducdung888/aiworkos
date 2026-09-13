@@ -43,6 +43,16 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-workos-dev-secret}
     volumes:
       - minio-data:/data
+    # Published on loopback only, for the same reason PostgreSQL is: a presigned URL is issued to a
+    # client, and a client that cannot reach the store cannot use one. `data` remains the boundary
+    # for container-to-container traffic; this exposes nothing beyond the developer's own machine.
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks: [data]
 
   keycloak:
@@ -95,15 +105,20 @@ services:
       - ./connectors:/srv/connectors:ro
     command: ["python", "-m", "connectors.imap.run", "--interval", "${IMAP_INTERVAL:-60}"]
     environment:
-      IMAP_HOST: ${IMAP_HOST:?set the mail server}
+      # No defaults for the credentials, and no `:?` either. Compose interpolates the *whole* file
+      # before it looks at profiles, so a required-variable marker here failed every
+      # `docker compose` command for anyone who had not set these — including `up postgres`.
+      # The connector already refuses to start with a message naming exactly what is missing, which
+      # is one check in one place rather than two that can disagree.
+      IMAP_HOST: ${IMAP_HOST}
       IMAP_PORT: ${IMAP_PORT:-993}
       IMAP_SECURITY: ${IMAP_SECURITY:-ssl}
-      IMAP_USERNAME: ${IMAP_USERNAME:?set the mailbox}
-      IMAP_PASSWORD: ${IMAP_PASSWORD:?from your secret store, never from a file in this repository}
+      IMAP_USERNAME: ${IMAP_USERNAME}
+      IMAP_PASSWORD: ${IMAP_PASSWORD}
       IMAP_MAILBOX: ${IMAP_MAILBOX:-INBOX}
       WORKOS_URL: ${WORKOS_URL:-http://api:8000}
-      WORKOS_INGESTION_TOKEN: ${WORKOS_INGESTION_TOKEN:?an ingestion-role credential (ADR-0060)}
-      WORKOS_ORGANIZATION_ID: ${WORKOS_ORGANIZATION_ID:?which organization this mailbox feeds}
+      WORKOS_INGESTION_TOKEN: ${WORKOS_INGESTION_TOKEN}
+      WORKOS_ORGANIZATION_ID: ${WORKOS_ORGANIZATION_ID}
     depends_on: [api]
     restart: unless-stopped
     networks: [edge]

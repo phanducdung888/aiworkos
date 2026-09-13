@@ -10,7 +10,7 @@ DEV_DB := workos
 TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast connector-test connector-types connector-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
+.PHONY: help up down logs install openapi migrate downgrade test test-unit test-fast connector-test connector-types connector-smoke store-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -68,6 +68,10 @@ mail:  ## Start the development mail server (GreenMail) for the IMAP connector
 
 connector-smoke:  ## Drive the IMAP connector against a real mail server. Needs `make mail`.
 	RUN_IMAP_TESTS=1 .venv/bin/python -m pytest connectors/tests -q -m imap
+
+store-smoke:  ## Exercise the S3 adapter and the attachment flow against MinIO. Needs `make up`.
+	cd $(BACKEND) && WORKOS_DATABASE_URL=$(TEST_DB_URL) WORKOS_APP_DATABASE_URL=$(TEST_APP_URL) \
+		RUN_OBJECT_STORE_TESTS=1 PYTHONPATH=. pytest tests/integration/test_object_store.py -q
 
 connector-types:  ## mypy --strict over the connectors
 	.venv/bin/mypy --strict connectors/
