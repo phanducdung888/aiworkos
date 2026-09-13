@@ -35,16 +35,25 @@ def pytest_collection_modifyitems(
 
 
 class Capture:
-    """A WorkOS that records what was posted to it.
+    """A WorkOS that records what was posted to it, and a store that records what was uploaded.
 
-    The point of these tests is the *mail* half — the IMAP conversation and the loop around it —
-    so the far end is a recorder rather than the application. What the application does with a
-    delivered message is covered by the contract and journey suites, against the real API.
+    The point of these tests is the *mail* half — the IMAP conversation and the loop around it — so
+    the far end is a recorder rather than the application. It has to model the attachment flow
+    honestly all the same (ADR-0039): reserve, PUT the bytes somewhere that is not the API, then
+    complete. A recorder that answered every call identically would let a connector that skipped a
+    step pass.
+
+    What the application does with a delivered message is covered by the contract and journey
+    suites, against the real API.
     """
 
     def __init__(self) -> None:
         self.received: list[dict[str, Any]] = []
+        self.uploaded: list[dict[str, Any]] = []
         self.status = 201
+        #: What the attachment endpoints answer. Separate from `status`, so a test can fail the
+        #: files while the Event still succeeds — which is the interesting half.
+        self.attachment_status = 201
         self._server: http.server.HTTPServer | None = None
 
     @property
@@ -52,12 +61,42 @@ class Capture:
         assert self._server is not None
         return f"http://127.0.0.1:{self._server.server_address[1]}"
 
+    @property
+    def events(self) -> list[dict[str, Any]]:
+        return [row for row in self.received if row["path"] == "/api/v1/events"]
+
     def start(self) -> None:
         capture = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            def _answer(self, status: int, payload: dict[str, Any]) -> None:
+                body = json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _read_body(self) -> bytes:
+                return self.rfile.read(int(self.headers.get("Content-Length", "0")))
+
+            def do_PUT(self) -> None:
+                # The presigned upload. Deliberately not under /api/v1: bytes do not pass through
+                # the API, and a connector that posted them there would fail here.
+                capture.uploaded.append(
+                    {
+                        "path": self.path,
+                        "content_type": self.headers.get("Content-Type"),
+                        "authorization": self.headers.get("Authorization"),
+                        "content": self._read_body(),
+                    }
+                )
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
             def do_POST(self) -> None:
-                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                body = self._read_body()
                 capture.received.append(
                     {
                         "path": self.path,
@@ -67,14 +106,29 @@ class Capture:
                         "event": json.loads(body or b"{}"),
                     }
                 )
-                payload = json.dumps(
-                    {"id": f"event-{len(capture.received)}", "revision_of_event_id": None}
-                ).encode()
-                self.send_response(capture.status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
+                if self.path.endswith("/complete"):
+                    self._answer(200, {"status": "available"})
+                elif self.path.endswith("/attachments"):
+                    if capture.attachment_status >= 400:
+                        self._answer(capture.attachment_status, {"detail": "no"})
+                        return
+                    index = len(capture.uploaded) + 1
+                    self._answer(
+                        capture.attachment_status,
+                        {
+                            "attachment": {"id": f"attachment-{index}", "status": "pending"},
+                            "upload_url": f"{capture.url}/store/object-{index}",
+                            "expires_at": "2026-09-13T10:00:00+00:00",
+                        },
+                    )
+                else:
+                    self._answer(
+                        capture.status,
+                        {
+                            "id": f"event-{len(capture.events)}",
+                            "revision_of_event_id": None,
+                        },
+                    )
 
             def log_message(self, *_: Any) -> None:
                 return None

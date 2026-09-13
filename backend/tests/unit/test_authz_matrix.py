@@ -119,15 +119,28 @@ def test_the_ingestion_role_holds_exactly_one_grant() -> None:
     so a new resource or action cannot accidentally grant it something — and this checks the whole
     matrix rather than checking that somebody remembered to type `NO`.
 
-    The number matters. Running a connector as `member` would give it 56 of these cells, including
-    `PROPOSAL.APPROVE` — the single control the Level-2 autonomy model rests on.
+    Three cells since CP23, all of them about Events and two of them `PERSONAL` — the connector may
+    read and attach to what it delivered itself. Running it as `member` would give it 56, including
+    `PROPOSAL.APPROVE`, the single control the Level-2 autonomy model rests on.
     """
     held = {
         (resource, action)
         for (resource, action), cells in MATRIX.items()
         if cells[Role.INGESTION] != frozenset({Grant.DENY})
     }
-    assert held == {(ResourceType.EVENT, Action.CREATE)}
+    assert held == {
+        (ResourceType.EVENT, Action.CREATE),
+        (ResourceType.EVENT, Action.READ),
+        (ResourceType.EVENT, Action.ATTACH),
+    }
+    # And every one of them is `PERSONAL`, not organization-wide. `CREATE` is the exception and has
+    # to be: a message being delivered has no Event to be personal about yet.
+    assert MATRIX[(ResourceType.EVENT, Action.READ)][Role.INGESTION] == frozenset(
+        {Grant.PERSONAL}
+    )
+    assert MATRIX[(ResourceType.EVENT, Action.ATTACH)][Role.INGESTION] == frozenset(
+        {Grant.PERSONAL}
+    )
 
 
 def test_the_ingestion_role_can_never_approve_or_write_business_state() -> None:
@@ -150,15 +163,18 @@ def test_the_ingestion_role_can_never_approve_or_write_business_state() -> None:
         assert MATRIX[pair][Role.INGESTION] == frozenset({Grant.DENY}), pair
 
 
-def test_the_ingestion_role_cannot_even_read_what_it_delivered() -> None:
-    """Deliberate, and worth stating.
+def test_the_ingestion_role_reads_only_what_it_delivered() -> None:
+    """CP23 narrowed this rather than opening it.
 
-    A connector needs no read to do its job: the capture response tells it what happened. Denying
-    the read means a stolen ingestion credential cannot be used to page through an organization's
-    messages, which is the thing it would otherwise be most useful for.
+    Delivering an attachment means calling an endpoint that loads the Event first, so the read is
+    unavoidable — but it is `PERSONAL`, and `LIST` stays denied outright. A stolen ingestion
+    credential still cannot page through an organization's messages, which is the thing it would
+    otherwise be most useful for; it can only re-read what it put there itself.
     """
-    for action in (Action.READ, Action.LIST):
-        assert MATRIX[(ResourceType.EVENT, action)][Role.INGESTION] == frozenset({Grant.DENY})
+    assert MATRIX[(ResourceType.EVENT, Action.READ)][Role.INGESTION] == frozenset(
+        {Grant.PERSONAL}
+    )
+    assert MATRIX[(ResourceType.EVENT, Action.LIST)][Role.INGESTION] == frozenset({Grant.DENY})
 
 
 def test_adding_a_resource_cannot_quietly_grant_the_connector_something() -> None:

@@ -106,6 +106,9 @@ class RunReport:
     already_known: int = 0
     skipped: int = 0
     refused: int = 0
+    #: Files delivered alongside the messages above. Counted separately because an Event with a
+    #: missing attachment is still an Event, and an operator needs to see both numbers.
+    attachments: int = 0
 
 
 def run_once(
@@ -123,7 +126,7 @@ def run_once(
         attempts=attempts,
         backoff=backoff,
     )
-    delivered = known = skipped = refused = 0
+    delivered = known = skipped = refused = attachments = 0
 
     with _connect(settings) as mail:
         mail.login(settings.username, settings.password)
@@ -162,15 +165,19 @@ def run_once(
                 logger.error("WorkOS unreachable for %s: %s", message.source_ref, error)
                 break
 
-            if message.dropped_attachments:
-                # Said out loud rather than swallowed. A message whose substance is in a PDF
-                # arrives as its covering note, and the analysis will find correspondingly little.
-                logger.warning(
-                    "%s carried %d attachment(s) this connector does not deliver: %s",
-                    message.source_ref,
-                    len(message.dropped_attachments),
-                    ", ".join(message.dropped_attachments),
-                )
+            if message.attachments:
+                # After the Event exists, because an attachment is attached *to* something
+                # (ADR-0039). A file that fails is named and the Event still stands: three of four
+                # attachments is a better record than no record.
+                outcome = delivery.deliver_attachments(result.event_id, message.attachments)
+                attachments += outcome.delivered
+                if outcome.failed:
+                    logger.warning(
+                        "%s: %d attachment(s) were not delivered: %s",
+                        message.source_ref,
+                        len(outcome.failed),
+                        ", ".join(outcome.failed),
+                    )
 
             _mark_seen(mail, identifier)
             if result.created:
@@ -179,7 +186,11 @@ def run_once(
                 known += 1
 
     return RunReport(
-        delivered=delivered, already_known=known, skipped=skipped, refused=refused
+        delivered=delivered,
+        already_known=known,
+        skipped=skipped,
+        refused=refused,
+        attachments=attachments,
     )
 
 
@@ -264,6 +275,7 @@ def run_forever(settings: Settings, *, stop: threading.Event | None = None) -> R
                 already_known=totals.already_known + report.already_known,
                 skipped=totals.skipped + report.skipped,
                 refused=totals.refused + report.refused,
+                attachments=totals.attachments + report.attachments,
             )
             _log(report)
         halt.wait(settings.interval)
@@ -273,11 +285,12 @@ def run_forever(settings: Settings, *, stop: threading.Event | None = None) -> R
 
 def _log(report: RunReport) -> None:
     logger.info(
-        "delivered=%d already_known=%d skipped=%d refused=%d",
+        "delivered=%d already_known=%d skipped=%d refused=%d attachments=%d",
         report.delivered,
         report.already_known,
         report.skipped,
         report.refused,
+        report.attachments,
     )
 
 

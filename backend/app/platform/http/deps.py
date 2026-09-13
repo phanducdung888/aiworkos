@@ -142,6 +142,7 @@ def _default_object_store() -> ObjectStore:
         secret_key=settings.s3_secret_key,
         bucket=settings.s3_bucket,
         region=settings.s3_region,
+        public_endpoint_url=settings.s3_public_endpoint_url or None,
     )
 
 

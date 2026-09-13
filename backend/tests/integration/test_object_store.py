@@ -340,3 +340,88 @@ def test_an_unfinished_upload_stays_visible_as_unfinished(
 
     assert refused.status_code == 422
     assert reserved["attachment"]["status"] == "pending"
+
+
+# --------------------------------------------------------------------------- the endpoint split
+
+
+def test_presigned_urls_are_signed_for_the_public_endpoint(bucket: str) -> None:
+    """ADR-0063. A client is handed a host it can reach, and the signature covers that host.
+
+    This is why the split exists at all: a URL signed for the internal name cannot be rewritten
+    afterwards, because editing the host invalidates the signature.
+    """
+    store = S3ObjectStore(
+        endpoint_url=ENDPOINT,
+        access_key=ACCESS_KEY,
+        secret_key=SECRET_KEY,
+        bucket=bucket,
+        public_endpoint_url="https://files.example.test",
+    )
+    for url in (
+        store.presigned_put(a_key(), media_type="text/plain", expires_in=MINUTE),
+        store.presigned_get(a_key(), expires_in=MINUTE),
+    ):
+        assert url.startswith("https://files.example.test/")
+        assert ENDPOINT not in url
+
+
+def test_internal_operations_use_the_internal_endpoint(bucket: str) -> None:
+    """`stat` and `delete` are this process talking to the store, not a client.
+
+    The public name may not even resolve from inside the data network, so routing server-side calls
+    through it would make the API depend on the proxy it exists to keep clients away from.
+    """
+    store = S3ObjectStore(
+        endpoint_url=ENDPOINT,
+        access_key=ACCESS_KEY,
+        secret_key=SECRET_KEY,
+        bucket=bucket,
+        # Unresolvable on purpose: if `stat` went through here it would fail rather than pass.
+        public_endpoint_url="https://nothing.invalid",
+    )
+    key = a_key()
+    signed_internally = S3ObjectStore(
+        endpoint_url=ENDPOINT, access_key=ACCESS_KEY, secret_key=SECRET_KEY, bucket=bucket
+    )
+    put(
+        signed_internally.presigned_put(key, media_type="text/plain", expires_in=MINUTE),
+        b"server side",
+        media_type="text/plain",
+    )
+
+    stored = store.stat(key)
+
+    assert stored is not None and stored.size_bytes == len(b"server side")
+    store.delete(key)
+    assert store.stat(key) is None
+
+
+def test_the_default_is_one_endpoint_for_both(bucket: str) -> None:
+    """A deployment with a single reachable address behaves exactly as it did before CP23."""
+    store = S3ObjectStore(
+        endpoint_url=ENDPOINT, access_key=ACCESS_KEY, secret_key=SECRET_KEY, bucket=bucket
+    )
+    assert store.presigned_get(a_key(), expires_in=MINUTE).startswith(ENDPOINT)
+
+
+def test_a_url_signed_for_one_host_is_refused_at_another(bucket: str) -> None:
+    """The property the whole split rests on, demonstrated rather than asserted from the docs.
+
+    Rewriting the host of a presigned URL does not produce a working URL somewhere else — which is
+    why the public endpoint has to be known at signing time.
+    """
+    store = S3ObjectStore(
+        endpoint_url=ENDPOINT,
+        access_key=ACCESS_KEY,
+        secret_key=SECRET_KEY,
+        bucket=bucket,
+        public_endpoint_url="http://someone-elses-host:9000",
+    )
+    rewritten = store.presigned_put(
+        a_key(), media_type="text/plain", expires_in=MINUTE
+    ).replace("http://someone-elses-host:9000", ENDPOINT, 1)
+
+    with pytest.raises(urllib.error.HTTPError) as refused:
+        put(rewritten, b"nope", media_type="text/plain")
+    assert refused.value.code == 403

@@ -55,6 +55,15 @@ harmless, because the redelivery carries the same derived key.
 | `body_text` | `text/plain`, or HTML stripped to its words |
 | `participants` | `From` → speaker, `To`/`Cc` → recipient, as bare lowercased addresses |
 
+Attachments follow the Event rather than travelling inside it. For each file: reserve it against the
+Event, PUT the bytes straight to the object store using the URL WorkOS issued, then tell WorkOS to
+record what the store actually holds. The bytes never pass through the API, and no WorkOS credential
+is sent to the store — the presigned URL *is* the authority (ADR-0039, ADR-0063).
+
+A file larger than `MAX_ATTACHMENT_BYTES` (10 MB) is skipped and named in the log rather than
+truncated: half a PDF is not a smaller PDF. A file that fails to deliver is named and the rest
+continue — an Event with three of its four attachments is a better record than no Event at all.
+
 `Idempotency-Key` is derived from `(source_system, source_ref, body)`. A retry of the same message
 is the same action and replays; a *corrected* message carries the same `Message-ID` with different
 content and is a revision, not a retry — which is why the key covers the body.
@@ -72,17 +81,21 @@ content and is a revision, not a retry — which is why the key covers the body.
   interpretation, and interpretation belongs where it can be audited.
 - **Retry a refusal.** A 4xx that is not "not now" means the message is wrong, not the moment;
   repeating it is how a connector turns its own defect into somebody else's outage.
-- **Deliver attachments.** Attachments are a separate flow — a presigned upload against the Event,
-  not a field on it (ADR-0039) — and this connector does not implement it. It *names* what it left
-  behind in the log, so a message whose substance is in a PDF does not arrive as a covering note
-  with no explanation for why the analysis found so little.
+- **Put attachments in the message.** Files are delivered *beside* the Event, through the flow in
+  ADR-0039: reserve, PUT to a presigned URL, complete. They never appear in `body_text`, because
+  words nobody wrote do not belong in a record Evidence is quoted from (BR-E-05).
 
 ## The credential
 
-An ingestion-role token (ADR-0060). It holds exactly one grant in the whole authorization matrix —
-`EVENT.CREATE` — and cannot approve proposals, create Work or Commitments, run the agent, change
-the agent policy, confirm an identity, or read anything back. Issue one per connector per
-organization.
+An ingestion-role token (ADR-0060, ADR-0063). It holds three cells in the whole authorization
+matrix, all about Events: `CREATE`, plus `READ` and `ATTACH` confined to **the Events it captured
+itself**. It cannot approve proposals, create Work or Commitments, run the agent, change the agent
+policy, confirm an identity, list Events, or read anything anybody else recorded. Issue one per
+connector per organization.
+
+It reaches object storage through a reverse proxy and has no route to the store itself: presigned
+URLs are signed for a host the connector can resolve, while the store stays on the data network
+where nothing that talks to the outside is allowed.
 
 ## Mapping an address to a person
 

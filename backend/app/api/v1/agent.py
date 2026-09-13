@@ -451,6 +451,23 @@ def analyze_event(
     if identity is None:
         raise EntityNotFound("agent", uuid.UUID(int=0))
 
+    # BR-AI-03, at the entry point: an agent's authority is the intersection of its own and the
+    # delegating human's, so a caller who could not raise a Proposal themselves cannot have one
+    # raised on their behalf. A run produces AIInteractions, Evidence and Proposals under this
+    # principal's name, and until CP23 nothing checked whether they were entitled to any of it —
+    # the only thing standing between a read-only role and an analysis was whether they could see
+    # the Event, which is a different question that happened to give the right answer.
+    authorize(
+        principal,
+        Action.CREATE,
+        ResourceRef(
+            type=ResourceType.PROPOSAL,
+            org_id=principal.org_id,
+            id=None,
+            relations=frozenset(),
+        ),
+    )
+
     guard = Idempotency(
         session,
         org_id=principal.org_id,

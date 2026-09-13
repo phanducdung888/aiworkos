@@ -314,6 +314,18 @@ unit equivalent, so this is undecided rather than decided. Pinned by
 
 ### Resolved
 
+**`analyze` authorized nobody (closed in CP23).** `POST /events/{id}/analyze` had no
+authorization check of its own, so any authenticated principal who could see an Event could
+have an AI run raised under their name — `viewer`, `auditor` and `executive` included, all of
+whom are denied `PROPOSAL.CREATE`. The refusal everyone assumed was there came from Event read
+visibility, which is a different question that happened to give the right answer. Found by
+granting the connector `PERSONAL` read and watching the endpoint start answering 201. It now
+authorizes the caller for `PROPOSAL.CREATE`, which is BR-AI-03 at the entry point.
+
+**Job scheduling used two clocks (closed in CP23).** `enqueue` stamped `run_after` from the
+enqueuing process and `claim` compared it against PostgreSQL's `now()`. Both are the database's
+now. **Not a fix for the intermittent execution failure**, which remains open.
+
 **The attachment flow had never been executed (closed in CP22).** `S3ObjectStore` is the only
 module importing boto3 and the one that issues credential-bearing URLs, and it had no test of
 any kind — every attachment test installs the in-memory store. MinIO also published no ports,
@@ -570,6 +582,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | 20 | First real connector: IMAP email, ingestion-only role, migration 0014, PQ-1 amended; ADR-0060/0061 | ✅ complete · 1169 backend + 111 frontend + 45 connector |
 | 21 | Connector operations: real mail-server tests (found a timezone defect), TLS modes, service loop, connector topology confined and asserted; ADR-0062 | ✅ complete · 1169 backend + 111 frontend + 81 connector |
 | 22 | Attachment substrate: `S3ObjectStore` and the whole ADR-0039 flow verified against real MinIO for the first time; compose interpolation defect fixed; connector attachment delivery blocked and specified (ADR-0063) | ✅ complete · 1183 backend + 111 frontend + 81 connector |
+| 23 | Attachment delivery: `PERSONAL` event reach, two ingestion cells, public/internal store endpoints, object proxy, connector carries files; database clock for job scheduling; closed an unauthorized-analysis hole | ✅ complete · 1204 backend + 111 frontend + 87 connector |
 
 Checkpoint 2 delivered: `project`, `milestone`, `work`, `dependency`, `work_assignment`, the
 `work_current_owner` and `work_partitioned` views, and `app/contexts/work/domain.py`. No application

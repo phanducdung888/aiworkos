@@ -274,36 +274,76 @@ class TestIdempotencyKey:
 
 
 class TestAttachments:
-    """CP21 names what it does not deliver, rather than dropping it in silence."""
+    """CP23 carries the files; CP21 only named them."""
 
-    def an_attached_message(self) -> bytes:
+    def an_attached_message(self, size: int = 19) -> bytes:
+        import base64
+
+        blob = base64.b64encode(b"%PDF-1.4" + b"x" * (size - 8)).decode()
         return (
-            b"From: mai@example.test\r\nTo: khoa@example.test\r\n"
-            b"Message-ID: <att@example.test>\r\n"
-            b"Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n"
-            b'Content-Type: multipart/mixed; boundary="b"\r\n\r\n'
-            b"--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
-            b"The quote is attached.\r\n"
-            b"--b\r\nContent-Type: application/pdf\r\n"
-            b'Content-Disposition: attachment; filename="quote.pdf"\r\n\r\n'
-            b"%PDF-1.4 not really\r\n"
-            b"--b--\r\n"
-        )
+            "From: mai@example.test\r\nTo: khoa@example.test\r\n"
+            "Message-ID: <att@example.test>\r\n"
+            "Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n"
+            'Content-Type: multipart/mixed; boundary="b"\r\n\r\n'
+            "--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+            "The quote is attached.\r\n"
+            "--b\r\nContent-Type: application/pdf\r\n"
+            'Content-Disposition: attachment; filename="quote.pdf"\r\n'
+            "Content-Transfer-Encoding: base64\r\n\r\n"
+            f"{blob}\r\n"
+            "--b--\r\n"
+        ).encode()
 
-    def test_the_attachment_is_named(self) -> None:
-        assert parse_message(self.an_attached_message()).dropped_attachments == ("quote.pdf",)
+    def test_the_file_arrives_with_its_bytes(self) -> None:
+        attachments = parse_message(self.an_attached_message()).attachments
+        assert len(attachments) == 1
+        assert attachments[0].filename == "quote.pdf"
+        assert attachments[0].media_type == "application/pdf"
+        assert attachments[0].content.startswith(b"%PDF-1.4")
+        assert attachments[0].size_bytes == 19
 
     def test_the_body_is_the_message_and_not_the_attachment(self) -> None:
         message = parse_message(self.an_attached_message())
         assert message.body_text.strip() == "The quote is attached."
         assert "PDF" not in message.body_text
 
-    def test_the_event_says_nothing_about_them(self) -> None:
-        """Mentioning them in `body_text` would put words into the Event nobody wrote, and Evidence
-        is quoted from that body (BR-E-05)."""
+    def test_the_event_body_says_nothing_about_them(self) -> None:
+        """An attachment is attached *to* an Event, not described inside one (ADR-0039).
+
+        Naming files in `body_text` would put words into a record nobody wrote, and Evidence is
+        quoted from it (BR-E-05).
+        """
         event = parse_message(self.an_attached_message()).as_event()
         assert "quote.pdf" not in str(event)
-        assert "dropped_attachments" not in event
+        assert "attachments" not in event
 
-    def test_a_message_with_no_attachment_names_none(self) -> None:
-        assert parse_message(a_message()).dropped_attachments == ()
+    def test_a_message_with_no_attachment_carries_none(self) -> None:
+        assert parse_message(a_message()).attachments == ()
+
+    def test_an_oversized_file_is_skipped_rather_than_truncated(self) -> None:
+        """Half a PDF is not a smaller PDF. An Event with a corrupt attachment is worse than one
+        that says a file was too large."""
+        raw = self.an_attached_message(size=4096)
+        assert parse_message(raw, max_attachment_bytes=100).attachments == ()
+        assert len(parse_message(raw, max_attachment_bytes=1_000_000).attachments) == 1
+
+    def test_a_filename_from_the_open_internet_is_made_safe(self) -> None:
+        """It goes into a record and into object metadata; path separators are not names."""
+        raw = (
+            b"From: a@x.test\r\nTo: b@x.test\r\n"
+            b"Message-ID: <evil@x.test>\r\n"
+            b"Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n"
+            b'Content-Type: multipart/mixed; boundary="b"\r\n\r\n'
+            b"--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n"
+            b"--b\r\nContent-Type: application/pdf\r\n"
+            b'Content-Disposition: attachment; filename="../../etc/passwd"\r\n\r\n'
+            b"not a pdf\r\n"
+            b"--b--\r\n"
+        )
+        assert parse_message(raw).attachments[0].filename == "passwd"
+
+    def test_an_inline_part_with_no_filename_is_body_not_attachment(self) -> None:
+        """The same test decides both, so the two cannot disagree about which parts are prose."""
+        message = parse_message(a_message())
+        assert message.attachments == ()
+        assert "revised quote" in message.body_text

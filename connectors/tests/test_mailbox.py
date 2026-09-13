@@ -49,6 +49,7 @@ def send(
     message_id: str | None = None,
     date: str | None = "Sat, 12 Sep 2026 09:00:00 +0000",
     html: bool = False,
+    attachment: tuple[str, str, bytes] | None = None,
 ) -> str:
     reference = message_id or f"{uuid.uuid4().hex}@example.test"
     message = email.message.EmailMessage()
@@ -64,6 +65,12 @@ def send(
         message.set_content(f"<p>{body}</p>", subtype="html")
     else:
         message.set_content(body)
+    if attachment is not None:
+        name, media_type, content = attachment
+        maintype, _, subtype = media_type.partition("/")
+        message.add_attachment(
+            content, maintype=maintype, subtype=subtype, filename=name
+        )
     with smtplib.SMTP(HOST, SMTP_PORT) as smtp:
         smtp.send_message(message)
     return reference
@@ -248,3 +255,66 @@ def test_an_empty_mailbox_is_not_an_error(workos: Capture) -> None:
     report = run_once(settings_for(a_mailbox(), workos))
     assert report == type(report)()
     assert workos.received == []
+
+
+# --------------------------------------------------------------------------- attachments
+
+
+def test_a_real_message_with_a_file_carries_its_bytes(workos: Capture) -> None:
+    """The file survives SMTP, IMAP, base64 and the parser, byte for byte.
+
+    Worth testing against a real server rather than a handcrafted MIME string: transfer encoding is
+    chosen by the sending library and applied by the transport, and a connector that only ever saw
+    its own fixtures would not know which it gets.
+    """
+    mailbox = a_mailbox()
+    content = b"%PDF-1.4 the revised quote\n" + bytes(range(256))
+    send(mailbox, attachment=("quote.pdf", "application/pdf", content))
+
+    report = run_once(settings_for(mailbox, workos))
+
+    assert report.delivered == 1
+    assert report.attachments == 1
+    assert len(workos.uploaded) == 1
+    assert workos.uploaded[0]["content"] == content, "the file did not survive the round trip"
+    assert workos.uploaded[0]["content_type"] == "application/pdf"
+
+    # Reserve, upload, complete — in that order, and the upload is not an API call (ADR-0039).
+    paths = [row["path"] for row in workos.received]
+    assert paths[0] == "/api/v1/events"
+    assert paths[1].endswith("/attachments")
+    assert paths[2].endswith("/complete")
+    assert not workos.uploaded[0]["path"].startswith("/api/")
+
+
+def test_the_store_is_never_given_a_workos_credential(workos: Capture) -> None:
+    """The presigned URL *is* the authority. Sending a bearer token to the object store would hand
+    a WorkOS credential to a host that has no business seeing one."""
+    mailbox = a_mailbox()
+    send(mailbox, attachment=("quote.pdf", "application/pdf", b"%PDF-1.4 x"))
+
+    run_once(settings_for(mailbox, workos))
+
+    assert workos.uploaded[0]["authorization"] is None
+    assert workos.received[0]["authorization"] == "Bearer not-a-real-token"
+
+
+def test_a_file_that_cannot_be_delivered_does_not_lose_the_message(
+    workos: Capture,
+) -> None:
+    """An Event with a missing attachment is a better record than no Event at all.
+
+    The message is still marked seen. The Event exists and a redelivery would not re-attempt the
+    file, so leaving it unseen would re-deliver a message WorkOS already has, forever. The failure
+    is named in the log instead.
+    """
+    mailbox = a_mailbox()
+    send(mailbox, attachment=("quote.pdf", "application/pdf", b"%PDF-1.4 x"))
+    workos.attachment_status = 422  # the Event succeeds; the attachment is refused
+
+    report = run_once(settings_for(mailbox, workos), attempts=1, backoff=0.0)
+
+    assert report.delivered == 1, "the message itself must still be delivered"
+    assert report.attachments == 0
+    assert workos.uploaded == [], "nothing was uploaded, because nothing was reserved"
+    assert unseen(mailbox) == 0, "the message would otherwise be redelivered forever"

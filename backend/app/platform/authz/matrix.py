@@ -216,12 +216,18 @@ MATRIX: dict[tuple[ResourceType, Action], dict[Role, frozenset[Grant]]] = {
     # The one cell a connector holds (ADR-0060). `ORG`, because a delivered message belongs to
     # the organization the credential is scoped to and to no narrower thing inside it.
     (R.EVENT, A.CREATE):             row(ORG,  ORG,  ORG,  ORG,   NO,    NO,   NO,  ORG),
-    (R.EVENT, A.READ):               row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
+    # `OWN` for ingestion: the Events it captured, and nothing else (ADR-0063). The narrowing
+    # is real — `signal.queries._reach_predicate` renders `PERSONAL` as
+    # `captured_by_person_id = :me`, and the sensitivity predicate still applies on top.
+    (R.EVENT, A.READ):               row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG,  OWN),
     (R.EVENT, A.LIST):               row(ORG,  ORG,  ORG,  ORG,   ORG,   ORG,  ORG),
     # Attaching is narrower than capturing. Adding a file to an Event somebody else recorded is a
     # change to their record of what happened, so a member reaches only their own captures
     # (ADR-0039 routes every attachment endpoint through the Event's own authorization).
-    (R.EVENT, A.ATTACH):             row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO),
+    # Attaching to an Event it delivered. `event_relations` already answers `PERSONAL` for
+    # whoever captured the Event, so this cell is the whole change: a connector attaching to
+    # somebody else's Event is refused by machinery that predates it.
+    (R.EVENT, A.ATTACH):             row(ORG,  DEPT, TEAM, OWN,   NO,    NO,   NO,  OWN),
     # ---------------------------------------------------------------- evidence
     # Evidence is the citation layer: it says *why* the system believes something. Reading it has to
     # be as wide as reading the thing it justifies, or a claim becomes unexplainable to the person

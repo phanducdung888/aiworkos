@@ -78,16 +78,30 @@ def _sensitivity_predicate(principal: Principal) -> Any:
 def _reach_predicate(principal: Principal) -> Any:
     """The matrix's grants for (EVENT, READ), rendered as SQL.
 
-    Every role that reads at all reads organization-wide, so this narrows nothing today. It is here
-    so that a future role with a narrower grant narrows the query too, rather than quietly reading
-    everything because the list endpoint never consulted the matrix.
+    Ordered widest first, and the final clause is the one that matters. Until CP23 an unrecognised
+    grant fell through to `None` — no `WHERE` clause at all — so a role granted `PERSONAL` would
+    have read every Event in the organization while the matrix said it read only its own. A
+    narrowing that silently widens is worse than no narrowing, because the table stops describing
+    the system.
+
+    `PERSONAL` means the Events this principal captured, which is the same relation
+    `authorization.event_relations` uses to decide `ATTACH`. A connector delivering messages holds
+    exactly this (ADR-0060, ADR-0063): it may read back what it delivered and nothing else.
     """
     grants = grants_for(principal, Action.READ, ResourceType.EVENT)
     if Grant.ORG in grants:
         return None
-    if not grants or Grant.DENY in grants:
-        return Event.id.is_(None)
-    return None
+    if Grant.PERSONAL in grants:
+        if principal.person_id is None:
+            # A principal with no Person captured nothing, so `PERSONAL` reaches nothing. Said
+            # explicitly rather than left to a comparison against NULL, which would be true of no
+            # row and is the right answer arrived at by accident.
+            return Event.id.is_(None)
+        return Event.captured_by_person_id == principal.person_id
+    # Everything else — an explicit denial, or a grant this function does not know how to render.
+    # Refusing an unknown grant is the direction that cannot leak: a grant nobody taught this
+    # function about must narrow to nothing rather than to everything.
+    return Event.id.is_(None)
 
 
 def readable_events(principal: Principal) -> Select[tuple[Event]]:

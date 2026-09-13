@@ -77,7 +77,7 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0060 | An ingestion-only role, holding one grant | accepted | ADR-0027, ADR-0058, migration 0014 |
 | 0061 | Email over IMAP is the first connector; PQ-1 amended | accepted, amends Decision Pack v1.0 | PQ-1, ADR-0058, ADR-0059 |
 | 0062 | A connector is an untrusted edge, confined and tested like one | accepted | ADR-0002, ADR-0058, ADR-0061 |
-| 0063 | Attachment delivery by a connector: blocked, with the resolution proposed | **proposed — needs a decision** | ADR-0039, ADR-0060, ADR-0062 |
+| 0063 | Attachment delivery by a connector | accepted (CP23) | ADR-0039, ADR-0060, ADR-0062 |
 
 ---
 
@@ -1760,9 +1760,10 @@ service (a test dependency in a deployment); a `--once` flag (one pass is what y
 for a service).
 
 
-### ADR-0063 — Attachment delivery by a connector: blocked, with the resolution proposed
+### ADR-0063 — Attachment delivery by a connector
 
-**Status: proposed. Nothing in this record has been implemented.** CP22 set out to deliver
+**Status: accepted and implemented in CP23.** The three blockers below were put to the Product
+Owner and resolved; what follows records both the problem and what was built. CP22 set out to deliver
 attachments from the IMAP connector and stopped, because doing so requires two changes to security
 boundaries and one to network topology. Recorded here so the decision is made rather than arrived
 at.
@@ -1799,22 +1800,52 @@ ADR-0002 and ADR-0062 forbid. In a deployment with a public S3 endpoint the URL 
 this evaporates; in this stack it does not, and "which endpoint does a client get" is currently one
 setting (`s3_endpoint_url`) serving two different audiences.
 
-**Proposed resolution, for approval.**
+**Resolution, as built.**
 
-* Implement `Grant.PERSONAL` in `_reach_predicate` as "Events whose `captured_by_person_id` is this
-  principal", with a test that a connector sees its own deliveries and no others.
-* Grant the ingestion role `(EVENT, READ) = PERSONAL` and `(EVENT, ATTACH) = PERSONAL`. Its total
-  reach becomes three cells, all confined to what it delivered itself.
-* Split the object store endpoint into the one the API signs with and the one a client is handed,
-  so a connector and a browser can reach what they are given without the store joining `edge`.
-* Then the connector's part is small: it already names the attachments it drops.
+* **`Grant.PERSONAL` is implemented in `_reach_predicate`** as `captured_by_person_id = :me`, and
+  the function's fall-through now *denies* rather than returning `None`. That ordering was not
+  optional: a `PERSONAL` cell added before the predicate existed would have granted organization-wide
+  read silently, which was demonstrated before the change was made.
+* **Two cells**, `(EVENT, READ)` and `(EVENT, ATTACH)`, both `OWN`. The attach half needed only the
+  cell: `event_relations` already answered `PERSONAL` for whoever captured the Event, so a connector
+  attaching to somebody else's is refused by machinery that predates this record.
+* **The object store endpoint is split.** `S3ObjectStore` holds two clients: presigned URLs are
+  signed for the endpoint a client can reach, `stat` and `delete` go over the internal one. A
+  presigned URL cannot be rewritten after signing — the signature covers the host — which is why
+  this is two clients and not string surgery, and is asserted by a test that rewrites one and gets
+  a 403.
+* **MinIO stays on `data`.** A reverse proxy (`objects`) sits on `app` and `data` and is the only
+  service besides the API that spans the boundary. The connector reaches objects through it and
+  cannot address the store at all.
 
-**Consequences of not doing it**, which is the current state: a message whose substance is a PDF
-arrives as its covering note, and the analysis finds correspondingly little. The connector logs what
-it left behind, so this is visible rather than silent (ADR-0062), but it is a real limitation and
-the first pilot with a quote attached will meet it.
+**A hole this opened, and closed.** Granting the connector `PERSONAL` read removed the only thing
+that had been stopping it from calling `POST /events/{id}/analyze` — that endpoint had **no
+authorization check of its own**, so its refusal had been incidental. Any authenticated principal
+who could see an Event could have an analysis run under their name, including `viewer`, `auditor`
+and `executive`, all of whom are denied `PROPOSAL.CREATE`. The endpoint now authorizes the caller
+for exactly that, which is BR-AI-03 — an agent's authority is the intersection of its own and the
+delegating human's — made real at the entry point rather than assumed.
 
-Rejected without approval: granting the ingestion role organization-wide `EVENT.READ` (reverses
-ADR-0060 for convenience); putting the connector on the `data` network (reverses ADR-0062);
-accepting attachment bytes through the capture API (reverses ADR-0039, which exists because an API
-process is the wrong place for file transfer).
+**A limitation this removed.** ADR-0060 recorded that a redelivery without the idempotency key
+answered 404, because telling a connector "you already sent this, here it is" meant returning an
+Event it could not read. It can read its own now, so the fallback is the original Event rather than
+a confusing refusal. The derived key is still worth sending: it replays without touching the row.
+
+**What the connector does with it.** It carries each file's bytes — a message is whole in memory by
+the time it is parsed, so pretending to stream would be ceremony — bounded by
+`MAX_ATTACHMENT_BYTES`, and delivers them after the Event exists: reserve, PUT to the presigned URL,
+complete. It sends no credential to the store, because the URL is the authority. A file that fails
+is named and the rest continue: an Event with three of its four attachments is a better record than
+no Event at all. Oversized parts are skipped rather than truncated, because half a PDF is not a
+smaller PDF.
+
+**What the Event does not say.** Attachments are absent from `body_text` and from the capture
+payload. Naming them there would put words into a record nobody wrote, and Evidence is quoted from
+it (BR-E-05). The AI reads the covering note; the file sits beside the Event, reachable through the
+flow ADR-0039 designed.
+
+Rejected: granting the ingestion role organization-wide `EVENT.READ` (reverses ADR-0060 for
+convenience); putting the connector or the store on each other's networks (reverses ADR-0062 and
+ADR-0020); accepting attachment bytes through the capture API (reverses ADR-0039, which exists
+because an API process is the wrong place for file transfer); rewriting the host of a presigned URL
+after signing (does not work, and the test says so).

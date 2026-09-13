@@ -89,6 +89,31 @@ def queue_one(session: Session, org_id: uuid.UUID, **over: object) -> jobs.Job:
     return job
 
 
+def _claimable(
+    factory: sessionmaker[Session], job_id: uuid.UUID, *, limit: int = 100
+) -> bool:
+    """Whether this job can be claimed now.
+
+    Drains rather than claiming once, because `claim` takes the *oldest* runnable job and the suite
+    shares one queue — a leftover from another test would otherwise decide this test's outcome. Each
+    foreign job is failed, which reschedules it out of the way without executing anything.
+    """
+    worker = factory()
+    try:
+        for _ in range(limit):
+            claimed = jobs.claim(worker, kinds=("execute_approval",))
+            if claimed is None:
+                return False
+            if claimed.id == job_id:
+                worker.commit()
+                return True
+            jobs.fail(worker, claimed, "set aside by test_job_clock")
+            worker.commit()
+        return False
+    finally:
+        worker.close()
+
+
 def scheduled_for(
     session: Session, org_id: uuid.UUID, job_id: uuid.UUID
 ) -> tuple[dt.datetime, dt.datetime]:
@@ -120,14 +145,7 @@ def test_a_job_is_runnable_now_even_when_the_process_clock_is_hours_ahead(
         f"the job is scheduled {(run_after - clock)} into the database's future"
     )
 
-    worker = worker_session_factory()
-    try:
-        claimed = jobs.claim(worker, kinds=("execute_approval",))
-        assert claimed is not None, "a job queued now was not claimable"
-        assert claimed.id == job.id
-        worker.commit()
-    finally:
-        worker.close()
+    assert _claimable(worker_session_factory, job.id), "a job queued now was not claimable"
 
 
 def test_the_time_is_the_database_s_and_not_the_caller_s(

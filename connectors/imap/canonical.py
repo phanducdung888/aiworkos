@@ -27,6 +27,13 @@ import re
 from email.parser import BytesParser
 from typing import Any
 
+#: The largest file this connector will carry, per attachment.
+#:
+#: A message is whole in memory by the time it is parsed, so this is what keeps that bounded. Ten
+#: megabytes covers the quotes, decks and scanned invoices this exists for; anything larger is
+#: skipped and reported rather than truncated.
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+
 #: What this connector calls itself. Half of BR-E-02's key, so it is stable by contract: changing it
 #: makes every message already delivered look like a message from somewhere else.
 DEFAULT_SOURCE_SYSTEM = "email.imap"
@@ -50,6 +57,24 @@ class Unnormalisable(Exception):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class Attachment:
+    """One file from a message, as the capture API will want it.
+
+    The bytes are carried rather than streamed because a message is already whole in memory by the
+    time it is parsed — IMAP hands over the entire RFC 5322 document — so pretending otherwise would
+    be ceremony. `IMAP_MAX_ATTACHMENT_BYTES` is what stops that from being unbounded.
+    """
+
+    filename: str
+    media_type: str
+    content: bytes
+
+    @property
+    def size_bytes(self) -> int:
+        return len(self.content)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class CanonicalMessage:
     """One message, in the shape the capture API takes.
 
@@ -65,16 +90,13 @@ class CanonicalMessage:
     body_text: str
     participants: tuple[dict[str, str], ...]
     idempotency_key: str
-    #: Filenames this message carried and this connector did not deliver.
+    #: The files this message carried, with their bytes.
     #:
-    #: Attachments are a separate flow — a presigned upload against the Event, not a field on it
-    #: (ADR-0039) — and CP21 does not implement it. They are named here so the loop can say what it
-    #: left behind: a message whose substance is in a PDF arrives as its covering note, and an
-    #: operator who cannot see that has no way to know why the analysis found so little.
-    #:
-    #: Deliberately *not* in `as_event()`. Mentioning them in `body_text` would put words into the
-    #: Event that nobody wrote, and Evidence is quoted from that body (BR-E-05).
-    dropped_attachments: tuple[str, ...] = ()
+    #: Deliberately *not* in `as_event()`. Attachments are a separate flow — a presigned upload
+    #: against the Event once it exists, not a field on it (ADR-0039) — and naming them in
+    #: `body_text` would put words into the Event that nobody wrote, which Evidence is then quoted
+    #: from (BR-E-05).
+    attachments: tuple[Attachment, ...] = ()
 
     def as_event(self) -> dict[str, Any]:
         """The JSON body. `type` and `origin` are fixed: a connector reports what it received."""
@@ -94,6 +116,7 @@ def parse_message(
     *,
     source_system: str = DEFAULT_SOURCE_SYSTEM,
     received_at: dt.datetime | None = None,
+    max_attachment_bytes: int = MAX_ATTACHMENT_BYTES,
 ) -> CanonicalMessage:
     """Normalise one message, or refuse it.
 
@@ -114,7 +137,7 @@ def parse_message(
         body_text=body,
         participants=_participants(parsed),
         idempotency_key=idempotency_key(source_system, _reference(parsed, raw), body),
-        dropped_attachments=_attachments(parsed),
+        attachments=_attachments(parsed, limit=max_attachment_bytes),
     )
 
 
@@ -211,15 +234,48 @@ def _body_of(parsed: email.message.Message) -> str:
     return _strip_html(html) if html else ""
 
 
-def _attachments(parsed: email.message.Message) -> tuple[str, ...]:
-    """What was attached, by name only. The bytes are not read and not sent."""
+def _attachments(
+    parsed: email.message.Message, *, limit: int
+) -> tuple[Attachment, ...]:
+    """The files a message carried, with their bytes.
+
+    A part is an attachment when it has a filename. That is the same test the body extraction uses
+    to skip it, so the two cannot disagree about which parts are prose and which are files.
+
+    Oversized parts are skipped rather than truncated. Half a PDF is not a smaller PDF, and an
+    Event whose attachment is silently corrupt is worse than one that says a file was too large.
+    """
     if not parsed.is_multipart():
         return ()
-    return tuple(
-        name
-        for part in parsed.walk()
-        if part.get_content_maintype() != "multipart" and (name := part.get_filename())
-    )
+    found: list[Attachment] = []
+    for part in parsed.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+        name = part.get_filename()
+        if not name:
+            continue
+        payload = part.get_payload(decode=True)
+        if not isinstance(payload, bytes) or not payload or len(payload) > limit:
+            continue
+        found.append(
+            Attachment(
+                filename=_safe_filename(name),
+                media_type=part.get_content_type() or "application/octet-stream",
+                content=payload,
+            )
+        )
+    return tuple(found)
+
+
+def _safe_filename(name: str) -> str:
+    """The name, with anything that is not a name taken out.
+
+    A filename arrives from the open internet and goes into a record and into an object key's
+    metadata. Path separators and NUL bytes are removed here rather than trusted to be harmless
+    downstream, and an empty result is given a name rather than passed on as one.
+    """
+    cleaned = name.replace("\\", "/").split("/")[-1].replace("\x00", "").strip()
+    return cleaned[:255] or "attachment"
 
 
 def _decode(part: email.message.Message) -> str:

@@ -87,6 +87,21 @@ services:
       - "127.0.0.1:${GREENMAIL_IMAP_PORT:-3143}:3143"
     networks: [edge]
 
+  # The public face of object storage, and the only service that spans `app` and `data`
+  # (ADR-0063). MinIO stays where it is; a client reaches its objects through here.
+  #
+  # It forwards and nothing else: a presigned URL carries its own authority and its own expiry, so
+  # this adds no credential and makes no access decision. The one thing it must get right is the
+  # Host header, because the signature covers it.
+  objects:
+    image: nginx:1.27-alpine
+    profiles: ["pilot"]
+    volumes:
+      - ./ops/proxy/objects.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [minio]
+    restart: unless-stopped
+    networks: [app, data]
+
   # The IMAP connector, as it would actually be deployed (ADR-0058, ADR-0061).
   #
   # No build step, because there is nothing to install: the connector is standard library only, so
@@ -135,6 +150,11 @@ services:
       # second of the two isolation mechanisms ADR-0008 relies on.
       WORKOS_DATABASE_URL: postgresql+psycopg://workos_owner:${OWNER_DB_PASSWORD:-workos_owner}@postgres:5432/${POSTGRES_DB:-workos}
       WORKOS_APP_DATABASE_URL: postgresql+psycopg://workos_app:${APP_DB_PASSWORD:-workos_app}@postgres:5432/${POSTGRES_DB:-workos}
+      # Where this process reaches the store, and where it tells a client to. The second must be a
+      # name the client can resolve *and* the one the URL is signed for — the signature covers the
+      # host, so these cannot be reconciled after the fact (ADR-0063). `objects` is the proxy above.
+      WORKOS_S3_ENDPOINT_URL: ${WORKOS_S3_ENDPOINT_URL:-http://minio:9000}
+      WORKOS_S3_PUBLIC_ENDPOINT_URL: ${WORKOS_S3_PUBLIC_ENDPOINT_URL:-http://objects:9000}
     depends_on:
       postgres:
         condition: service_healthy

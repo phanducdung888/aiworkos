@@ -118,7 +118,6 @@ def test_a_connector_may_write_nothing_but_an_event(
         "/api/v1/work",
         "/api/v1/commitments",
         "/api/v1/proposals",
-        "/api/v1/events",
         "/api/v1/people",
     ],
 )
@@ -130,12 +129,11 @@ def test_a_connector_reads_no_business_data(
     work_org: WorkOrg,
     path: str,
 ) -> None:
-    """Nothing reaches it, including the messages it delivered itself.
+    """Nothing reaches it through a listing, including the messages it delivered itself.
 
-    The listing endpoints narrow by the grants a role holds rather than refusing up front, so a
-    role with none of them gets an empty page rather than a 403. The confidentiality property is
-    the same and is what is asserted here: a stolen delivery credential cannot be used to page
-    through an organization, which is the thing it would otherwise be most useful for.
+    CP23 gave it `(EVENT, READ) = PERSONAL` so it can complete an attachment, and left `LIST`
+    denied. Reading one Event it captured and paging through an organization are different
+    powers, and only the first is needed to attach a file to something.
 
     The organization is populated first, so an empty answer means "narrowed to nothing" rather than
     "there was nothing".
@@ -156,11 +154,146 @@ def test_a_connector_reads_no_business_data(
         assert response.json()["items"] == [], f"GET {path} leaked rows to a connector"
 
 
-def test_a_connector_cannot_read_back_the_event_it_delivered(
+def test_listing_events_shows_a_connector_only_its_own(
+    api: TestClient,
+    as_admin: dict[str, str],
+    as_connector: dict[str, str],
+    roles: None,
+    work_org: WorkOrg,
+) -> None:
+    """The listing narrows by the `(EVENT, READ)` grants, not by `(EVENT, LIST)`.
+
+    So denying `LIST` in the matrix does not stop this endpoint answering — what stops it returning
+    anything interesting is the reach predicate, and after CP23 that is `PERSONAL`. The outcome is
+    the same information a connector can already fetch one Event at a time, which is why this is an
+    assertion about *scope* rather than about an empty page.
+    """
+    theirs = api.post(
+        "/api/v1/events",
+        json={
+            "type": "MANUAL_CAPTURE",
+            "occurred_at": "2026-09-12T09:00:00+00:00",
+            "body_text": "written down by a person",
+        },
+        headers={**as_admin, "Idempotency-Key": str(uuid.uuid4())},
+    ).json()
+    mine = deliver(api, as_connector, parse_message(an_email())).json()
+
+    listed = api.get("/api/v1/events", headers=as_connector)
+    assert listed.status_code == 200, listed.text
+    ids = {row["id"] for row in listed.json()["items"]}
+    assert mine["id"] in ids
+    assert theirs["id"] not in ids, "a connector paged an Event it did not deliver"
+
+
+def test_a_connector_reads_back_only_the_events_it_delivered(
+    api: TestClient,
+    as_admin: dict[str, str],
+    as_connector: dict[str, str],
+    roles: None,
+    work_org: WorkOrg,
+) -> None:
+    """CP23's narrowing, both halves in one test.
+
+    `PERSONAL` is rendered as `captured_by_person_id = :me` by the reach predicate, so the Event a
+    connector delivered is readable and one somebody else captured is not — and "not" is a 404,
+    which is the same answer as "does not exist", because whether an Event exists is itself
+    tenant information.
+    """
+    mine = deliver(api, as_connector, parse_message(an_email())).json()
+    theirs = api.post(
+        "/api/v1/events",
+        json={
+            "type": "MANUAL_CAPTURE",
+            "occurred_at": "2026-09-12T09:00:00+00:00",
+            "body_text": "written down by a person",
+        },
+        headers={**as_admin, "Idempotency-Key": str(uuid.uuid4())},
+    ).json()
+
+    assert api.get(f"/api/v1/events/{mine['id']}", headers=as_connector).status_code == 200
+    assert api.get(f"/api/v1/events/{theirs['id']}", headers=as_connector).status_code == 404
+
+
+def test_a_connector_may_attach_to_its_own_event(
     api: TestClient, as_connector: dict[str, str], roles: None, work_org: WorkOrg
 ) -> None:
-    """Deliberate. The capture response already told it what happened."""
+    """The reason CP23 opened anything at all (ADR-0063)."""
     event = deliver(api, as_connector, parse_message(an_email())).json()
+    reserved = api.post(
+        f"/api/v1/events/{event['id']}/attachments",
+        json={"filename": "quote.pdf", "media_type": "application/pdf"},
+        headers={**as_connector, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert reserved.status_code == 201, reserved.text
+    assert reserved.json()["attachment"]["status"] == "pending"
+
+
+def test_a_connector_may_not_attach_to_somebody_else_s_event(
+    api: TestClient,
+    as_admin: dict[str, str],
+    as_connector: dict[str, str],
+    roles: None,
+    work_org: WorkOrg,
+) -> None:
+    """`ATTACH` is `PERSONAL` too, and the Event is loaded through the same narrowed read.
+
+    So this is refused twice over: the connector cannot see the Event, and could not attach to it
+    if it could.
+    """
+    theirs = api.post(
+        "/api/v1/events",
+        json={
+            "type": "MANUAL_CAPTURE",
+            "occurred_at": "2026-09-12T09:00:00+00:00",
+            "body_text": "not the connector's",
+        },
+        headers={**as_admin, "Idempotency-Key": str(uuid.uuid4())},
+    ).json()
+
+    refused = api.post(
+        f"/api/v1/events/{theirs['id']}/attachments",
+        json={"filename": "intruder.pdf", "media_type": "application/pdf"},
+        headers={**as_connector, "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert refused.status_code in (403, 404)
+
+
+def test_a_restricted_event_is_still_narrowed_for_a_connector(
+    api: TestClient,
+    as_admin: dict[str, str],
+    as_connector: dict[str, str],
+    roles: None,
+    work_org: WorkOrg,
+    owner_session: Session,
+) -> None:
+    """BR-E-08 applies on top of the reach, not instead of it.
+
+    A connector reads its own Events — and if one of those is later marked `restricted` and the
+    connector is not a participant, the sensitivity predicate removes it anyway. Two predicates,
+    both applied, which is what `readable_events` composes.
+    """
+    event = deliver(api, as_connector, parse_message(an_email())).json()
+    assert api.get(f"/api/v1/events/{event['id']}", headers=as_connector).status_code == 200
+
+    # As the table owner with the immutability trigger briefly off, because an Event's sensitivity
+    # is frozen against every application path (BR-E-01). Reaching past a control no request can is
+    # the only way to arrive at the state under test, and is itself a demonstration of the control.
+    owner_session.rollback()
+    owner_session.execute(
+        text("SELECT set_config('app.current_org_id', :org, false)"),
+        {"org": str(work_org.org_id)},
+    )
+    owner_session.execute(text("ALTER TABLE event DISABLE TRIGGER trg_event_immutable"))
+    owner_session.execute(
+        text("UPDATE event SET sensitivity = 'restricted' WHERE id = :id"),
+        {"id": uuid.UUID(event["id"])},
+    )
+    owner_session.execute(text("ALTER TABLE event ENABLE TRIGGER trg_event_immutable"))
+    owner_session.commit()
+    owner_session.execute(text("SELECT set_config('app.current_org_id', '', false)"))
+    owner_session.commit()
+
     assert api.get(f"/api/v1/events/{event['id']}", headers=as_connector).status_code == 404
 
 

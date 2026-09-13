@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # configuration; the credentials here are the same development ones Compose starts with and are
     # overridden by the environment anywhere that matters.
     s3_endpoint_url: str = "http://localhost:9000"
+    #: The address a *client* uses. Empty means "the same one this process uses", which is right
+    #: for a single-address deployment and wrong the moment the store sits behind a proxy — a
+    #: presigned URL cannot be rewritten after signing, because the signature covers the host
+    #: (ADR-0063).
+    s3_public_endpoint_url: str = ""
     s3_access_key: str = "workos"
     s3_secret_key: str = "workos-dev-secret"
     s3_bucket: str = "workos-attachments"

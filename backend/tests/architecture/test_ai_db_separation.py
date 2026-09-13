@@ -191,3 +191,61 @@ def test_no_connector_service_carries_a_default_credential() -> None:
                     f"{name} gives {match.group(1)} a default or a marker: "
                     f"a credential is passed through or not at all"
                 )
+
+
+# --------------------------------------------------------------------------- object storage
+
+
+def test_the_object_store_stays_on_the_data_network() -> None:
+    """ADR-0063. Attachments are reached through a proxy, never by joining the store to the world.
+
+    The alternative that keeps being tempting — put MinIO on `app` so clients can reach it — makes
+    the data network's boundary meaningless the moment somebody wants a file.
+    """
+    services = _compose().get("services", {})
+    assert set(services["minio"].get("networks") or []) == {DATA_NETWORK}
+
+
+def test_only_the_object_proxy_spans_the_data_boundary() -> None:
+    """One crossing, and it is a forwarder that holds no credential and decides nothing.
+
+    The API spans it too, of course — it is the application. What must not accumulate is a second,
+    third and fourth service with a reason to be on both sides.
+    """
+    services = _compose().get("services", {})
+    spanning = {
+        name
+        for name, service in services.items()
+        if DATA_NETWORK in set(service.get("networks") or [])
+        and set(service.get("networks") or []) - {DATA_NETWORK}
+    }
+    assert spanning == {"api", "objects"}, (
+        f"{sorted(spanning)} straddle the data network; only the API and the object proxy may"
+    )
+
+
+def test_a_connector_reaches_object_storage_only_through_the_proxy() -> None:
+    """The whole point of the topology, stated where it can fail.
+
+    A connector must be able to complete a presigned upload — and must not be able to address the
+    store to do it.
+    """
+    services = _compose().get("services", {})
+    proxy_networks = set(services["objects"].get("networks") or [])
+    store_networks = set(services["minio"].get("networks") or [])
+    for name in _connectors(services):
+        networks = set(services[name].get("networks") or [])
+        assert networks & proxy_networks, f"{name} cannot reach the object proxy"
+        assert not networks & store_networks, f"{name} can address the object store directly"
+
+
+def test_the_api_signs_urls_for_a_host_a_client_can_reach() -> None:
+    """A presigned URL signed for the internal name is a 403 in a client's hands.
+
+    The signature covers the host, so this is not something a deployment can paper over later by
+    rewriting the URL — the two addresses have to be configured together.
+    """
+    environment = _compose()["services"]["api"].get("environment") or {}
+    assert "WORKOS_S3_PUBLIC_ENDPOINT_URL" in environment
+    assert "objects" in environment["WORKOS_S3_PUBLIC_ENDPOINT_URL"]
+    assert "minio" in environment["WORKOS_S3_ENDPOINT_URL"]
