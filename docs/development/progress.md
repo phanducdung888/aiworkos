@@ -757,7 +757,28 @@ has not yet occurred. **The next occurrence will carry it**, which is the propor
 fault that reproduces about one run in six and not on demand.
 
 This is a pre-existing suite condition rather than something CP22 introduced: it was first seen in
-CP16, before the object-store tests existed. Test isolation was *not* restructured — `work_org` already gives each
+CP16, before the object-store tests existed.
+
+**CP22.x investigated it directly and did not reproduce it.** Six consecutive shuffled full runs,
+clean. Three structural hypotheses were tested and each is now ruled out with evidence rather than
+with reasoning:
+
+* **An RLS/GUC leak into the worker's pooled connection.** `scope_to` is transaction-local, and the
+  `job` policy exempts `workos_worker` outright — which the test worker runs as. No mechanism.
+* **Clock skew between the enqueuing process and the database.** `enqueue` writes `run_after` from
+  the Python clock and `claim` compares it against PostgreSQL's `now()`, which is two clocks for one
+  comparison. Measured: 300 enqueue-then-claim round trips, 0 unclaimable; and 1,399 samples taken
+  *while the suite was running* put the Python clock consistently **behind** the database — worst
+  case −0.17 ms, never once in the dangerous direction. Not the cause here, but see the risk below.
+* **A row lock held between the request's commit and its session closing.** 200 trials with the
+  connection deliberately left open after `COMMIT`: the worker claimed the row every time.
+
+**A latent risk found on the way, not fixed.** `run_after` really is written from one clock and read
+against another. On this machine the skew points the safe way; on separate hosts with ordinary NTP
+error it may not, and the failure would be a job invisible to the claim until the clocks converge.
+Setting `run_after` from the database clock would remove the race by construction. It is left alone
+deliberately: changing production code on a hypothesis that the measurements do not support is how a
+real cause gets buried under a plausible one. Test isolation was *not* restructured — `work_org` already gives each
 test its own organization, and rebuilding isolation for a defect that would not reproduce would be
 changing a working design on a hypothesis.
 

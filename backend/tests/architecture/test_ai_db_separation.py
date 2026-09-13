@@ -135,6 +135,22 @@ def test_no_connector_is_attached_to_the_data_network() -> None:
         )
 
 
+def test_a_connector_can_actually_reach_the_api() -> None:
+    """The other half of the confinement, and the half CP21 forgot.
+
+    `test_no_connector_is_attached_to_the_data_network` was satisfied by a connector that shared no
+    network with the API either — so it was compliant and could not have delivered a single message.
+    A rule that only says where something may *not* go is satisfied by putting it nowhere.
+    """
+    services = _compose().get("services", {})
+    api_networks = set(services["api"].get("networks") or [])
+    for name in _connectors(services):
+        networks = set(services[name].get("networks") or [])
+        assert networks & api_networks, (
+            f"{name} shares no network with the API; it could not post an Event"
+        )
+
+
 def test_no_connector_receives_data_tier_credentials() -> None:
     """It holds a bearer token for one organization and nothing else (ADR-0060)."""
     services = _compose().get("services", {})

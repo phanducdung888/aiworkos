@@ -94,9 +94,12 @@ services:
   # about the connector rather than a shortcut — it shares no dependency with the application it
   # posts to.
   #
-  # `edge` only, and no data-tier credential anywhere in its environment. It reaches WorkOS over
-  # HTTP like any other client, and `test_no_connector_touches_the_data_tier` asserts this file
-  # keeps that shape.
+  # `edge` because it talks to the open internet, and `app` because that is where the API it posts
+  # to lives. Never `data`: it holds no database credential and has no business on the network
+  # where PostgreSQL, Redis and MinIO sit.
+  #
+  # Both halves are asserted. CP21 checked only that it was absent from `data`, which it satisfied
+  # by sharing no network with the API at all — a service that could not have delivered anything.
   imap-connector:
     image: python:3.12-slim
     profiles: ["pilot"]
@@ -121,7 +124,7 @@ services:
       WORKOS_ORGANIZATION_ID: ${WORKOS_ORGANIZATION_ID}
     depends_on: [api]
     restart: unless-stopped
-    networks: [edge]
+    networks: [edge, app]
 
   api:
     build:
