@@ -52,11 +52,13 @@ from app.contexts.signal.evidence import (
     validate_text_evidence,
 )
 from app.contexts.signal.models import Event, EventAttachment, EventParticipant, Evidence
+from app.platform import jobs
 from app.platform.actor import Actor, ActorType
 from app.platform.audit import record_audit
 from app.platform.authz import Action, Decision, Principal, Relation, ResourceType, authorize
 from app.platform.errors import DomainRuleViolation, EntityNotFound
 from app.platform.ids import uuid7
+from app.platform.jobs import ANALYZE_EVENT
 from app.platform.outbox import append_domain_event
 from app.platform.storage import ObjectStore, object_key_for
 
@@ -326,6 +328,12 @@ class CaptureService(_SignalService):
             after=_snapshot(event),
             decision=decision,
         )
+        extractable = (
+            # BR-E-11. An internal Event must not reach extraction, and neither must a restricted
+            # one: the AI reads what the delegating person could read, and nobody delegated that.
+            event.origin == EventOrigin.EXTERNAL.value
+            and event.sensitivity != Sensitivity.RESTRICTED.value
+        )
         self._emit(
             "EventRevised" if outcome.revision_of else "EventCaptured",
             event.id,
@@ -338,13 +346,41 @@ class CaptureService(_SignalService):
                 "revision_of_event_id": (
                     str(outcome.revision_of) if outcome.revision_of else None
                 ),
-                # BR-E-11. Stated on the message so a consumer never has to re-derive it and
-                # cannot get it wrong: an internal Event must not reach extraction.
-                "extractable": event.origin == EventOrigin.EXTERNAL.value
-                and event.sensitivity != Sensitivity.RESTRICTED.value,
+                # Stated on the message so a consumer never has to re-derive it and cannot get it
+                # wrong.
+                "extractable": extractable,
             },
         )
+        if extractable:
+            self._queue_analysis(event.id)
         return CaptureResult(event=event, created=True, revision_of=outcome.revision_of)
+
+    def _queue_analysis(self, event_id: uuid.UUID) -> None:
+        """Ask for this message to be read, in the transaction that recorded it (ADR-0069).
+
+        Enqueued here rather than by whoever called capture, because every caller would otherwise
+        have to remember — and the one that matters is a connector, which by design knows nothing
+        about analysis and holds no authority to ask for one.
+
+        Same transaction as the Event, so the two cannot disagree: a crash between them leaves
+        neither, and a rollback takes both. That is the property the outbox and the queue were
+        built for, and it is why this is a row rather than a call.
+
+        **This context does not decide whether the analysis is worth doing.** Signal sits below
+        Intelligence in the context order (ADR-0040) and cannot read the capability policy — nor
+        should it. It says only that an extractable message exists; the handler reads the policy
+        and skips without calling a model when the organization has enabled nothing.
+
+        `dedupe_key` is the Event, so a redelivery that replays the same capture does not queue a
+        second reading of the same message.
+        """
+        jobs.enqueue(
+            self._session,
+            org_id=self._org_id,
+            kind=ANALYZE_EVENT,
+            payload={"event_id": str(event_id)},
+            dedupe_key=f"{ANALYZE_EVENT}:{event_id}",
+        )
 
     def _resolve_participants(
         self, command: CaptureEvent

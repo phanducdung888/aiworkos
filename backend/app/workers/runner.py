@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import app.contexts.intelligence.public as intelligence
 from app.platform import jobs
 from app.platform.errors import TerminalJobError
+from app.workers import analysis
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +44,19 @@ def _execute_approval(session: Session, org_id: uuid.UUID, payload: dict[str, An
     return intelligence.execute_queued_approval(session, org_id=org_id, payload=payload)
 
 
+def _analyze_event(session: Session, org_id: uuid.UUID, payload: dict[str, Any]) -> str:
+    return analysis.analyse_in_background(session, org_id, payload)
+
+
 #: Every kind of work this system queues. A closed map, for the same reason the tool registry is
 #: closed (ADR-0042): a queue that dispatches on an arbitrary string is a way to run arbitrary code
 #: by writing a row.
 HANDLERS: dict[str, Handler] = {
     intelligence.EXECUTE_APPROVAL: _execute_approval,
+    # Reading a delivered message is queued work like any other (ADR-0069). It is the only handler
+    # that talks to the outside world, which is why the worker needs egress and the API's
+    # provider configuration.
+    analysis.ANALYZE_EVENT: _analyze_event,
 }
 
 

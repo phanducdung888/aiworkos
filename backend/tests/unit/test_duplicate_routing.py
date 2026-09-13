@@ -18,8 +18,14 @@ from typing import Any
 
 import pytest
 
-from app.api.v1.agent import _DUPLICATE_REFUSAL, _DUPLICATE_SEARCH_KEYS, _RuntimeServices
 from app.platform.agentkit.contract import IntentKind
+from app.workers.analysis import (
+    _DUPLICATE_REFUSAL,
+    _DUPLICATE_SEARCH_KEYS,
+)
+from app.workers.analysis import (
+    RuntimeServices as _RuntimeServices,
+)
 
 COMMITTER = uuid.uuid4()
 

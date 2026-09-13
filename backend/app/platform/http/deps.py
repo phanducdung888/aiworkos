@@ -136,11 +136,11 @@ def object_store(request: Request) -> ObjectStore:
     override = getattr(request.app.state, "object_store", None)
     if override is not None:
         return cast(ObjectStore, override)
-    return _default_object_store()
+    return default_object_store()
 
 
 @lru_cache
-def _default_object_store() -> ObjectStore:
+def default_object_store() -> ObjectStore:
     settings = get_settings()
     return S3ObjectStore(
         endpoint_url=settings.s3_endpoint_url,

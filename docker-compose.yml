@@ -261,10 +261,19 @@ services:
       WORKOS_S3_PUBLIC_ENDPOINT_URL: ${WORKOS_S3_PUBLIC_ENDPOINT_URL:-http://objects:9000}
       WORKOS_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-workos}
       WORKOS_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-workos-dev-secret}
+      # The worker reads delivered messages now (ADR-0069), so it needs the same provider the API
+      # has. Without this it silently built a `FakeProvider` and every automatic analysis proposed
+      # nothing — which looks exactly like a model finding nothing, and is the reason
+      # `ai_interaction.model_version` records what actually answered rather than what was asked for.
+      WORKOS_LLM_PROVIDER: ${WORKOS_LLM_PROVIDER:-fake}
+      WORKOS_OPENAI_API_KEY: ${OPENAI_API_KEY}
+      WORKOS_OPENAI_MODEL: ${WORKOS_OPENAI_MODEL:-gpt-4o}
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    # `data` only for the database, and outbound for the model provider. It reaches no other
+    # service and nothing reaches it.
     networks: [data]
 
 volumes:

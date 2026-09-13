@@ -83,6 +83,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0066 | The connector obtains and renews its own credential | accepted (CP25) | ADR-0058, ADR-0060 |
 | 0067 | A presigned URL is signed for the client that will use it | accepted (CP25) | ADR-0039, ADR-0063 |
 | 0068 | The organization is named by the person, in the browser | accepted (CP25) | ADR-0008, ADR-0031 |
+| 0069 | Ingestion triggers analysis, on borrowed authority | accepted (CP26) | ADR-0034, ADR-0044, ADR-0047 |
+| 0070 | The deadline reader speaks the mailbox's language | accepted (CP26) | ADR-0055, ADR-0065 |
 
 ---
 
@@ -2077,3 +2079,111 @@ Rejected: inferring a single membership (the rule this system states, broken for
 correct right up until the first person joins a second organization); putting memberships in the
 token; a cross-tenant bootstrap endpoint behind a privileged role (a new credential with the
 broadest possible read, to save typing a UUID once per browser).
+
+---
+
+### ADR-0069 — Ingestion triggers analysis, on borrowed authority
+
+**Status:** accepted (CP26) · **Related:** ADR-0034, ADR-0044, ADR-0047, ADR-0058
+
+**Context.** Capturing an Event and analysing one are separate acts, and ADR-0034 is right that
+they should be: a message arriving is not consent to spend a model call on it. What CP25 delivered
+was the other extreme. Mail from a connector became an Event and stopped there, because the only
+way to analyse one was to make a web request about it — the orchestration lived inside the HTTP
+router. A Product Owner dogfooding real mail had to run a script by hand after every message, and
+CP25's own report named that as the single thing preventing unattended use.
+
+**Decision.** An extractable Event enqueues a reading of itself, in the transaction that recorded
+it, and a worker performs it.
+
+1. **The trigger is in `signal`, where the fact is.** `CaptureService` already computed
+   `extractable` — external origin, not restricted — and announced it on the domain event. It now
+   also enqueues. Putting it in the caller instead would mean every caller remembering, and the
+   caller that matters is a connector, which by design knows nothing about analysis and holds no
+   authority to ask for one.
+
+2. **Same transaction as the Event.** A crash between the two leaves neither; a rollback takes
+   both. A job to read an Event that does not exist is a job that fails for ever, and that is a
+   shape this system already knows how to avoid.
+
+3. **`signal` does not decide whether the reading is worth doing.** It sits below Intelligence in
+   the context order (ADR-0040) and cannot read the capability policy. It says only that an
+   extractable message exists. The handler reads the policy and returns without calling a model
+   when the organization has enabled nothing — which is also the **cost guard**: deny-by-default
+   means every intent would be refused, so asking would be money spent to be told no. CP25 watched
+   seven such calls happen in a row.
+
+4. **The authority is borrowed, and named.** BR-AI-03 says an agent's authority is the intersection
+   of its own and the delegating human's, and a queued job has no requester to be that human. The
+   delegate is **the person who enabled the capability**, already recorded on the policy row.
+   Turning a capability on is a deliberate administrative act and the closest thing this system has
+   to somebody saying "the AI may act for me", so nothing new is invented. The earliest decision
+   wins when several people have enabled several capabilities, so the answer is stable. If that
+   person loses their roles the run stops with a clear outcome rather than acting for a ghost, and
+   the Proposal is routed back to them: whoever lent the authority answers for what it proposes.
+
+5. **Automation ends at proposing.** Nothing about this changes the ceiling. Level 2 means a human
+   approves before anything is created (CLAUDE.md rule 9, BR-AI-30/31), and the queue reaches
+   "a proposal is waiting" and stops.
+
+**What had to move.** The orchestration is now `app/workers/analysis.py`, the highest layer both a
+router and a worker can import (`api > workers > agent > contexts`). It performs its own
+authorization rather than trusting its callers, because a router that authorised differently from a
+job would be two security models with one name — which is exactly the hole CP23 found, where an
+endpoint's refusal turned out to be incidental rather than checked.
+
+**A consequence measured immediately.** The worker had no model-provider configuration, because
+until now it never called one. It silently built a `FakeProvider`, and the first automatic analysis
+proposed nothing — indistinguishable, from the outside, from a model finding nothing. It is
+distinguishable from the inside only because `ai_interaction.model_version` records what actually
+answered rather than what was asked for (ADR-0049), which is the second time that decision has paid
+for itself.
+
+Rejected: analysing on arrival without a policy check (spends money to be refused, and makes
+deny-by-default advisory); a scheduled sweep of unanalysed Events (a second delivery path to keep
+correct, when the queue already exists and is transactional); the Event's capturer as the delegate
+(mail arrives under the connector's service account, which is denied `PROPOSAL.CREATE` by design);
+a new per-organization automation principal (a setting, a screen and a migration to record what the
+policy row already records).
+
+---
+
+### ADR-0070 — The deadline reader speaks the mailbox's language
+
+**Status:** accepted (CP26) · **Amends:** ADR-0055, ADR-0065
+
+**Context.** ADR-0055 splits deadline handling in two: the model quotes the phrase, and WorkOS
+reads it against the Event's own day. The reading half is a small deterministic table, and it spoke
+only English.
+
+The pilot mailbox is Vietnamese. Extraction itself was never the problem — a real message produced
+a Proposal quoting "Tôi sẽ gửi bản kế hoạch triển khai cho dự án Huế IOC" at full confidence. The
+deadline beside it, "trước thứ Sáu tuần này", was unreadable, so the commitment came out with no
+date. A commitment with no date is never overdue, never due soon, and never appears on the
+Attention screen — so the product stayed empty however much mail arrived, and looked broken while
+behaving exactly as designed.
+
+**Decision.** The table reads Vietnamese as well as English: weekdays (`thứ hai`…`chủ nhật`),
+accented and unaccented, named and numbered (`thứ 6`); `hôm nay`, `ngày mai`; `tuần này`,
+`tuần sau`, `cuối tuần`; `tháng này`, `cuối tháng`, `tháng sau`.
+
+Two details are decisions rather than translation.
+
+**The modifier follows the day.** `thứ sáu tuần sau` is next week's Friday, where English puts the
+modifier first. `tuần này` and `tuần sau` alone mean the end of a week, so a phrase naming both a
+day and a week needs its own rule or the week rule answers the wrong question — which it did, until
+a test caught it reading "trước thứ Sáu tuần này" as the Sunday the message was sent.
+
+**`mai` alone is not tomorrow.** It is also a very common given name, and this module would rather
+lose a deadline than turn "gửi cho Mai" into a date. `ngày mai` is required.
+
+**And a numeric date is read only when it can mean one thing.** `20/09/2026` is unambiguous because
+there is no month 20; `09/20/2026` is unambiguous the other way; `05/09/2026` is four months apart
+depending on who wrote it and nothing in a quoted phrase says which, so it is declined. That is the
+same rule ADR-0065 applied to "Friday 18 September": a date nobody agreed to is worse than no date.
+
+Rejected: asking the model for a date (ADR-0055 exists because a model that invents dates is
+unfalsifiable); a locale column on the organization to settle day-first versus month-first (a
+setting to make an ambiguous case guessable, when declining costs one vague commitment); a
+date-parsing library (the point of a small closed table is that every phrase it reads can be
+enumerated in a test, and every phrase it refuses is refused on purpose).

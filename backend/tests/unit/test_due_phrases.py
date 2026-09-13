@@ -241,3 +241,122 @@ class TestACalendarDayItCannotPlace:
         """A day number is required, so "may" the modal is not May the month and the guard stays
         narrow enough to change nothing that already worked."""
         assert read_due_phrase(phrase, reference=self.REFERENCE).date == expected
+
+
+class TestVietnamese:
+    """CP26. The same table, in the language the mailbox is actually written in.
+
+    Extraction already worked: a real Vietnamese message produced a Proposal quoting "Tôi sẽ gửi
+    bản kế hoạch triển khai cho dự án Huế IOC" at full confidence. The deadline beside it did not,
+    because the model quotes and *this* table reads (ADR-0055) — so every commitment from that
+    mailbox came out dateless, nothing was ever overdue, and the Attention screen stayed empty
+    however much mail arrived.
+    """
+
+    SUNDAY = dt.date(2026, 9, 13)
+    WEDNESDAY = dt.date(2026, 9, 16)
+
+    @pytest.mark.parametrize(
+        ("phrase", "expected"),
+        [
+            ("thứ hai", dt.date(2026, 9, 14)),
+            ("thứ ba", dt.date(2026, 9, 15)),
+            ("thứ tư", dt.date(2026, 9, 16)),
+            ("thứ năm", dt.date(2026, 9, 17)),
+            ("thứ sáu", dt.date(2026, 9, 18)),
+            ("thứ bảy", dt.date(2026, 9, 19)),
+            ("chủ nhật", dt.date(2026, 9, 13)),
+        ],
+    )
+    def test_every_weekday_reads(self, phrase: str, expected: dt.date) -> None:
+        assert read_due_phrase(phrase, reference=self.SUNDAY).date == expected
+
+    @pytest.mark.parametrize("phrase", ["thu sau", "thứ 6", "thu 6", "THỨ SÁU"])
+    def test_the_spellings_people_actually_use(self, phrase: str) -> None:
+        """Accented and not, named and numbered. The same thread contains both, and a reader that
+        understood one would be right about half a mailbox."""
+        assert read_due_phrase(phrase, reference=self.SUNDAY).date == dt.date(2026, 9, 18)
+
+    @pytest.mark.parametrize(
+        ("phrase", "expected"),
+        [
+            # The modifier follows the day in Vietnamese, which is why each needs its own rule:
+            # "tuần này" alone means the end of the week, and that is not what naming a day meant.
+            ("thứ sáu tuần này", dt.date(2026, 9, 18)),
+            ("trước thứ Sáu tuần này", dt.date(2026, 9, 18)),
+            ("thứ sáu tuần sau", dt.date(2026, 9, 25)),
+            ("thứ sáu tuần tới", dt.date(2026, 9, 25)),
+        ],
+    )
+    def test_a_weekday_qualified_by_a_week(self, phrase: str, expected: dt.date) -> None:
+        assert read_due_phrase(phrase, reference=self.SUNDAY).date == expected
+
+    @pytest.mark.parametrize(
+        ("phrase", "expected", "precision"),
+        [
+            ("hôm nay", dt.date(2026, 9, 16), DuePrecision.EXACT),
+            ("ngày mai", dt.date(2026, 9, 17), DuePrecision.EXACT),
+            ("tuần này", dt.date(2026, 9, 20), DuePrecision.WEEK),
+            ("tuần sau", dt.date(2026, 9, 27), DuePrecision.WEEK),
+            ("cuối tuần", dt.date(2026, 9, 20), DuePrecision.WEEK),
+            ("cuối tháng", dt.date(2026, 9, 30), DuePrecision.MONTH),
+            ("tháng sau", dt.date(2026, 10, 31), DuePrecision.MONTH),
+        ],
+    )
+    def test_the_relative_forms(
+        self, phrase: str, expected: dt.date, precision: DuePrecision
+    ) -> None:
+        reading = read_due_phrase(phrase, reference=self.WEDNESDAY)
+        assert reading.date == expected
+        assert reading.precision is precision
+
+    def test_a_bare_mai_is_not_tomorrow(self) -> None:
+        """`mai` alone is also a very common given name. This module would rather lose a deadline
+        than turn "gửi cho Mai" into tomorrow."""
+        assert read_due_phrase("gửi cho Mai", reference=self.SUNDAY).date is None
+
+    def test_the_real_message_that_prompted_this(self) -> None:
+        """Verbatim from the pilot mailbox, and the reason CP26 did this at all."""
+        reading = read_due_phrase("trước thứ Sáu tuần này", reference=self.SUNDAY)
+        assert reading.date == dt.date(2026, 9, 18)
+        assert reading.precision is DuePrecision.WEEK
+
+
+class TestANumericDate:
+    """`20/09/2026`, read only when it can mean one thing.
+
+    Day-first and month-first are both in use and a quoted phrase says which only by accident. The
+    ambiguous half is declined, because four months of error is not worth the convenience — and the
+    great majority of real dates name a day past the twelfth, so most of them still read.
+    """
+
+    REFERENCE = dt.date(2026, 9, 13)
+
+    @pytest.mark.parametrize(
+        ("phrase", "expected"),
+        [
+            ("20/09/2026", dt.date(2026, 9, 20)),
+            ("ngày 20/09/2026", dt.date(2026, 9, 20)),
+            ("20-09-2026", dt.date(2026, 9, 20)),
+            ("20.09.2026", dt.date(2026, 9, 20)),
+            # The mirror case: month first is unambiguous when the *second* number cannot be one.
+            ("09/20/2026", dt.date(2026, 9, 20)),
+        ],
+    )
+    def test_an_unambiguous_date_reads_exactly(self, phrase: str, expected: dt.date) -> None:
+        reading = read_due_phrase(phrase, reference=self.REFERENCE)
+        assert reading.date == expected
+        assert reading.precision is DuePrecision.EXACT
+
+    @pytest.mark.parametrize("phrase", ["05/09/2026", "01/02/2026", "12/11/2026"])
+    def test_an_ambiguous_date_is_declined(self, phrase: str) -> None:
+        assert read_due_phrase(phrase, reference=self.REFERENCE).date is None
+
+    @pytest.mark.parametrize("phrase", ["31/02/2026", "32/01/2026"])
+    def test_a_well_formed_string_that_is_not_a_day(self, phrase: str) -> None:
+        assert read_due_phrase(phrase, reference=self.REFERENCE).date is None
+
+    def test_a_date_in_the_past_is_still_refused(self) -> None:
+        """The rule that predates all of this: far likelier a quotation of something the message
+        mentioned than a deadline somebody set backwards."""
+        assert read_due_phrase("20/09/2020", reference=self.REFERENCE).date is None

@@ -80,6 +80,15 @@ class JobRecord:
     max_attempts: int
 
 
+#: The kind of job that asks for a delivered message to be read (ADR-0069).
+#:
+#: Declared here, unlike `EXECUTE_APPROVAL`, because this one is enqueued by `signal` and run by
+#: `workers` — two layers with no import between them, so the only place both can name it is the
+#: module that owns the queue. A shared vocabulary in the shared place beats the same string
+#: written twice.
+ANALYZE_EVENT = "analyze_event"
+
+
 def enqueue(
     session: Session,
     *,

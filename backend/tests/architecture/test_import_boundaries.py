@@ -408,7 +408,9 @@ def test_the_worker_cannot_execute_an_unregistered_tool() -> None:
     from app.contexts.intelligence.public import REGISTRY
     from app.workers.runner import HANDLERS
 
-    assert set(HANDLERS) == {"execute_approval"}, (
+    # A closed list, written out. Adding a kind is then a deliberate act with a diff on this line,
+    # which is the whole mechanism: `analyze_event` joined it in CP26 and had to be argued for.
+    assert set(HANDLERS) == {"execute_approval", "analyze_event"}, (
         f"the worker dispatches {sorted(HANDLERS)}; each kind is a new way to run code"
     )
     forbidden = ("delete", "remove", "purge", "grant", "revoke", "member", "role", "send", "sql")
@@ -740,14 +742,16 @@ def test_a_commitment_is_never_deduplicated_against_work_titles() -> None:
     defect was invisible because the check "passed": it returned a list, the audit row said a
     search happened, and nothing recorded that the wrong corpus had been searched.
     """
-    agent_router = APP / "api" / "v1" / "agent.py"
-    routed = _calls_inside(agent_router, "_duplicate_search")
+    # In `workers/analysis.py` since CP26, where a request and a queued job share one code path.
+    # The rule is about the routing, not about the file it lives in.
+    orchestration = APP / "workers" / "analysis.py"
+    routed = _calls_inside(orchestration, "_duplicate_search")
     assert "find_similar_commitments" in routed, (
         "no commitment-scoped duplicate search on the routing path"
     )
     assert "find_similar_work" in routed, "Work intents lost their duplicate search"
 
-    source = agent_router.read_text()
+    source = orchestration.read_text()
     body = source[source.index("def submit_analysis") : source.index("def _duplicate_search")]
     assert "find_similar_work" not in body, (
         "submit_analysis still searches Work directly; the corpus must be chosen by intent kind"

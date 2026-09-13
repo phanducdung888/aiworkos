@@ -222,6 +222,31 @@ _WEEKDAYS: dict[str, int] = {
     "sunday": 6,
 }
 
+#: The same table in Vietnamese (CP26).
+#:
+#: Extraction already worked in Vietnamese — a real message produced a Proposal quoting "Tôi sẽ gửi
+#: bản kế hoạch triển khai cho dự án Huế IOC" at full confidence. What did not work was the
+#: deadline beside it: the model quotes the phrase and *this* table reads it (ADR-0055), and this
+#: table spoke only English. Every commitment from a Vietnamese mailbox therefore came out with no
+#: date, which means nothing is ever overdue and the Attention screen is permanently empty.
+#:
+#: Both spellings, accented and not. People write `thứ sáu` and `thu sau` in the same thread, and a
+#: reader that understood only the first would be right about half a mailbox. The numeric forms
+#: (`thứ 2`…`thứ 7`) are ordinary in informal Vietnamese and count from Monday as two.
+_VIETNAMESE_WEEKDAYS: dict[str, int] = {
+    "thứ hai": 0, "thu hai": 0, "thứ 2": 0, "thu 2": 0,
+    "thứ ba": 1, "thu ba": 1, "thứ 3": 1, "thu 3": 1,
+    "thứ tư": 2, "thu tu": 2, "thứ 4": 2, "thu 4": 2,
+    "thứ năm": 3, "thu nam": 3, "thứ 5": 3, "thu 5": 3,
+    "thứ sáu": 4, "thu sau": 4, "thứ 6": 4, "thu 6": 4,
+    "thứ bảy": 5, "thu bay": 5, "thứ 7": 5, "thu 7": 5,
+    "chủ nhật": 6, "chu nhat": 6,
+}
+
+#: Longest first, so `thứ hai` is not matched as `thứ h` by an earlier alternative, and so the
+#: two-word forms win over anything shorter that shares a prefix.
+_VI_DAYS = "|".join(sorted((re.escape(k) for k in _VIETNAMESE_WEEKDAYS), key=len, reverse=True))
+
 _ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _NEXT_WEEKDAY = re.compile(r"\bnext\s+(" + "|".join(_WEEKDAYS) + r")\b")
 _WEEKDAY = re.compile(r"\b(" + "|".join(_WEEKDAYS) + r")\b")
@@ -231,6 +256,34 @@ _NEXT_WEEK = re.compile(r"\bnext\s+week\b")
 _THIS_WEEK = re.compile(r"\b(?:end\s+of\s+(?:the\s+)?week|this\s+week)\b")
 _TOMORROW = re.compile(r"\btomorrow\b")
 _TODAY = re.compile(r"\btoday\b")
+
+# --- the same forms in Vietnamese (CP26) ---------------------------------------------------
+#
+# `tuần sau` follows the day it modifies — `thứ sáu tuần sau` — where English puts it in front.
+# That is why this is a pattern of its own rather than a translation of `_NEXT_WEEKDAY`.
+_VI_NEXT_WEEKDAY = re.compile(rf"\b({_VI_DAYS})\s+tu[ầa]n\s+(?:sau|tới|toi)\b")
+#: `thứ sáu tuần này` — this week's Friday. Needed as a pattern of its own because the phrase
+#: contains *both* a weekday and a week, and "tuần này" alone answers "the end of this week",
+#: which is not what somebody naming a day meant.
+_VI_THIS_WEEKDAY = re.compile(rf"\b({_VI_DAYS})\s+tu[ầa]n\s+n[àa]y\b")
+_VI_WEEKDAY = re.compile(rf"\b({_VI_DAYS})\b")
+_VI_NEXT_MONTH = re.compile(r"\bth[áa]ng\s+(?:sau|tới|toi)\b")
+_VI_THIS_MONTH = re.compile(r"\b(?:cu[ốo]i\s+th[áa]ng|th[áa]ng\s+n[àa]y)\b")
+_VI_NEXT_WEEK = re.compile(r"\btu[ầa]n\s+(?:sau|tới|toi)\b")
+_VI_THIS_WEEK = re.compile(r"\b(?:cu[ốo]i\s+tu[ầa]n|tu[ầa]n\s+n[àa]y)\b")
+#: `ngày mai`, never a bare `mai`. Alone it is also a very common given name, and this module would
+#: rather lose a deadline than turn "gửi cho Mai" into tomorrow.
+_VI_TOMORROW = re.compile(r"\bng[àa]y\s+mai\b")
+_VI_TODAY = re.compile(r"\bh[ôo]m\s+nay\b")
+
+#: A numeric calendar date: `20/09/2026`, and `9/20/2026` from somebody writing month first.
+#:
+#: Read **only when one reading is possible** — when the first number cannot be a month, or the
+#: second cannot be. `05/09/2026` is the fifth of September to most of the world and the ninth of
+#: May to part of it, and nothing in a quoted phrase says which; four months of difference is not a
+#: thing to guess at. Declining the ambiguous half is the same rule this module applies everywhere
+#: else, and it still reads the great majority of real dates, which name a day past the twelfth.
+_NUMERIC_DATE = re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b")
 
 #: A day and a named month — "18 September", "September 18th". Not a form this table reads, and
 #: that is exactly why it is matched here.
@@ -339,14 +392,20 @@ def _read(text: str, reference: dt.date) -> DueReading:
             # A well-formed string that is not a day — 2026-02-30. Not a date, so not a deadline.
             return UNREAD_DUE
 
+    numeric = _NUMERIC_DATE.search(text)
+    if numeric is not None:
+        # Answered here or refused here, never left to fall through: `20/09/2026` reaching the
+        # weekday rules below would be a named day answered by something that cannot see it.
+        return _numeric_date(numeric)
+
     if _DAY_AND_MONTH.search(text):
         # After the ISO branch, so `2026-09-18` still reads, and before every relative rule, so a
         # phrase naming a calendar day is never answered by a rule that cannot see it.
         return UNREAD_DUE
 
-    if _TODAY.search(text):
+    if _TODAY.search(text) or _VI_TODAY.search(text):
         return DueReading(date=reference, precision=DuePrecision.EXACT)
-    if _TOMORROW.search(text):
+    if _TOMORROW.search(text) or _VI_TOMORROW.search(text):
         return DueReading(
             date=reference + dt.timedelta(days=1), precision=DuePrecision.EXACT
         )
@@ -357,18 +416,39 @@ def _read(text: str, reference: dt.date) -> DueReading:
             date=_next_weekday(reference, _WEEKDAYS[next_weekday[1]], skip_a_week=True),
             precision=DuePrecision.WEEK,
         )
+    # `thứ sáu tuần sau` — the modifier follows the day in Vietnamese, so this has to be tried
+    # before the bare weekday below or "next week's Friday" reads as "this week's".
+    vi_next_weekday = _VI_NEXT_WEEKDAY.search(text)
+    if vi_next_weekday is not None:
+        return DueReading(
+            date=_next_weekday(
+                reference, _VIETNAMESE_WEEKDAYS[vi_next_weekday[1]], skip_a_week=True
+            ),
+            precision=DuePrecision.WEEK,
+        )
 
-    if _NEXT_MONTH.search(text):
+    # Same reason as the rule above: the phrase names a day *and* a week, and the week rules
+    # further down would answer the wrong one of the two.
+    vi_this_weekday = _VI_THIS_WEEKDAY.search(text)
+    if vi_this_weekday is not None:
+        return DueReading(
+            date=_next_weekday(
+                reference, _VIETNAMESE_WEEKDAYS[vi_this_weekday[1]], skip_a_week=False
+            ),
+            precision=DuePrecision.WEEK,
+        )
+
+    if _NEXT_MONTH.search(text) or _VI_NEXT_MONTH.search(text):
         following = (reference.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
         return DueReading(date=_end_of_month(following), precision=DuePrecision.MONTH)
-    if _THIS_MONTH.search(text):
+    if _THIS_MONTH.search(text) or _VI_THIS_MONTH.search(text):
         return DueReading(date=_end_of_month(reference), precision=DuePrecision.MONTH)
 
-    if _NEXT_WEEK.search(text):
+    if _NEXT_WEEK.search(text) or _VI_NEXT_WEEK.search(text):
         return DueReading(
             date=_end_of_week(reference) + dt.timedelta(days=7), precision=DuePrecision.WEEK
         )
-    if _THIS_WEEK.search(text):
+    if _THIS_WEEK.search(text) or _VI_THIS_WEEK.search(text):
         return DueReading(date=_end_of_week(reference), precision=DuePrecision.WEEK)
 
     weekday = _WEEKDAY.search(text)
@@ -377,5 +457,34 @@ def _read(text: str, reference: dt.date) -> DueReading:
             date=_next_weekday(reference, _WEEKDAYS[weekday[1]], skip_a_week=False),
             precision=DuePrecision.WEEK,
         )
+    vi_weekday = _VI_WEEKDAY.search(text)
+    if vi_weekday is not None:
+        return DueReading(
+            date=_next_weekday(
+                reference, _VIETNAMESE_WEEKDAYS[vi_weekday[1]], skip_a_week=False
+            ),
+            precision=DuePrecision.WEEK,
+        )
 
     return UNREAD_DUE
+
+
+def _numeric_date(match: re.Match[str]) -> DueReading:
+    """`20/09/2026`, read only when it can mean one thing.
+
+    Day-first and month-first are both in use and a quoted phrase says which only by accident. So
+    the first number decides when it cannot be a month, the second decides when it cannot be, and
+    when both could be either this declines — four months of error is not worth the convenience.
+    """
+    first, second, year = int(match[1]), int(match[2]), int(match[3])
+    if first > 12 and second <= 12:
+        day, month = first, second
+    elif second > 12 and first <= 12:
+        day, month = second, first
+    else:
+        return UNREAD_DUE
+    try:
+        return DueReading(date=dt.date(year, month, day), precision=DuePrecision.EXACT)
+    except ValueError:
+        # 31/02/2026 is well formed and is not a day.
+        return UNREAD_DUE
