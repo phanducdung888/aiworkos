@@ -95,6 +95,13 @@ def enqueue(
     The partial unique index does the deduplication, so two concurrent enqueues race in the
     database rather than in Python. Returning None rather than raising because a caller asking for
     work that is already queued got what they wanted.
+
+    **`run_after` is left to the database.** `claim` selects on `run_after <= now()`, evaluated by
+    PostgreSQL, so a `run_after` stamped from the enqueuing process's clock would be two clocks
+    either side of one comparison. Where those clocks disagree — separate hosts, ordinary NTP error
+    — a job enqueued "now" can land in the database's future and stay invisible to the claim until
+    they converge. Omitting the column lets its `server_default` of `now()` apply, which makes the
+    comparison self-consistent by construction rather than by the two machines agreeing.
     """
     if dedupe_key is not None:
         existing = session.scalars(
@@ -115,8 +122,11 @@ def enqueue(
         payload=payload,
         dedupe_key=dedupe_key,
         max_attempts=max_attempts,
-        run_after=run_after or dt.datetime.now(dt.UTC),
     )
+    if run_after is not None:
+        # A caller that named a time meant that time. Scheduling something for later is a decision,
+        # not a reading of the clock, so it is left exactly as given.
+        job.run_after = run_after
     session.add(job)
     session.flush()
     return job
@@ -224,6 +234,10 @@ def fail(session: Session, record: JobRecord, error: str) -> None:
     A job that has exhausted its attempts becomes `dead` rather than being deleted. Somebody has to
     be able to see what stopped; a queue that tidies away its failures leaves a gap instead of a
     fault.
+
+    The retry time is `now() + RETRY_DELAY` computed by the database, for the same reason `enqueue`
+    leaves `run_after` to the server: the delay is only meaningful against the clock that will
+    later decide whether it has elapsed.
     """
     exhausted = record.attempts >= record.max_attempts
     session.execute(
@@ -232,7 +246,7 @@ def fail(session: Session, record: JobRecord, error: str) -> None:
         .values(
             attempts=record.attempts,
             status="dead" if exhausted else "pending",
-            run_after=dt.datetime.now(dt.UTC) + RETRY_DELAY,
+            run_after=func.now() + RETRY_DELAY,
             finished_at=dt.datetime.now(dt.UTC) if exhausted else None,
             # Truncated: a stack trace in a queue row is a log line in the wrong place, and an
             # unbounded one is a way to fill a table with somebody else's error.
