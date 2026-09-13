@@ -85,6 +85,7 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0068 | The organization is named by the person, in the browser | accepted (CP25) | ADR-0008, ADR-0031 |
 | 0069 | Ingestion triggers analysis, on borrowed authority | accepted (CP26) | ADR-0034, ADR-0044, ADR-0047 |
 | 0070 | The deadline reader speaks the mailbox's language | accepted (CP26) | ADR-0055, ADR-0065 |
+| 0071 | A promise says where it belongs; a person says so | accepted (CP27) | ADR-0042, BR-C-08 |
 
 ---
 
@@ -2187,3 +2188,54 @@ unfalsifiable); a locale column on the organization to settle day-first versus m
 setting to make an ambiguous case guessable, when declining costs one vague commitment); a
 date-parsing library (the point of a small closed table is that every phrase it reads can be
 enumerated in a test, and every phrase it refuses is refused on purpose).
+
+---
+
+### ADR-0071 — A promise says where it belongs, and a person says so
+
+**Status:** accepted (CP27) · **Related:** ADR-0041, ADR-0042, BR-C-08, BR-AI-17
+
+**Context.** `commitment.fulfilling_work_id` and `commitment.project_id` have existed since Phase 1.
+The database enforces both with composite foreign keys, the services accept them, the HTTP API
+takes them on create and on update, and the read side can filter commitments by the Work they
+fulfil. Everything was there except the last step at either end.
+
+The browser offered no control, so a person could not link anything. The AI's tool contract did not
+list the arguments, so an approved action could never carry a link. CP27 opened a live organization
+and found eight commitments, two work items, one project — and **not one connection between them**.
+The Product Owner noticed before we did.
+
+**Decision.**
+
+1. **The links are set by a person, in the browser.** A commitment's screen asks which Work it
+   fulfils and which Project it serves; both optional, because a promise whose home is unknown is a
+   complete record (BR-C-08). The Work screen shows the promises made about it, which answers "who
+   said they would do something about this?" — a question the API could already answer and no
+   screen ever asked.
+
+2. **`create_commitment` may carry both.** Listing them in the registry is a statement about what
+   an *approved* action may contain, not a prediction that the AI will fill them in. It will not:
+   BR-AI-17 forbids inferring a project the text does not state, and nothing resolves a Work item
+   out of prose. What it opens is the path that was closed — a reviewer adding the link with
+   `edited_arguments` before approving, recorded in the ApprovalRecord like any other edit
+   (ADR-0041).
+
+3. **A reference that does not resolve is refused, by name.** `assert_project_exists` joins
+   `assert_work_exists`, on create *and* on update — `update` validated the Work and not the
+   Project, an asymmetry nobody noticed while nothing could set either. The foreign key already
+   made a dangling link impossible; what changes is that the caller is told which field was wrong
+   instead of receiving a 500 from an integrity error. That matters more now that the caller might
+   be an approved AI action.
+
+**Why the AI does not infer the link.** Deciding that a promise belongs to a project is a claim
+about accountability, and getting it wrong files somebody's commitment under the wrong programme —
+where the person responsible for that programme will act on it. A human doing it costs seconds and
+is reversible. The evidence for doing it automatically does not exist yet, and CP27 deliberately
+produced the data that would let somebody argue for it later.
+
+Rejected: a separate `link_commitment` tool (a second way to reach one field, and an approval
+screen that shows a link nobody can see in the action); making either link required (contradicts
+BR-C-08, and would make every extracted commitment unapprovable until somebody guessed a project);
+inferring the Work by title similarity (CP14 removed exactly that reasoning from the commitment
+path, because a promise is not a Work item and searching one corpus for the other is a category
+error that reads as working).

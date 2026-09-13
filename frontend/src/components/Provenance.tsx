@@ -27,11 +27,12 @@ import {
 import { ApiProblem } from '@/api/problem'
 import { Attachments } from '@/components/Attachments'
 import { Loading } from '@/components/States'
+import { eventType, executionStatus } from '@/components/vocabulary'
 
 const formatted = (iso: string): string => new Date(iso).toLocaleString()
 
 export function nameOf(people: Person[] | undefined, personId: string | null): string {
-  if (!personId) return 'Nobody'
+  if (!personId) return 'Không ai'
   return people?.find((person) => person.id === personId)?.display_name ?? personId
 }
 
@@ -47,13 +48,13 @@ export function Provenance({
 }) {
   const produced = useProducedBy(entityId)
 
-  if (produced.isPending) return <Loading label="where this came from" />
+  if (produced.isPending) return <Loading label="nguồn gốc" />
   if (produced.isError) return <Unavailable error={produced.error} />
   if (produced.data === null) {
     return (
       <section aria-labelledby="provenance-heading">
-        <h2 id="provenance-heading">Where this came from</h2>
-        <p>{createdByHand ?? 'Entered directly by a person. No AI proposed it.'}</p>
+        <h2 id="provenance-heading">Nguồn gốc</h2>
+        <p>{createdByHand ?? 'Do một người nhập trực tiếp. Không phải AI đề xuất.'}</p>
       </section>
     )
   }
@@ -67,7 +68,7 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
   const event = useEvent(proposal.data?.source_event_id ?? '')
   const interaction = useAiInteraction(evidence.data?.produced_by_id)
 
-  if (proposal.isPending) return <Loading label="where this came from" />
+  if (proposal.isPending) return <Loading label="nguồn gốc" />
   if (proposal.isError) return <Unavailable error={proposal.error} />
 
   const action = proposal.data.action as {
@@ -78,22 +79,22 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
 
   return (
     <section aria-labelledby="provenance-heading">
-      <h2 id="provenance-heading">Where this came from</h2>
+      <h2 id="provenance-heading">Nguồn gốc</h2>
 
       <ol className="provenance">
         <li>
-          <h3>Somebody said it</h3>
+          <h3>Có người đã nói</h3>
           {evidence.data ? (
             // Verbatim, sliced from the Event itself. A paraphrase here would be Evidence the
             // service would have refused (BR-E-05), and showing one would undo the point of it.
             <blockquote data-testid="provenance-excerpt">{evidence.data.excerpt}</blockquote>
           ) : (
-            <p>No citation is attached to this proposal.</p>
+            <p>Đề xuất này không có trích dẫn nào kèm theo.</p>
           )}
           {event.data ? (
             <>
               <p>
-                {event.data.type} on {formatted(event.data.occurred_at)} via{' '}
+                {eventType(event.data.type)} lúc {formatted(event.data.occurred_at)} qua{' '}
                 {event.data.source_system}
               </p>
               {/* The files the message arrived with. Part of "where this came from" rather than a
@@ -105,7 +106,7 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
         </li>
 
         <li>
-          <h3>The AI read it</h3>
+          <h3>AI đã đọc</h3>
           {interaction.data ? (
             <p data-testid="provenance-interaction">
               {interaction.data.agent_identity} · {interaction.data.provider}/
@@ -114,16 +115,16 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
               {interaction.data.status}
             </p>
           ) : (
-            <p>No AI interaction is recorded against this citation.</p>
+            <p>Không có lần chạy AI nào được ghi lại cho trích dẫn này.</p>
           )}
         </li>
 
         <li>
-          <h3>It proposed exactly this</h3>
+          <h3>AI đề xuất đúng điều này</h3>
           {/* The action as approved, argument by argument — what the hash covers and what the
               worker ran (ADR-0041). */}
           <dl data-testid="provenance-action">
-            <dt>Tool</dt>
+            <dt>Công cụ</dt>
             <dd>
               {action.tool} ({action.tool_version})
             </dd>
@@ -135,22 +136,22 @@ function Chain({ proposalId, people }: { proposalId: string; people?: Person[] }
             ))}
           </dl>
           <p className="field__hint">
-            <Link to={`/proposals/${proposalId}`}>Proposal</Link> · hash{' '}
-            {proposal.data.action_hash} · confidence {proposal.data.confidence}%
+            <Link to={`/proposals/${proposalId}`}>Đề xuất</Link> · mã băm{' '}
+            {proposal.data.action_hash} · độ tin cậy {proposal.data.confidence}%
           </p>
         </li>
 
         <li>
-          <h3>A person approved it</h3>
+          <h3>Một người đã duyệt</h3>
           {approval.data ? (
             <p data-testid="provenance-approval">
-              {nameOf(people, approval.data.approver_person_id)} on{' '}
-              {formatted(approval.data.decided_at)} · execution{' '}
-              {approval.data.execution_status}
+              {nameOf(people, approval.data.approver_person_id)} lúc{' '}
+              {formatted(approval.data.decided_at)} · thực thi{' '}
+              {executionStatus(approval.data.execution_status)}
               {approval.data.execution_error ? ` (${approval.data.execution_error})` : ''}
             </p>
           ) : (
-            <p>Not yet decided. Nothing has been created from this proposal.</p>
+            <p>Chưa có quyết định. Chưa có gì được tạo ra từ đề xuất này.</p>
           )}
         </li>
       </ol>
@@ -172,11 +173,11 @@ function Unavailable({ error }: { error: unknown }) {
   const forbidden = error instanceof ApiProblem && error.isForbidden
   return (
     <section aria-labelledby="provenance-heading">
-      <h2 id="provenance-heading">Where this came from</h2>
+      <h2 id="provenance-heading">Nguồn gốc</h2>
       <p data-testid="provenance-unavailable">
         {forbidden
-          ? 'You do not have permission to see where this came from.'
-          : 'Where this came from could not be loaded.'}
+          ? 'Bạn không có quyền xem nguồn gốc của mục này.'
+          : 'Không tải được nguồn gốc của mục này.'}
       </p>
     </section>
   )

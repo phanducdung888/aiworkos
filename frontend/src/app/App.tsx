@@ -24,23 +24,23 @@ export function App() {
   const auth = useAuth()
   const me = useMe(auth.status === 'signed-in' && auth.organizationId !== null)
 
-  if (auth.status === 'loading') return <Loading label="your session" />
+  if (auth.status === 'loading') return <Loading label="phiên đăng nhập" />
   if (auth.status === 'error') {
-    return <ErrorState error={new Error(auth.error ?? 'Sign-in failed.')} />
+    return <ErrorState error={new Error(auth.error ?? 'Đăng nhập không thành công.')} />
   }
   if (auth.status === 'signed-out') {
     return (
       <main>
         <h1>AI WorkOS</h1>
         <button type="button" onClick={auth.signIn}>
-          Sign in
+          Đăng nhập
         </button>
       </main>
     )
   }
   // Never inferred, even from a single membership (security-model §2) — so it is asked for.
   if (!auth.organizationId) return <ChooseOrganization />
-  if (me.isPending || me.isLoading) return <Loading label="your profile" />
+  if (me.isPending || me.isLoading) return <Loading label="hồ sơ của bạn" />
   if (me.isError) return <ErrorState error={me.error} retry={() => void me.refetch()} />
 
   const canManageProjects = me.data.roles.some((role) =>
@@ -53,20 +53,20 @@ export function App() {
   return (
     <>
       <header>
-        <nav aria-label="Main">
-          <NavLink to="/attention">Attention</NavLink>
-          <NavLink to="/work">Work</NavLink>
-          <NavLink to="/work/new">New work</NavLink>
-          <NavLink to="/capture">Capture message</NavLink>
-          <NavLink to="/commitments">Commitments</NavLink>
-          <NavLink to="/proposals">Proposals</NavLink>
-          {canManageProjects ? <NavLink to="/projects">Projects</NavLink> : null}
-          {canManagePolicy ? <NavLink to="/agent-policy">Agent policy</NavLink> : null}
+        <nav aria-label="Điều hướng chính">
+          <NavLink to="/attention">Cần chú ý</NavLink>
+          <NavLink to="/work">Công việc</NavLink>
+          <NavLink to="/work/new">Tạo công việc</NavLink>
+          <NavLink to="/capture">Ghi nhận tin nhắn</NavLink>
+          <NavLink to="/commitments">Lời hứa</NavLink>
+          <NavLink to="/proposals">Đề xuất</NavLink>
+          {canManageProjects ? <NavLink to="/projects">Dự án</NavLink> : null}
+          {canManagePolicy ? <NavLink to="/agent-policy">Quyền của AI</NavLink> : null}
         </nav>
         <p>
           <span data-testid="me-name">{me.data.display_name}</span>{' '}
           <button type="button" onClick={auth.signOut}>
-            Sign out
+            Đăng xuất
           </button>
         </p>
       </header>

@@ -109,7 +109,7 @@ export function AuthProvider({
         userRef.current = user
         setStatus(user && !user.expired ? 'signed-in' : 'signed-out')
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'Sign-in failed.')
+        setError(cause instanceof Error ? cause.message : 'Đăng nhập không thành công.')
         setStatus('error')
       }
     }

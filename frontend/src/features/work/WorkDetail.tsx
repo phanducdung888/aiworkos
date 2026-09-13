@@ -10,7 +10,7 @@
  * - a stale edit is reported as somebody else's change, not as a generic failure (BR-G-06).
  */
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import {
   useAssignments,
   useDependencies,
@@ -23,8 +23,9 @@ import {
 import type { Work, WorkStatus } from '@/api/hooks'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { PersonPicker } from '@/components/PersonPicker'
-import { Provenance } from '@/components/Provenance'
-import { usePeople } from '@/api/hooks'
+import { Provenance, nameOf } from '@/components/Provenance'
+import { useCommitments, usePeople } from '@/api/hooks'
+import { commitmentStatus, workStatus } from '@/components/vocabulary'
 
 /** BR-W-03. The client offers exactly the edges the domain declares — no more, and no fewer. */
 const TRANSITIONS: Record<string, WorkStatus[]> = {
@@ -42,7 +43,7 @@ export function WorkDetail() {
   const work = useWorkItem(workId)
   const people = usePeople()
 
-  if (work.isPending) return <Loading label="this work item" />
+  if (work.isPending) return <Loading label="công việc này" />
   if (work.isError) return <ErrorState error={work.error} retry={() => void work.refetch()} />
   const item = work.data
 
@@ -50,27 +51,28 @@ export function WorkDetail() {
     <article aria-labelledby="work-title">
       <h1 id="work-title">{item.title}</h1>
       <dl>
-        <dt>Status</dt>
-        <dd data-testid="work-status">{item.status}</dd>
-        <dt>Partition</dt>
-        <dd>{item.project_id === null ? 'Non-project' : 'Project'}</dd>
-        <dt>Visibility</dt>
+        <dt>Trạng thái</dt>
+        <dd data-testid="work-status">{workStatus(item.status)}</dd>
+        <dt>Phân nhóm</dt>
+        <dd>{item.project_id === null ? 'Ngoài dự án' : 'Trong dự án'}</dd>
+        <dt>Phạm vi xem</dt>
         <dd>{item.visibility}</dd>
-        <dt>Started</dt>
+        <dt>Bắt đầu</dt>
         <dd>{item.started_at ?? '—'}</dd>
-        <dt>Completed</dt>
+        <dt>Hoàn thành</dt>
         <dd>{item.completed_at ?? '—'}</dd>
       </dl>
 
       <StatusControls work={item} />
       <Assignments work={item} />
       <Blockers workId={item.id} />
+      <Promises workId={item.id} />
       {/* "Why does this exist?" — the same walk a Commitment gets, because the chain has the same
           shape whatever sits at the end of it (ADR-0056). Work captured by hand says so. */}
       <Provenance
         entityId={item.id}
         people={people.data}
-        createdByHand="Captured directly by a person. No AI proposed it."
+        createdByHand="Do một người ghi trực tiếp. Không phải AI đề xuất."
       />
     </article>
   )
@@ -83,15 +85,15 @@ function StatusControls({ work }: { work: Work }) {
 
   return (
     <section aria-labelledby="status-heading">
-      <h2 id="status-heading">Move this work</h2>
+      <h2 id="status-heading">Chuyển trạng thái</h2>
       {allowed.length === 0 ? (
-        <Empty>This work has reached a final state.</Empty>
+        <Empty>Công việc này đã ở trạng thái cuối.</Empty>
       ) : (
         <>
           {/* BR-W-04: blocking needs a cause, so the field appears with the button that needs it. */}
           {allowed.includes('blocked') ? (
             <label>
-              Reason for blocking
+              Lý do bị chặn
               <input value={reason} onChange={(event) => setReason(event.target.value)} />
             </label>
           ) : null}
@@ -128,7 +130,7 @@ function Assignments({ work }: { work: Work }) {
   const [owner, setOwnerId] = useState('')
   const [contributor, setContributor] = useState('')
 
-  if (assignments.isPending) return <Loading label="assignments" />
+  if (assignments.isPending) return <Loading label="phân công" />
   if (assignments.isError) return <ErrorState error={assignments.error} />
 
   const rows = assignments.data ?? []
@@ -136,11 +138,11 @@ function Assignments({ work }: { work: Work }) {
 
   return (
     <section aria-labelledby="assignments-heading">
-      <h2 id="assignments-heading">Who is on this</h2>
+      <h2 id="assignments-heading">Ai đang làm</h2>
 
       {active.length === 0 ? (
         // BR-W-15. Unassigned is a valid steady state, not a warning.
-        <Empty>Nobody is assigned. That is a complete record, not a gap.</Empty>
+        <Empty>Chưa phân công ai. Đó là một bản ghi đầy đủ, không phải thiếu sót.</Empty>
       ) : (
         <ul>
           {active.map((row) => (
@@ -151,7 +153,7 @@ function Assignments({ work }: { work: Work }) {
                 type="button"
                 onClick={() => end.mutate({ workId: work.id, assignment: row })}
               >
-                End assignment
+                Kết thúc phân công
               </button>
             </li>
           ))}
@@ -161,7 +163,7 @@ function Assignments({ work }: { work: Work }) {
       {/* BR-W-14: ended rows stay, because ownership history is how it stays attributable. */}
       {rows.some((row) => row.status === 'ended') ? (
         <details>
-          <summary>Previous assignments</summary>
+          <summary>Phân công trước đây</summary>
           <ul>
             {rows
               .filter((row) => row.status === 'ended')
@@ -174,16 +176,16 @@ function Assignments({ work }: { work: Work }) {
         </details>
       ) : null}
 
-      <PersonPicker label="Owner" value={owner} onChange={setOwnerId} />
+      <PersonPicker label="Người phụ trách" value={owner} onChange={setOwnerId} />
       <button
         type="button"
         disabled={!owner || setOwner.isPending}
         onClick={() => setOwner.mutate({ workId: work.id, person_id: owner })}
       >
-        Set owner
+        Đặt người phụ trách
       </button>
 
-      <PersonPicker label="Add contributor" value={contributor} onChange={setContributor} />
+      <PersonPicker label="Thêm người tham gia" value={contributor} onChange={setContributor} />
       <button
         type="button"
         disabled={!contributor || assign.isPending}
@@ -191,7 +193,7 @@ function Assignments({ work }: { work: Work }) {
           assign.mutate({ workId: work.id, person_id: contributor, role: 'CONTRIBUTOR' })
         }
       >
-        Add contributor
+        Thêm người tham gia
       </button>
 
       {setOwner.isError ? <ErrorState error={setOwner.error} /> : null}
@@ -203,7 +205,7 @@ function Assignments({ work }: { work: Work }) {
 
 function Blockers({ workId }: { workId: string }) {
   const dependencies = useDependencies(workId)
-  if (dependencies.isPending) return <Loading label="dependencies" />
+  if (dependencies.isPending) return <Loading label="phụ thuộc" />
   if (dependencies.isError) return <ErrorState error={dependencies.error} />
 
   const rows = dependencies.data ?? []
@@ -212,12 +214,12 @@ function Blockers({ workId }: { workId: string }) {
 
   return (
     <section aria-labelledby="dependencies-heading">
-      <h2 id="dependencies-heading">Dependencies</h2>
+      <h2 id="dependencies-heading">Phụ thuộc</h2>
       {rows.length === 0 ? (
-        <Empty>Nothing depends on this, and this depends on nothing.</Empty>
+        <Empty>Không có gì phụ thuộc vào việc này, và việc này không phụ thuộc vào gì.</Empty>
       ) : (
         <>
-          <h3>Waiting on</h3>
+          <h3>Đang chờ</h3>
           <ul data-testid="blocked-by">
             {blocking.map((row) => (
               <li key={row.id}>
@@ -225,7 +227,7 @@ function Blockers({ workId }: { workId: string }) {
               </li>
             ))}
           </ul>
-          <h3>Holding up</h3>
+          <h3>Đang chặn</h3>
           <ul data-testid="blocks">
             {blocked.map((row) => (
               <li key={row.id}>
@@ -234,6 +236,56 @@ function Blockers({ workId }: { workId: string }) {
             ))}
           </ul>
         </>
+      )}
+    </section>
+  )
+}
+
+
+/**
+ * Những lời hứa mà công việc này hoàn thành (CP27).
+ *
+ * Chiều còn lại của `commitment.fulfilling_work_id`. Liên kết vẫn thuộc về lời hứa — một công việc
+ * không "sở hữu" lời hứa nào cả — nên ở đây chỉ đọc, và việc gắn hay gỡ được làm ở màn hình lời hứa.
+ *
+ * Có mặt ở đây vì một câu hỏi rất thật: "ai đã hứa gì về việc này?" Trước CP27 câu đó không trả lời
+ * được trên trình duyệt, dù API đã lọc được theo `fulfilling_work_id` từ Phase 1.
+ */
+function Promises({ workId }: { workId: string }) {
+  const promises = useCommitments({ fulfilling_work_id: workId })
+  const people = usePeople()
+
+  if (promises.isPending) return <Loading label="các lời hứa" />
+  if (promises.isError) {
+    // Một mục phụ thì hỏng lặng lẽ. `ErrorState` ở đây tạo ra báo động thứ hai cạnh báo động
+    // thật của màn hình — người đọc phải tự đoán cái nào mới là việc họ vừa làm.
+    return (
+      <section aria-labelledby="promises-heading">
+        <h2 id="promises-heading">Lời hứa về việc này</h2>
+        <p className="field__hint">Không đọc được danh sách lời hứa lúc này.</p>
+      </section>
+    )
+  }
+
+  return (
+    <section aria-labelledby="promises-heading">
+      <h2 id="promises-heading">Lời hứa về việc này</h2>
+      {promises.data.length === 0 ? (
+        <Empty>
+          Chưa có lời hứa nào gắn với công việc này. Việc gắn được làm ở màn hình lời hứa.
+        </Empty>
+      ) : (
+        <ul data-testid="work-promises">
+          {promises.data.map((promise) => (
+            <li key={promise.id}>
+              <Link to={`/commitments/${promise.id}`}>{promise.statement}</Link>{' '}
+              <span className="field__hint">
+                {nameOf(people.data, promise.committed_by_person_id)} · {commitmentStatus(promise.status)}
+                {promise.due_date ? ` · hạn ${promise.due_date}` : ''}
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   )

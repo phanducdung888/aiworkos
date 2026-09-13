@@ -34,7 +34,7 @@ describe('WorkList', () => {
   it('says so when there is nothing, rather than rendering an empty table', async () => {
     stubApi([{ match: 'GET /api/v1/work', body: { items: [], next_cursor: null } }])
     renderSurface(<WorkList />)
-    expect(await screen.findByText(/no work matches this view/i)).toBeInTheDocument()
+    expect(await screen.findByText(/chưa có công việc nào khớp với bộ lọc này/i)).toBeInTheDocument()
   })
 
   it('distinguishes "you may not see this" from "something broke"', async () => {
@@ -42,16 +42,16 @@ describe('WorkList', () => {
     renderSurface(<WorkList />)
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(/do not have permission/i)
+    expect(alert).toHaveTextContent(/không có quyền/i)
     // A generic failure would invite a retry; a refusal is an answer and must not.
-    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /thử lại/i })).not.toBeInTheDocument()
   })
 
   it('offers a retry when the failure really might be transient', async () => {
     stubApi([{ match: 'GET /api/v1/work', status: 500, body: problem(500) }])
     renderSurface(<WorkList />)
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /thử lại/i })).toBeInTheDocument()
   })
 
   it('has no accessibility violations on the populated surface', async () => {

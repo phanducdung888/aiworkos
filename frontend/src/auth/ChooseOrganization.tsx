@@ -29,16 +29,16 @@ import { useAuth } from '@/auth/AuthProvider'
 function explain(error: unknown): string {
   if (error instanceof ApiProblem) {
     if (error.status === 404) {
-      return 'No organization with that identifier has you as an active member. Check the identifier, or ask whoever set up your account.'
+      return 'Không có tổ chức nào mang mã đó có bạn là thành viên đang hoạt động. Hãy kiểm tra lại mã, hoặc hỏi người đã tạo tài khoản cho bạn.'
     }
     if (error.status === 403) {
-      return 'You are a member of that organization but hold no role in it yet. Somebody with administrator rights has to grant you one.'
+      return 'Bạn là thành viên của tổ chức đó nhưng chưa được giao vai trò nào. Cần một người có quyền quản trị cấp vai trò cho bạn.'
     }
     if (error.status === 400) {
-      return 'That is not a valid identifier. It should look like 01a093df-3607-707d-8342-f155ece35b0a.'
+      return 'Mã này không hợp lệ. Nó có dạng 01a093df-3607-707d-8342-f155ece35b0a.'
     }
   }
-  return error instanceof Error ? error.message : 'The organization could not be checked.'
+  return error instanceof Error ? error.message : 'Không kiểm tra được tổ chức.'
 }
 
 export function ChooseOrganization() {
@@ -73,15 +73,15 @@ export function ChooseOrganization() {
     <main>
       <h1>AI WorkOS</h1>
       <section aria-labelledby="choose-org-heading">
-        <h2 id="choose-org-heading">Choose the organization you are working in</h2>
+        <h2 id="choose-org-heading">Chọn tổ chức bạn đang làm việc</h2>
         <p>
-          WorkOS never guesses this. Your organization identifier is shown when the organization is
-          created; it is remembered in this browser once it has been checked.
+          WorkOS không bao giờ tự đoán mục này. Mã tổ chức được hiển thị khi tổ chức được tạo; sau
+          khi kiểm tra hợp lệ, trình duyệt này sẽ ghi nhớ.
         </p>
         <form onSubmit={(event) => void submit(event)}>
           <Field
-            label="Organization identifier"
-            hint="A UUID, for example 01a093df-3607-707d-8342-f155ece35b0a."
+            label="Mã tổ chức"
+            hint="Một mã UUID, ví dụ 01a093df-3607-707d-8342-f155ece35b0a."
           >
             {(id) => (
               <input
@@ -101,12 +101,12 @@ export function ChooseOrganization() {
             </p>
           ) : null}
           <button type="submit" disabled={checking || !value.trim()}>
-            {checking ? 'Checking…' : 'Continue'}
+            {checking ? 'Đang kiểm tra…' : 'Tiếp tục'}
           </button>
         </form>
         <p>
           <button type="button" onClick={auth.signOut}>
-            Sign out
+            Đăng xuất
           </button>
         </p>
       </section>

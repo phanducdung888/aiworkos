@@ -57,7 +57,7 @@ export function Attention() {
   const dated = useWork({ due_before: inDays(0) })
 
   const queries = [overdueCommitments, dueSoon, unacknowledged, pending, blocked, dated]
-  if (queries.some((query) => query.isPending)) return <Loading label="what needs attention" />
+  if (queries.some((query) => query.isPending)) return <Loading label="những việc cần chú ý" />
   const failed = queries.find((query) => query.isError)
   if (failed) return <ErrorState error={failed.error} retry={() => void failed.refetch()} />
 
@@ -77,82 +77,82 @@ export function Attention() {
 
   return (
     <section aria-labelledby="attention-heading">
-      <h1 id="attention-heading">Attention</h1>
+      <h1 id="attention-heading">Cần chú ý</h1>
       {total === 0 ? (
         <p data-testid="all-clear">
-          Nothing needs attention. No promise is overdue, no proposal is waiting, and no work is
-          blocked.
+          Không có gì cần chú ý. Không lời hứa nào quá hạn, không đề xuất nào đang chờ, và không
+          công việc nào bị chặn.
         </p>
       ) : null}
 
       <Section
-        title="Overdue promises"
-        why="Past their date and still open. Promises with no date are not counted — a deadline nobody set cannot be missed (BR-C-06)."
+        title="Lời hứa quá hạn"
+        why="Đã qua hạn mà vẫn còn mở. Lời hứa không có hạn thì không được tính — một hạn chót không ai đặt ra thì không thể bị lỡ (BR-C-06)."
         items={overdueCommitments.data ?? []}
         testId="overdue-commitments"
         render={(promise) => <CommitmentRow promise={promise} people={people.data} />}
       />
 
       <Section
-        title={`Promises due within ${SOON_DAYS} days`}
-        why="Open, dated, and close. Nothing has gone wrong yet."
+        title={`Lời hứa đến hạn trong ${SOON_DAYS} ngày tới`}
+        why="Đang mở, có hạn, và sắp đến. Chưa có gì sai cả."
         items={dueSoon.data ?? []}
         testId="due-soon"
         render={(promise) => <CommitmentRow promise={promise} people={people.data} />}
       />
 
       <Section
-        title="Promises nobody has confirmed"
-        why="Captured from a message and never acknowledged by the person it names. Until somebody does, this is what the system heard, not what they agreed (BR-C-05)."
+        title="Lời hứa chưa ai xác nhận"
+        why="Ghi nhận từ một tin nhắn và người được nêu tên chưa xác nhận. Chừng nào chưa ai xác nhận, đây là điều hệ thống nghe được, không phải điều họ đồng ý (BR-C-05)."
         items={unacknowledged.data ?? []}
         testId="unacknowledged"
         render={(promise) => <CommitmentRow promise={promise} people={people.data} />}
       />
 
       <Section
-        title="Waiting for a decision"
-        why="The AI proposed these and nothing has been created. Approving is the only way they become real."
+        title="Đang chờ quyết định"
+        why="AI đã đề xuất và chưa có gì được tạo ra. Chỉ khi bạn duyệt thì chúng mới thành thật."
         items={pending.data ?? []}
         testId="pending-proposals"
         render={(proposal) => (
           <>
             <Link to={`/proposals/${proposal.id}`}>{proposal.summary}</Link>{' '}
             <span className="field__hint">
-              creates a {proposal.target_type}
-              {isExpiringSoon(proposal) ? ' · expires soon' : ''}
+              tạo ra {proposal.target_type}
+              {isExpiringSoon(proposal) ? ' · sắp hết hạn' : ''}
             </span>
           </>
         )}
         note={
           expiring.length > 0
-            ? `${expiring.length} of these expire within ${EXPIRING_HOURS} hours.`
+            ? `${expiring.length} trong số này sẽ hết hạn trong ${EXPIRING_HOURS} giờ tới.`
             : undefined
         }
       />
 
       <Section
-        title="Blocked work"
-        why="Stopped, with a recorded cause. Blocked work always has one (BR-W-04)."
+        title="Công việc bị chặn"
+        why="Đã dừng, và có lý do được ghi lại. Công việc bị chặn luôn có lý do (BR-W-04)."
         items={blocked.data ?? []}
         testId="blocked-work"
         render={(item) => (
           <>
             <Link to={`/work/${item.id}`}>{item.title}</Link>{' '}
-            <span className="field__hint">{item.blocked_reason ?? 'no reason recorded'}</span>
+            <span className="field__hint">{item.blocked_reason ?? 'không ghi lý do'}</span>
           </>
         )}
       />
 
       <Section
-        title="Overdue work"
-        why="Past its date and not finished."
+        title="Công việc quá hạn"
+        why="Đã qua hạn mà chưa xong."
         items={overdueWork}
         testId="overdue-work"
         render={(item) => (
           <>
             <Link to={`/work/${item.id}`}>{item.title}</Link>{' '}
             <span className="field__hint">
-              due {item.due_date} · {item.status}
+              hạn {item.due_date} · {item.status}
             </span>
           </>
         )}
@@ -203,7 +203,7 @@ function Section<T extends Commitment | Proposal | Work>({
       <p className="field__hint">{why}</p>
       {note ? <p data-testid={`${testId}-note`}>{note}</p> : null}
       {items.length === 0 ? (
-        <p>None.</p>
+        <p>Không có.</p>
       ) : (
         <ul>
           {items.map((item) => (

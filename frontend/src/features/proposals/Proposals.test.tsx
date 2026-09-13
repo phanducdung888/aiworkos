@@ -195,7 +195,7 @@ describe('ProposalList', () => {
       'href',
       `/proposals/${PROPOSAL}`,
     )
-    expect(screen.getByText(/nothing here has been created/i)).toBeVisible()
+    expect(screen.getByText(/chưa có gì ở đây được tạo ra/i)).toBeVisible()
     expect(screen.getByRole('cell', { name: /high \(85%\)/i })).toBeVisible()
   })
 
@@ -204,7 +204,7 @@ describe('ProposalList', () => {
       { match: 'GET /api/v1/proposals', body: { items: [], next_cursor: null } },
     ])
     renderSurface(<ProposalList />)
-    await screen.findByText(/nothing is waiting/i)
+    await screen.findByText(/không có đề xuất nào đang chờ/i)
     expect(calls.some((call) => call.url.includes('status=pending'))).toBe(true)
   })
 })
@@ -235,7 +235,7 @@ describe('ProposalDetail', () => {
     renderDetail()
 
     expect(await screen.findByTestId('band')).toHaveTextContent('high')
-    expect(screen.getByText(/authorises this action for 24 hours/i)).toBeVisible()
+    expect(screen.getByText(/uỷ quyền hành động này trong 24 giờ/i)).toBeVisible()
   })
 
   it('approves, queues the action and reports what it produced', async () => {
@@ -250,14 +250,14 @@ describe('ProposalDetail', () => {
     ])
     renderDetail()
 
-    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /duyệt/i }))
 
     // ADR-0048: approving records the decision; a worker performs it. The UI must hand it to the
     // queue rather than expect the decision response to have done anything.
     await waitFor(() =>
       expect(calls.some((call) => call.url.endsWith(`/approvals/${APPROVAL}/queue`))).toBe(true),
     )
-    expect(await screen.findByTestId('execution-status')).toHaveTextContent('executed')
+    expect(await screen.findByTestId('execution-status')).toHaveTextContent('đã thực thi')
     expect(await screen.findByTestId('created-commitment')).toHaveAttribute(
       'href',
       `/commitments/${COMMITMENT}`,
@@ -277,7 +277,7 @@ describe('ProposalDetail', () => {
     ])
     renderDetail()
 
-    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /duyệt/i }))
     await waitFor(() => expect(sentIfMatch).toBe('W/"1"'))
   })
 
@@ -298,15 +298,19 @@ describe('ProposalDetail', () => {
     ])
     renderDetail()
 
-    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /duyệt/i }))
 
-    expect(await screen.findByTestId('execution-status')).toHaveTextContent('failed')
+    expect(await screen.findByTestId('execution-status')).toHaveTextContent('thất bại')
     expect(await screen.findByRole('alert')).toHaveTextContent('BR-C-03')
   })
 
-  it.each(['failed', 'expired', 'pending'])(
+  it.each([
+    ['failed', 'thất bại'],
+    ['expired', 'đã hết hạn'],
+    ['pending', 'đang chờ'],
+  ])(
     'never claims something was created when execution is %s (CP25)',
-    async (executionStatus) => {
+    async (executionStatus, shown) => {
       // §6: the UI must never show a successful execution when execution actually failed. The
       // claim that matters is "Created a commitment" — a person reads that as done, and a
       // resulting entity is the only thing entitled to produce it.
@@ -326,12 +330,13 @@ describe('ProposalDetail', () => {
       ])
       renderDetail()
 
-      await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+      await userEvent.click(await screen.findByRole('button', { name: /duyệt/i }))
 
-      expect(await screen.findByTestId('execution-status')).toHaveTextContent(executionStatus)
+      // The value the API uses, rendered in the reader's language (CP27).
+      expect(await screen.findByTestId('execution-status')).toHaveTextContent(shown)
       expect(screen.queryByTestId('created-commitment')).toBeNull()
-      expect(screen.queryByText(/Created a commitment/i)).toBeNull()
-      expect(screen.queryByText(/Created work/i)).toBeNull()
+      expect(screen.queryByText(/Đã tạo một lời hứa/i)).toBeNull()
+      expect(screen.queryByText(/Đã tạo một công việc/i)).toBeNull()
     },
   )
 
@@ -345,10 +350,10 @@ describe('ProposalDetail', () => {
     ])
     renderDetail()
 
-    const reject = await screen.findByRole('button', { name: /reject/i })
+    const reject = await screen.findByRole('button', { name: /từ chối/i })
     expect(reject).toBeDisabled()
 
-    await userEvent.type(screen.getByLabelText(/reason for rejecting/i), 'Not a commitment')
+    await userEvent.type(screen.getByLabelText(/lý do từ chối/i), 'Not a commitment')
     await userEvent.click(reject)
 
     await waitFor(() =>
@@ -357,11 +362,11 @@ describe('ProposalDetail', () => {
   })
 
   it('offers no decision on a proposal that has already been decided', async () => {
-    stubApi([detail({ status: 'approved' }), evidence, sourceEvent])
+    stubApi([detail({ status: 'accepted' }), evidence, sourceEvent])
     renderDetail()
 
     await screen.findByTestId('action')
-    expect(screen.queryByRole('button', { name: /approve/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /duyệt/i })).toBeNull()
   })
 
   it('shows the rule id when a decision is refused', async () => {
@@ -377,7 +382,7 @@ describe('ProposalDetail', () => {
     ])
     renderDetail()
 
-    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /duyệt/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('BR-PR-06')
   })
@@ -443,7 +448,7 @@ describe('ProposalDetail for work', () => {
     stubApi(workRoutes)
     renderDetail()
 
-    await userEvent.click(await screen.findByRole('button', { name: /approve/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /duyệt/i }))
 
     expect(await screen.findByTestId('created-work')).toHaveAttribute('href', `/work/${WORK}`)
     expect(screen.getByTestId('created-work')).toHaveTextContent('delivery date')
@@ -469,7 +474,7 @@ describe('ProposalList history (CP18)', () => {
     renderSurface(<ProposalList />)
     await screen.findByRole('link', { name: EXCERPT })
 
-    await userEvent.click(screen.getByRole('button', { name: /approved/i }))
+    await userEvent.click(screen.getByRole('button', { name: /đã duyệt/i }))
 
     await waitFor(() =>
       expect(calls.some((call) => call.url.includes('status=accepted'))).toBe(true),
@@ -479,10 +484,10 @@ describe('ProposalList history (CP18)', () => {
   it('says which kind of nothing it found', async () => {
     stubApi([{ match: 'GET /api/v1/proposals', body: { items: [], next_cursor: null } }])
     renderSurface(<ProposalList />)
-    expect(await screen.findByText(/nothing is waiting/i)).toBeVisible()
+    expect(await screen.findByText(/không có đề xuất nào đang chờ/i)).toBeVisible()
 
-    await userEvent.click(screen.getByRole('button', { name: /rejected/i }))
-    expect(await screen.findByText(/no rejected proposals/i)).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: /đã từ chối/i }))
+    expect(await screen.findByText(/không có đề xuất nào đã từ chối/i)).toBeVisible()
   })
 })
 
@@ -500,9 +505,9 @@ describe('ProposalDetail revisited (CP18)', () => {
     ])
     renderDetail()
 
-    expect(await screen.findByTestId('execution-status')).toHaveTextContent('executed')
+    expect(await screen.findByTestId('execution-status')).toHaveTextContent('đã thực thi')
     expect(await screen.findByTestId('created-commitment')).toBeVisible()
-    expect(screen.queryByRole('button', { name: /approve/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /duyệt/i })).toBeNull()
   })
 
   it('says a rejected proposal created nothing, rather than failing to load an approval', async () => {
@@ -514,6 +519,6 @@ describe('ProposalDetail revisited (CP18)', () => {
     ])
     renderDetail()
 
-    expect(await screen.findByTestId('no-approval')).toHaveTextContent(/nothing was created/i)
+    expect(await screen.findByTestId('no-approval')).toHaveTextContent(/không có gì được tạo ra/i)
   })
 })

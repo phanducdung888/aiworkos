@@ -37,7 +37,7 @@ describe('WorkDetail provenance', () => {
     )
     expect(await screen.findByTestId('provenance-interaction')).toHaveTextContent('gpt-4o')
     expect(screen.getByTestId('provenance-action')).toHaveTextContent('create_work')
-    expect(screen.getByTestId('provenance-approval')).toHaveTextContent('executed')
+    expect(screen.getByTestId('provenance-approval')).toHaveTextContent('đã thực thi')
   })
 
   it('shows the exact proposed action, with the blanks still blank', async () => {
@@ -61,7 +61,7 @@ describe('WorkDetail provenance', () => {
       { match: 'GET /api/v1/proposals', body: { items: [], next_cursor: null } },
     ])
     render()
-    expect(await screen.findByText(/captured directly by a person/i)).toBeVisible()
+    expect(await screen.findByText(/do một người ghi trực tiếp/i)).toBeVisible()
   })
 
   it('stays quiet rather than alarming when the chain cannot be read', async () => {

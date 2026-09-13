@@ -32,6 +32,7 @@ import {
 import { Attachments } from '@/components/Attachments'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { Field } from '@/components/Field'
+import { executionStatus } from '@/components/vocabulary'
 
 /**
  * The band, from the same floors the backend publishes (`BAND_FLOOR`, ADR-0050).
@@ -56,24 +57,35 @@ const formatted = (iso: string): string => new Date(iso).toLocaleString()
  * reachable on purpose: "what did the AI propose, and what did a person do about it" is a question
  * about history, and a screen that only ever showed the outstanding ones could not answer it.
  */
+/** The same four states in the sentences that interpolate them, so a view name reads as Vietnamese
+ *  prose rather than as an enum spliced into a sentence. */
+const VIEW_NAMES: Record<ProposalStatus, string> = {
+  pending: 'đang chờ',
+  accepted: 'đã duyệt',
+  accepted_with_edits: 'đã duyệt kèm chỉnh sửa',
+  rejected: 'đã từ chối',
+  expired: 'đã hết hạn',
+  superseded: 'đã bị thay thế',
+}
+
 const VIEWS: { status: ProposalStatus; label: string }[] = [
-  { status: 'pending', label: 'Waiting' },
-  { status: 'accepted', label: 'Approved' },
-  { status: 'rejected', label: 'Rejected' },
-  { status: 'expired', label: 'Expired' },
+  { status: 'pending', label: 'Đang chờ' },
+  { status: 'accepted', label: 'Đã duyệt' },
+  { status: 'rejected', label: 'Đã từ chối' },
+  { status: 'expired', label: 'Đã hết hạn' },
 ]
 
 export function ProposalList() {
   const [view, setView] = useState<ProposalStatus>('pending')
   const proposals = useProposals(view)
 
-  if (proposals.isPending) return <Loading label="proposals" />
+  if (proposals.isPending) return <Loading label="các đề xuất" />
   if (proposals.isError) {
     return <ErrorState error={proposals.error} retry={() => void proposals.refetch()} />
   }
   return (
     <section aria-labelledby="proposals-heading">
-      <h1 id="proposals-heading">Proposals</h1>
+      <h1 id="proposals-heading">Đề xuất</h1>
       <p>
         {VIEWS.map((candidate) => (
           <button
@@ -89,22 +101,22 @@ export function ProposalList() {
       {proposals.data.length === 0 ? (
         <Empty>
           {view === 'pending'
-            ? 'Nothing is waiting for a decision.'
-            : `No ${view} proposals.`}
+            ? 'Không có đề xuất nào đang chờ quyết định.'
+            : `Không có đề xuất nào ${VIEW_NAMES[view]}.`}
         </Empty>
       ) : (
       <table>
         <caption>
           {view === 'pending'
-            ? 'Waiting for a decision. Nothing here has been created.'
-            : `Proposals that were ${view}.`}
+            ? 'Đang chờ quyết định. Chưa có gì ở đây được tạo ra.'
+            : `Các đề xuất ${VIEW_NAMES[view]}.`}
         </caption>
         <thead>
           <tr>
-            <th scope="col">Summary</th>
-            <th scope="col">Creates</th>
-            <th scope="col">Confidence</th>
-            <th scope="col">Expires</th>
+            <th scope="col">Tóm tắt</th>
+            <th scope="col">Tạo ra</th>
+            <th scope="col">Độ tin cậy</th>
+            <th scope="col">Hết hạn</th>
           </tr>
         </thead>
         <tbody>
@@ -131,7 +143,7 @@ export function ProposalDetail() {
   const { proposalId = '' } = useParams()
   const proposal = useProposal(proposalId)
 
-  if (proposal.isPending) return <Loading label="the proposal" />
+  if (proposal.isPending) return <Loading label="đề xuất" />
   if (proposal.isError) {
     return <ErrorState error={proposal.error} retry={() => void proposal.refetch()} />
   }
@@ -165,11 +177,11 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
       {proposal.reason ? <p>{proposal.reason}</p> : null}
 
       <section aria-labelledby="action-heading">
-        <h2 id="action-heading">Exactly what will happen</h2>
+        <h2 id="action-heading">Điều sẽ xảy ra, chính xác</h2>
         {/* The action as approved, argument by argument. Not a sentence about it: this is what the
             hash covers and what the worker will run (ADR-0041). */}
         <dl data-testid="action">
-          <dt>Tool</dt>
+          <dt>Công cụ</dt>
           <dd>
             {action.tool} ({action.tool_version})
           </dd>
@@ -184,8 +196,8 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
       </section>
 
       <section aria-labelledby="evidence-heading">
-        <h2 id="evidence-heading">What it is based on</h2>
-        {evidence.isPending ? <Loading label="the evidence" /> : null}
+        <h2 id="evidence-heading">Căn cứ</h2>
+        {evidence.isPending ? <Loading label="trích dẫn" /> : null}
         {evidence.isError ? <ErrorState error={evidence.error} /> : null}
         {evidence.data ? (
           <blockquote data-testid="excerpt" cite={proposal.source_event_id ?? undefined}>
@@ -208,12 +220,12 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
 
       {pending && !decided ? (
         <section aria-labelledby="decide-heading">
-          <h2 id="decide-heading">Decide</h2>
+          <h2 id="decide-heading">Quyết định</h2>
           <p>
-            Approving authorises this action for 24 hours. It does not run here — it is queued and
-            performed by the system.
+            Duyệt tức là uỷ quyền hành động này trong 24 giờ. Nó không chạy ở đây — nó được xếp
+            hàng và do hệ thống thực hiện.
           </p>
-          <Field label="Reason for rejecting" hint="Required only when rejecting.">
+          <Field label="Lý do từ chối" hint="Chỉ bắt buộc khi từ chối.">
             {(id) => (
               <input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />
             )}
@@ -233,7 +245,7 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
               )
             }
           >
-            Approve
+            Duyệt
           </button>
           <button
             type="button"
@@ -245,7 +257,7 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
               )
             }
           >
-            Reject
+            Từ chối
           </button>
           {decide.isError ? <ErrorState error={decide.error} /> : null}
         </section>
@@ -272,15 +284,15 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
 function Outcome({ proposalId }: { proposalId: string }) {
   const approval = useApprovalFor(proposalId, true)
 
-  if (approval.isPending) return <Loading label="the outcome" />
+  if (approval.isPending) return <Loading label="kết quả" />
   if (approval.isError) {
     // A rejected proposal has no ApprovalRecord, and that is the answer rather than a failure:
     // somebody looked and said no, and nothing was created.
     return (
       <section aria-labelledby="outcome-heading">
-        <h2 id="outcome-heading">Outcome</h2>
+        <h2 id="outcome-heading">Kết quả</h2>
         <p data-testid="no-approval">
-          No approval was recorded. Nothing was created from this proposal.
+          Không có bản ghi phê duyệt nào. Không có gì được tạo ra từ đề xuất này.
         </p>
       </section>
     )
@@ -289,21 +301,21 @@ function Outcome({ proposalId }: { proposalId: string }) {
 
   return (
     <section aria-labelledby="outcome-heading">
-      <h2 id="outcome-heading">Approved</h2>
+      <h2 id="outcome-heading">Đã duyệt</h2>
       <dl>
-        <dt>Decided</dt>
+        <dt>Quyết định lúc</dt>
         <dd>{formatted(record.decided_at)}</dd>
-        <dt>Authorised until</dt>
+        <dt>Uỷ quyền đến</dt>
         <dd>{formatted(record.execution_expires_at)}</dd>
-        <dt>Execution</dt>
-        <dd data-testid="execution-status">{record.execution_status}</dd>
+        <dt>Thực thi</dt>
+        <dd data-testid="execution-status">{executionStatus(record.execution_status)}</dd>
       </dl>
       {record.execution_error ? (
-        <p role="alert">The action was not performed: {record.execution_error}</p>
+        <p role="alert">Hành động không được thực hiện: {record.execution_error}</p>
       ) : null}
       {record.execution_status === 'pending' && !approval.isFetching ? (
         <p>
-          Still waiting. The action is authorised and queued; nothing has run it yet.
+          Vẫn đang chờ. Hành động đã được uỷ quyền và xếp hàng; chưa có gì chạy nó.
         </p>
       ) : null}
       <Created
@@ -336,7 +348,7 @@ function Created({
   if (commitment.data) {
     return (
       <p>
-        Created a commitment:{' '}
+        Đã tạo một lời hứa:{' '}
         <Link to={`/commitments/${commitment.data.id}`} data-testid="created-commitment">
           {commitment.data.statement}
         </Link>{' '}
@@ -347,7 +359,7 @@ function Created({
   if (work.data) {
     return (
       <p>
-        Created work:{' '}
+        Đã tạo một công việc:{' '}
         <Link to={`/work/${work.data.id}`} data-testid="created-work">
           {work.data.title}
         </Link>{' '}
@@ -359,7 +371,7 @@ function Created({
   // rendering nothing, which reads as "the approval produced no result".
   return (
     <p data-testid="created-other">
-      Created a {entityType} ({entityId}).
+      Đã tạo {entityType} ({entityId}).
     </p>
   )
 }

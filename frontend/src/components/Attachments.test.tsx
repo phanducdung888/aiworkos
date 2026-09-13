@@ -83,13 +83,13 @@ describe('Attachments', () => {
       />,
     )
     expect(screen.queryByRole('button', { name: 'NDA ký kết.pdf' })).toBeNull()
-    expect(screen.getByText(/pending/)).toBeInTheDocument()
+    expect(screen.getByText(/đang chờ tải lên/)).toBeInTheDocument()
   })
 
   it('explains a refusal rather than failing silently', async () => {
     stubApi([{ ...CONTENT, status: 409, body: { status: 409, title: 'Refused', detail: 'no' } }])
     renderSurface(<Attachments eventId={EVENT} attachments={[anAttachment()]} />)
     await userEvent.click(screen.getByRole('button', { name: 'NDA ký kết.pdf' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent(/never finished uploading/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/chưa tải lên xong/i)
   })
 })

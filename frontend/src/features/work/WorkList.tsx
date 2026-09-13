@@ -11,6 +11,7 @@ import { useWork } from '@/api/hooks'
 import type { WorkFilters, WorkStatus } from '@/api/hooks'
 import { Empty, ErrorState, Loading } from '@/components/States'
 import { Field } from '@/components/Field'
+import { workStatus } from '@/components/vocabulary'
 
 const STATUSES: WorkStatus[] = [
   'proposed',
@@ -33,39 +34,39 @@ export function WorkList() {
     return { project, nonProject: items.length - project, total: items.length }
   }, [work.data])
 
-  if (work.isPending) return <Loading label="work" />
+  if (work.isPending) return <Loading label="công việc" />
   if (work.isError) return <ErrorState error={work.error} retry={() => void work.refetch()} />
 
   const items = work.data ?? []
 
   return (
     <section aria-labelledby="work-heading">
-      <h1 id="work-heading">Work</h1>
+      <h1 id="work-heading">Công việc</h1>
 
       {/* BR-RPT-01 and BR-RPT-04: All Work, and which partition each figure covers. */}
       <dl className="partitions">
         <div>
-          <dt>All work</dt>
+          <dt>Tất cả công việc</dt>
           <dd data-testid="count-total">{counts.total}</dd>
         </div>
         <div>
-          <dt>In a project</dt>
+          <dt>Thuộc một dự án</dt>
           <dd data-testid="count-project">{counts.project}</dd>
         </div>
         <div>
-          <dt>Not in a project</dt>
+          <dt>Không thuộc dự án nào</dt>
           <dd data-testid="count-non-project">{counts.nonProject}</dd>
         </div>
       </dl>
 
-      <Field label="Status">
+      <Field label="Trạng thái">
         {(id) => (
           <select
             id={id}
             value={status}
             onChange={(event) => setStatus(event.target.value as WorkStatus | '')}
           >
-            <option value="">Any status</option>
+            <option value="">Mọi trạng thái</option>
             {STATUSES.map((value) => (
               <option key={value} value={value}>
                 {value.replace('_', ' ')}
@@ -76,15 +77,15 @@ export function WorkList() {
       </Field>
 
       {items.length === 0 ? (
-        <Empty>No work matches this view yet.</Empty>
+        <Empty>Chưa có công việc nào khớp với bộ lọc này.</Empty>
       ) : (
         <table>
-          <caption className="visually-hidden">Work items</caption>
+          <caption className="visually-hidden">Danh sách công việc</caption>
           <thead>
             <tr>
-              <th scope="col">Title</th>
-              <th scope="col">Status</th>
-              <th scope="col">Partition</th>
+              <th scope="col">Tiêu đề</th>
+              <th scope="col">Trạng thái</th>
+              <th scope="col">Phân nhóm</th>
               <th scope="col">Due</th>
             </tr>
           </thead>
@@ -94,8 +95,8 @@ export function WorkList() {
                 <th scope="row">
                   <Link to={`/work/${item.id}`}>{item.title}</Link>
                 </th>
-                <td>{item.status}</td>
-                <td>{item.project_id === null ? 'Non-project' : 'Project'}</td>
+                <td>{workStatus(item.status)}</td>
+                <td>{item.project_id === null ? 'Ngoài dự án' : 'Trong dự án'}</td>
                 <td>{item.due_date ?? '—'}</td>
               </tr>
             ))}

@@ -78,9 +78,9 @@ const analysis = (proposals: string[], lowConfidence = 0) => ({
 })
 
 async function captureMessage(text = 'I will send the revised quote on Friday.') {
-  await userEvent.type(await screen.findByLabelText(/^message$/i), text)
-  await userEvent.type(screen.getByLabelText(/handle 1/i), '+84900000001')
-  await userEvent.click(screen.getByRole('button', { name: /^capture$/i }))
+  await userEvent.type(await screen.findByLabelText(/^nội dung$/i), text)
+  await userEvent.type(screen.getByLabelText(/định danh 1/i), '+84900000001')
+  await userEvent.click(screen.getByRole('button', { name: /^ghi nhận$/i }))
 }
 
 describe('Capture', () => {
@@ -122,7 +122,7 @@ describe('Capture', () => {
 
     await captureMessage()
 
-    expect(await screen.findByTestId('resolution')).toHaveTextContent('Nobody')
+    expect(await screen.findByTestId('resolution')).toHaveTextContent('Không ai')
   })
 
   it('analyses only when asked, and says nothing was created', async () => {
@@ -134,10 +134,10 @@ describe('Capture', () => {
     // Capturing must not have analysed anything: the model runs when a person asks (BR-AI-01).
     expect(calls.some((call) => call.url.includes('/analyze'))).toBe(false)
 
-    await userEvent.click(screen.getByRole('button', { name: /analyse/i }))
+    await userEvent.click(screen.getByRole('button', { name: /phân tích/i }))
 
-    expect(await screen.findByText(/nothing has been created/i)).toBeVisible()
-    expect(await screen.findByRole('link', { name: /review proposal/i })).toHaveAttribute(
+    expect(await screen.findByText(/chưa có gì được tạo ra/i)).toBeVisible()
+    expect(await screen.findByRole('link', { name: /xem đề xuất/i })).toHaveAttribute(
       'href',
       `/proposals/${PROPOSAL}`,
     )
@@ -149,7 +149,7 @@ describe('Capture', () => {
 
     await captureMessage()
     await screen.findByTestId('resolution')
-    await userEvent.click(screen.getByRole('button', { name: /analyse/i }))
+    await userEvent.click(screen.getByRole('button', { name: /phân tích/i }))
 
     expect(await screen.findByText(/declining to guess/i)).toBeVisible()
   })
@@ -170,7 +170,7 @@ describe('Capture', () => {
   it('has no accessibility violations', async () => {
     stubApi([people, policy()])
     const { container } = renderSurface(<Capture />)
-    await screen.findByLabelText(/^message$/i)
+    await screen.findByLabelText(/^nội dung$/i)
     expect(await axe(container)).toHaveNoViolations()
   })
 })
@@ -183,7 +183,7 @@ describe('Capture when the agent is switched off (CP18)', () => {
 
     await captureMessage()
     await screen.findByTestId('resolution')
-    await userEvent.click(screen.getByRole('button', { name: /analyse/i }))
+    await userEvent.click(screen.getByRole('button', { name: /phân tích/i }))
 
     expect(await screen.findByTestId('policy-empty')).toHaveTextContent(
       /has not granted its agents any capability/i,

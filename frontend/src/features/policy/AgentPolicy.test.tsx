@@ -102,9 +102,9 @@ describe('AgentPolicy', () => {
     ])
     renderSurface(<AgentPolicy />)
 
-    expect(await screen.findByTestId('state-work-create')).toHaveTextContent(/not decided/i)
+    expect(await screen.findByTestId('state-work-create')).toHaveTextContent(/chưa quyết định/i)
     const declined = screen.getByTestId('state-commitment-create')
-    expect(declined).toHaveTextContent('Off')
+    expect(declined).toHaveTextContent('Tắt')
     expect(declined).toHaveTextContent('Mai Tran')
     expect(declined).toHaveTextContent('too noisy')
   })
@@ -122,8 +122,8 @@ describe('AgentPolicy', () => {
     renderSurface(<AgentPolicy />)
 
     const cell = await screen.findByTestId('cell-work-create')
-    await userEvent.type(within(cell).getByLabelText(/reason/i), 'approved at the safety review')
-    await userEvent.click(within(cell).getByRole('button', { name: 'Propose' }))
+    await userEvent.type(within(cell).getByLabelText(/lý do/i), 'approved at the safety review')
+    await userEvent.click(within(cell).getByRole('button', { name: 'Đề xuất' }))
 
     await waitFor(() =>
       expect(sent).toEqual({
@@ -144,11 +144,11 @@ describe('AgentPolicy', () => {
     renderSurface(<AgentPolicy />)
 
     const cell = await screen.findByTestId('cell-work-create')
-    expect(within(cell).getByRole('button', { name: 'Propose' })).toHaveAttribute(
+    expect(within(cell).getByRole('button', { name: 'Đề xuất' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    expect(within(cell).getByRole('button', { name: 'Off' })).toHaveAttribute(
+    expect(within(cell).getByRole('button', { name: 'Tắt' })).toHaveAttribute(
       'aria-pressed',
       'false',
     )
@@ -164,15 +164,15 @@ describe('AgentPolicy', () => {
     renderSurface(<AgentPolicy />)
 
     const cell = await screen.findByTestId('cell-work-create')
-    await userEvent.click(within(cell).getByRole('button', { name: 'Propose' }))
+    await userEvent.click(within(cell).getByRole('button', { name: 'Đề xuất' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/do not have permission/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/không có quyền/i)
   })
 
   it('says plainly when the build offers nothing to decide', async () => {
     stubApi([people, grid([])])
     renderSurface(<AgentPolicy />)
-    expect(await screen.findByText(/no agent capability with a tool behind it/i)).toBeVisible()
+    expect(await screen.findByText(/không có năng lực AI nào có công cụ đứng sau/i)).toBeVisible()
   })
 
   it('has no accessibility violations', async () => {

@@ -186,6 +186,19 @@ def _create_commitment(
             evidence_ids=tuple(
                 _as_uuid(value, "evidence_ids") for value in arguments.get("evidence_ids", [])
             ),
+            # Where the promise belongs (CP27). Optional, and never inferred by this layer: the
+            # service refuses a Work or a Project that does not exist or that the approver cannot
+            # see, so a link is either true or the execution fails — it is not quietly dropped.
+            fulfilling_work_id=(
+                _as_uuid(arguments["fulfilling_work_id"], "fulfilling_work_id")
+                if arguments.get("fulfilling_work_id")
+                else None
+            ),
+            project_id=(
+                _as_uuid(arguments["project_id"], "project_id")
+                if arguments.get("project_id")
+                else None
+            ),
         )
     )
     return ExecutionResult(entity_type="commitment", entity_id=created.id)
@@ -269,6 +282,16 @@ REGISTRY: dict[tuple[str, str], Tool] = {
                     "origin_event_id",
                     "confidence",
                     "evidence_ids",
+                    # CP27. A promise that fulfils known work, or belongs to a known project.
+                    #
+                    # The registry is a contract about what an *approved* action may carry, not a
+                    # claim that the AI will fill these in. It will not: BR-AI-17 forbids inferring
+                    # a project the text does not state, and nothing upstream resolves a Work item
+                    # from prose. What this opens is the path that was closed — a reviewer can add
+                    # the link with `edited_arguments` before approving, and the edit is recorded
+                    # in the ApprovalRecord like every other edit (ADR-0041).
+                    "fulfilling_work_id",
+                    "project_id",
                 }
             ),
             run=_create_commitment,

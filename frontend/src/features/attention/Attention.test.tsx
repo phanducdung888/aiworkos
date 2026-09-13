@@ -83,7 +83,7 @@ describe('Attention', () => {
     renderSurface(<Attention />)
 
     const section = await screen.findByTestId('overdue-commitments')
-    expect(within(section).getByRole('heading')).toHaveTextContent('Overdue promises (1)')
+    expect(within(section).getByRole('heading')).toHaveTextContent('Lời hứa quá hạn (1)')
     expect(within(section).getByRole('link')).toHaveAttribute('href', `/commitments/${COMMITMENT}`)
     expect(section).toHaveTextContent('Mai Tran')
     expect(section).toHaveTextContent('2020-01-01')
@@ -108,7 +108,7 @@ describe('Attention', () => {
       // A stated rule, not just a heading and a count.
       expect(section.querySelector('.field__hint')?.textContent ?? '').not.toBe('')
     }
-    expect(screen.getByTestId('overdue-commitments')).toHaveTextContent(/deadline nobody set/i)
+    expect(screen.getByTestId('overdue-commitments')).toHaveTextContent(/hạn chót không ai đặt ra/i)
   })
 
   it('separates promises nobody has confirmed from promises that are late', async () => {
@@ -139,8 +139,8 @@ describe('Attention', () => {
     ])
     renderSurface(<Attention />)
 
-    expect(await screen.findByTestId('pending-proposals-note')).toHaveTextContent(/expire within/i)
-    expect(screen.getByTestId('pending-proposals')).toHaveTextContent('expires soon')
+    expect(await screen.findByTestId('pending-proposals-note')).toHaveTextContent(/hết hạn trong/i)
+    expect(screen.getByTestId('pending-proposals')).toHaveTextContent('sắp hết hạn')
   })
 
   it('shows blocked work with the cause the domain requires it to have', async () => {

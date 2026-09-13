@@ -50,7 +50,7 @@ export function Capture() {
 
   return (
     <section aria-labelledby="capture-heading">
-      <h1 id="capture-heading">Capture a message</h1>
+      <h1 id="capture-heading">Ghi nhận tin nhắn</h1>
 
       <form
         onSubmit={(submitted) => {
@@ -74,7 +74,7 @@ export function Capture() {
           )
         }}
       >
-        <Field label="Message" hint="Paste what was said. It is stored verbatim and cited verbatim.">
+        <Field label="Nội dung" hint="Dán nguyên văn điều đã được nói. Nó được lưu và trích dẫn nguyên văn.">
           {(id) => (
             <textarea
               id={id}
@@ -82,13 +82,13 @@ export function Capture() {
               rows={5}
               value={body}
               onChange={(changed) => setBody(changed.target.value)}
-              placeholder="I will send the revised quote on Friday."
+              placeholder="Tôi sẽ gửi bản báo giá sửa lại vào thứ Sáu."
             />
           )}
         </Field>
 
         <fieldset>
-          <legend>Participants</legend>
+          <legend>Người tham gia</legend>
           {drafts.map((draft, index) => (
             <div key={index} className="participant">
               <Field label={`Role ${index + 1}`}>
@@ -109,8 +109,8 @@ export function Capture() {
                 )}
               </Field>
               <Field
-                label={`Person ${index + 1}`}
-                hint="Leave unset for somebody only the channel knows."
+                label={`Người ${index + 1}`}
+                hint="Để trống nếu chỉ biết người này qua kênh liên lạc."
               >
                 {(id) => (
                   <select
@@ -118,7 +118,7 @@ export function Capture() {
                     value={draft.personId}
                     onChange={(changed) => update(index, { personId: changed.target.value })}
                   >
-                    <option value="">Not named</option>
+                    <option value="">Chưa xác định</option>
                     {(people.data ?? []).map((person) => (
                       <option key={person.id} value={person.id}>
                         {person.display_name}
@@ -127,7 +127,7 @@ export function Capture() {
                   </select>
                 )}
               </Field>
-              <Field label={`Handle ${index + 1}`} hint="The channel identifier, e.g. a number.">
+              <Field label={`Định danh ${index + 1}`} hint="Định danh trên kênh, ví dụ một số điện thoại.">
                 {(id) => (
                   <input
                     id={id}
@@ -140,12 +140,12 @@ export function Capture() {
             </div>
           ))}
           <button type="button" onClick={() => setDrafts((current) => [...current, emptyDraft()])}>
-            Add participant
+            Thêm người tham gia
           </button>
         </fieldset>
 
         <button type="submit" disabled={capture.isPending || body.trim() === ''}>
-          {capture.isPending ? 'Capturing…' : 'Capture'}
+          {capture.isPending ? 'Đang ghi nhận…' : 'Ghi nhận'}
         </button>
       </form>
 
@@ -153,7 +153,7 @@ export function Capture() {
 
       {event ? (
         <section aria-labelledby="captured-heading">
-          <h2 id="captured-heading">Captured</h2>
+          <h2 id="captured-heading">Đã ghi nhận</h2>
           <table>
             <caption>
               Who this message resolved to. An unresolved handle is kept, and no promise is
@@ -161,9 +161,9 @@ export function Capture() {
             </caption>
             <thead>
               <tr>
-                <th scope="col">Role</th>
-                <th scope="col">Handle</th>
-                <th scope="col">Resolved to</th>
+                <th scope="col">Vai trò</th>
+                <th scope="col">Định danh</th>
+                <th scope="col">Khớp với</th>
               </tr>
             </thead>
             <tbody>
@@ -177,7 +177,7 @@ export function Capture() {
                         {named(participant.person_id)} ({participant.match_confidence}%)
                       </>
                     ) : (
-                      'Nobody'
+                      'Không ai'
                     )}
                   </td>
                 </tr>
@@ -190,7 +190,7 @@ export function Capture() {
             disabled={analyze.isPending}
             onClick={() => analyze.mutate({ eventId: event.id }, { onSuccess: setAnalysis })}
           >
-            {analyze.isPending ? 'Analysing…' : 'Analyse this message'}
+            {analyze.isPending ? 'Đang phân tích…' : 'Phân tích tin nhắn này'}
           </button>
           {analyze.isError ? <ErrorState error={analyze.error} /> : null}
         </section>
@@ -198,17 +198,16 @@ export function Capture() {
 
       {analysis ? (
         <section aria-labelledby="analysis-heading">
-          <h2 id="analysis-heading">What the analysis proposed</h2>
+          <h2 id="analysis-heading">Kết quả phân tích</h2>
           {/* Nothing was written. Whatever is listed here is waiting for a person (PQ-3). */}
           <p>
-            Nothing has been created. {analysis.proposal_ids?.length ?? 0} proposal(s) are waiting
-            for a decision, and {analysis.low_confidence ?? 0} finding(s) were too uncertain to
-            raise.
+            Chưa có gì được tạo ra. {analysis.proposal_ids?.length ?? 0} đề xuất đang chờ quyết
+            định, và {analysis.low_confidence ?? 0} phát hiện không đủ chắc chắn để nêu.
           </p>
           <ul>
             {(analysis.proposal_ids ?? []).map((proposalId) => (
               <li key={proposalId}>
-                <Link to={`/proposals/${proposalId}`}>Review proposal</Link>
+                <Link to={`/proposals/${proposalId}`}>Xem đề xuất</Link>
               </li>
             ))}
           </ul>

@@ -41,7 +41,7 @@ const renderDetail = () =>
 
 describe('due', () => {
   it('names the precision when the date is not exact', () => {
-    expect(due(aCommitment() as never)).toBe('2026-09-18 (week)')
+    expect(due(aCommitment() as never)).toBe('2026-09-18 (trong tuần)')
   })
 
   it('shows an exact date without qualification', () => {
@@ -51,7 +51,7 @@ describe('due', () => {
   it('says why a promise has no date rather than showing a blank', () => {
     // ADR-0055. "No date" is a fact about the message, not a missing field.
     expect(due(aCommitment({ due_date: null, due_precision: 'vague' }) as never)).toBe(
-      'No date (vague)',
+      'Không có hạn (chưa rõ)',
     )
   })
 })
@@ -63,7 +63,7 @@ describe('CommitmentList', () => {
 
     const row = (await screen.findByRole('link', { name: EXCERPT })).closest('tr')!
     expect(within(row).getByText('Mai Tran')).toBeVisible()
-    expect(within(row).getByText('2026-09-18 (week)')).toBeVisible()
+    expect(within(row).getByText('2026-09-18 (trong tuần)')).toBeVisible()
   })
 
   it('can ask the overdue question instead, and says asking writes nothing', async () => {
@@ -75,12 +75,12 @@ describe('CommitmentList', () => {
     renderSurface(<CommitmentList />)
     await screen.findByRole('link', { name: EXCERPT })
 
-    await userEvent.click(screen.getByRole('checkbox', { name: /overdue only/i }))
+    await userEvent.click(screen.getByRole('checkbox', { name: /chỉ hiện quá hạn/i }))
 
     await waitFor(() =>
       expect(calls.some((call) => call.url.includes('/commitments/overdue/today'))).toBe(true),
     )
-    expect(screen.getByText(/computed on read/i)).toBeVisible()
+    expect(screen.getByText(/được tính khi đọc/i)).toBeVisible()
     // BR-C-06: the read must not have performed the transition.
     expect(calls.every((call) => call.method === 'GET')).toBe(true)
   })
@@ -89,8 +89,8 @@ describe('CommitmentList', () => {
     stubApi([people, list([aCommitment()]), overdue([])])
     renderSurface(<CommitmentList />)
     await screen.findByRole('link', { name: EXCERPT })
-    await userEvent.click(screen.getByRole('checkbox', { name: /overdue only/i }))
-    expect(await screen.findByText(/nothing is overdue/i)).toBeVisible()
+    await userEvent.click(screen.getByRole('checkbox', { name: /chỉ hiện quá hạn/i }))
+    expect(await screen.findByText(/không có gì quá hạn/i)).toBeVisible()
   })
 
   it('has no accessibility violations', async () => {
@@ -107,8 +107,8 @@ describe('CommitmentDetail', () => {
     renderDetail()
 
     expect(await screen.findByTestId('committer')).toHaveTextContent('Mai Tran')
-    expect(screen.getByTestId('status')).toHaveTextContent('captured')
-    expect(screen.getByTestId('due')).toHaveTextContent('2026-09-18 (week)')
+    expect(screen.getByTestId('status')).toHaveTextContent('đã ghi nhận')
+    expect(screen.getByTestId('due')).toHaveTextContent('2026-09-18 (trong tuần)')
   })
 
   it('walks the chain back to the words somebody said', async () => {
@@ -121,7 +121,7 @@ describe('CommitmentDetail', () => {
     expect(screen.getByTestId('provenance-action')).toHaveTextContent('create_commitment')
     expect(screen.getByTestId('provenance-action')).toHaveTextContent('2026-09-18')
     expect(screen.getByTestId('provenance-approval')).toHaveTextContent('Mai Tran')
-    expect(screen.getByTestId('provenance-approval')).toHaveTextContent('executed')
+    expect(screen.getByTestId('provenance-approval')).toHaveTextContent('đã thực thi')
   })
 
   it('quotes the evidence rather than summarising it', async () => {
@@ -141,7 +141,7 @@ describe('CommitmentDetail', () => {
       { match: 'GET /api/v1/proposals', body: { items: [], next_cursor: null } },
     ])
     renderDetail()
-    expect(await screen.findByText(/recorded directly by a person/i)).toBeVisible()
+    expect(await screen.findByText(/do một người ghi trực tiếp/i)).toBeVisible()
   })
 
   it('offers only the transitions the domain allows from here', async () => {
@@ -150,15 +150,15 @@ describe('CommitmentDetail', () => {
 
     // BR-C-04: captured -> open | disputed | withdrawn, and nothing else.
     await screen.findByTestId('status')
-    expect(screen.getByRole('button', { name: /acknowledge/i })).toBeVisible()
-    expect(screen.getByRole('button', { name: /dispute/i })).toBeVisible()
-    expect(screen.queryByRole('button', { name: /mark fulfilled/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /xác nhận/i })).toBeVisible()
+    expect(screen.getByRole('button', { name: /phản đối/i })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /đánh dấu hoàn thành/i })).toBeNull()
   })
 
   it('offers nothing from a terminal state', async () => {
     stubApi([people, detail({ status: 'fulfilled' }), ...provenanceOf()])
     renderDetail()
-    expect(await screen.findByTestId('terminal')).toHaveTextContent('fulfilled')
+    expect(await screen.findByTestId('terminal')).toHaveTextContent('đã hoàn thành')
   })
 
   it('sends the version it read, so a stale transition is refused', async () => {
@@ -179,7 +179,7 @@ describe('CommitmentDetail', () => {
     ])
     renderDetail()
 
-    await userEvent.click(await screen.findByRole('button', { name: /acknowledge/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /xác nhận/i }))
 
     await waitFor(() => expect(sentIfMatch).toBe('W/"1"'))
     expect(sentBody).toEqual({ target: 'open', new_due_date: null })
@@ -200,7 +200,7 @@ describe('CommitmentDetail', () => {
     ])
     renderDetail()
 
-    await userEvent.click(await screen.findByRole('button', { name: /acknowledge/i }))
+    await userEvent.click(await screen.findByRole('button', { name: /xác nhận/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('BR-C-09')
   })
 

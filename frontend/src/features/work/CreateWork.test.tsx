@@ -26,8 +26,8 @@ describe('CreateWork', () => {
     ])
     renderSurface(<CreateWork />)
 
-    await userEvent.type(await screen.findByLabelText(/title/i), 'Check the IOC API')
-    await userEvent.click(screen.getByRole('button', { name: /capture/i }))
+    await userEvent.type(await screen.findByLabelText(/tiêu đề/i), 'Check the IOC API')
+    await userEvent.click(screen.getByRole('button', { name: /tạo công việc/i }))
 
     // ADR-0029, BR-W-07, BR-W-15: no project, no assignment, and neither is an error.
     await waitFor(() => expect(sent).toEqual({ title: 'Check the IOC API', project_id: null }))
@@ -37,12 +37,12 @@ describe('CreateWork', () => {
     stubApi([noProjects])
     renderSurface(<CreateWork />)
 
-    const project = await screen.findByLabelText(/project/i)
+    const project = await screen.findByLabelText(/dự án/i)
     expect(project).not.toBeRequired()
-    await userEvent.type(screen.getByLabelText(/title/i), 'Unparented')
+    await userEvent.type(screen.getByLabelText(/tiêu đề/i), 'Unparented')
     // The submit is reachable with the project still unset. A form that disabled it here would be
     // the UI path ADR-0029 forbids.
-    expect(screen.getByRole('button', { name: /capture/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /tạo công việc/i })).toBeEnabled()
   })
 
   it('sends an idempotency key so a retried capture makes one item', async () => {
@@ -59,8 +59,8 @@ describe('CreateWork', () => {
       },
     ])
     renderSurface(<CreateWork />)
-    await userEvent.type(await screen.findByLabelText(/title/i), 'Retryable')
-    await userEvent.click(screen.getByRole('button', { name: /capture/i }))
+    await userEvent.type(await screen.findByLabelText(/tiêu đề/i), 'Retryable')
+    await userEvent.click(screen.getByRole('button', { name: /tạo công việc/i }))
     await waitFor(() => expect(keys).toHaveLength(1))
     expect(keys[0]).toBeTruthy()
   })
@@ -71,15 +71,15 @@ describe('CreateWork', () => {
       { match: 'POST /api/v1/work', status: 422, body: problem(422, { rule: 'BR-W-01' }) },
     ])
     renderSurface(<CreateWork />)
-    await userEvent.type(await screen.findByLabelText(/title/i), '   x')
-    await userEvent.click(screen.getByRole('button', { name: /capture/i }))
+    await userEvent.type(await screen.findByLabelText(/tiêu đề/i), '   x')
+    await userEvent.click(screen.getByRole('button', { name: /tạo công việc/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('BR-W-01')
   })
 
   it('has no accessibility violations', async () => {
     stubApi([noProjects])
     const { container } = renderSurface(<CreateWork />)
-    await screen.findByLabelText(/title/i)
+    await screen.findByLabelText(/tiêu đề/i)
     expect(await axe(container)).toHaveNoViolations()
   })
 })

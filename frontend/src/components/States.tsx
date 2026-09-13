@@ -11,7 +11,7 @@ import { ApiProblem } from '@/api/problem'
 export function Loading({ label }: { label: string }) {
   return (
     <p role="status" aria-live="polite" className="state state--loading">
-      Loading {label}…
+      Đang tải {label}…
     </p>
   )
 }
@@ -33,9 +33,9 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
   if (problem?.isForbidden) {
     return (
       <div role="alert" className="state state--forbidden">
-        <p>You do not have permission to see this.</p>
+        <p>Bạn không có quyền xem mục này.</p>
         <p className="state__hint">
-          Access here comes from your role in this organization, not from this page.
+          Quyền ở đây đến từ vai trò của bạn trong tổ chức, không phải từ trang này.
         </p>
       </div>
     )
@@ -43,11 +43,11 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
 
   return (
     <div role="alert" className="state state--error">
-      <p>{problem ? problem.message_for_humans : 'Something went wrong.'}</p>
-      {problem?.rule ? <p className="state__hint">Rule {problem.rule}</p> : null}
+      <p>{problem ? problem.message_for_humans : 'Đã có lỗi xảy ra.'}</p>
+      {problem?.rule ? <p className="state__hint">Quy tắc {problem.rule}</p> : null}
       {retry ? (
         <button type="button" onClick={retry}>
-          Try again
+          Thử lại
         </button>
       ) : null}
     </div>

@@ -21,7 +21,7 @@ export function CreateWork() {
 
   return (
     <section aria-labelledby="capture-heading">
-      <h1 id="capture-heading">Capture work</h1>
+      <h1 id="capture-heading">Tạo công việc</h1>
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -31,22 +31,22 @@ export function CreateWork() {
           )
         }}
       >
-        <Field label="Title">
+        <Field label="Tiêu đề">
           {(id) => (
             <input
               id={id}
               required
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="Check the IOC API"
+              placeholder="Kiểm tra API của IOC"
             />
           )}
         </Field>
 
-        <Field label="Project" hint="Optional. Work with no project is a complete record.">
+        <Field label="Dự án" hint="Không bắt buộc. Công việc không thuộc dự án nào vẫn là bản ghi đầy đủ.">
           {(id) => (
             <select id={id} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-              <option value="">No project</option>
+              <option value="">Không thuộc dự án nào</option>
               {(projects.data ?? []).map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -57,7 +57,7 @@ export function CreateWork() {
         </Field>
 
         <button type="submit" disabled={create.isPending || title.trim() === ''}>
-          {create.isPending ? 'Capturing…' : 'Capture'}
+          {create.isPending ? 'Đang tạo…' : 'Tạo công việc'}
         </button>
       </form>
 

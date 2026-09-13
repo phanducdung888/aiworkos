@@ -25,16 +25,16 @@ import { nameOf } from '@/components/Provenance'
 
 /** The three modes, in the order they widen. Level 3 is not representable (BR-AI-31). */
 export const MODES: { mode: AutonomyMode; label: string; meaning: string }[] = [
-  { mode: 'off', label: 'Off', meaning: 'The agent may not do this at all.' },
+  { mode: 'off', label: 'Tắt', meaning: 'AI hoàn toàn không được làm việc này.' },
   {
     mode: 'level_1_propose',
-    label: 'Propose',
-    meaning: 'The agent may raise a Proposal. Nothing is created until a person approves it.',
+    label: 'Đề xuất',
+    meaning: 'AI được nêu đề xuất. Không có gì được tạo ra cho tới khi một người duyệt.',
   },
   {
     mode: 'level_2_approved_execution',
-    label: 'Execute once approved',
-    meaning: 'An approved Proposal may be executed by the system. A person still approves first.',
+    label: 'Thực thi sau khi duyệt',
+    meaning: 'Đề xuất đã duyệt có thể được hệ thống thực thi. Vẫn phải có người duyệt trước.',
   },
 ]
 
@@ -45,12 +45,12 @@ export function AgentPolicy() {
   const grid = useAgentPolicyGrid()
   const people = usePeople()
 
-  if (grid.isPending) return <Loading label="the agent policy" />
+  if (grid.isPending) return <Loading label="quyền của AI" />
   if (grid.isError) return <ErrorState error={grid.error} retry={() => void grid.refetch()} />
 
   return (
     <section aria-labelledby="policy-heading">
-      <h1 id="policy-heading">Agent policy</h1>
+      <h1 id="policy-heading">Quyền của AI</h1>
       <p>
         What agents in this organization may do. Everything not decided here is off — a new
         organization grants nothing, and that is the intended starting state.
@@ -61,7 +61,7 @@ export function AgentPolicy() {
       </p>
 
       {grid.data.length === 0 ? (
-        <Empty>This build has no agent capability with a tool behind it.</Empty>
+        <Empty>Bản dựng này không có năng lực AI nào có công cụ đứng sau.</Empty>
       ) : (
         <ul>
           {grid.data.map((cell) => (
@@ -99,11 +99,11 @@ function Cell({ cell, decidedBy }: { cell: PolicyCell; decidedBy: string }) {
           </>
         ) : (
           // ADR-0047. Not the same statement as a decided `off`.
-          <>Not decided, so off.</>
+          <>Chưa quyết định, nên đang tắt.</>
         )}
       </p>
 
-      <Field label={`Reason for ${cell.action} ${cell.entity_type}`} hint="Optional, and the thing a reviewer wants six months later.">
+      <Field label={`Lý do cho ${cell.action} ${cell.entity_type}`} hint="Không bắt buộc, nhưng là thứ người xét duyệt sẽ cần sau sáu tháng.">
         {(id) => (
           <input id={id} value={reason} onChange={(event) => setReason(event.target.value)} />
         )}

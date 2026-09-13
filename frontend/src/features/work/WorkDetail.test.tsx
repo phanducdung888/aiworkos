@@ -58,7 +58,7 @@ describe('WorkDetail', () => {
     await screen.findByTestId('work-status')
 
     const moves = within(
-      screen.getByRole('region', { name: /move this work/i }),
+      screen.getByRole('region', { name: /chuyển trạng thái/i }),
     ).getAllByRole('button')
     // BR-W-03: `todo` may go to `in_progress` or `cancelled`. Offering `done` would be a button
     // whose only outcome is a 422.
@@ -68,14 +68,14 @@ describe('WorkDetail', () => {
   it('offers nothing once the work has reached a final state', async () => {
     stubApi(baseRoutes(aWork({ status: 'cancelled' })))
     renderSurface(<WorkDetail />, at)
-    expect(await screen.findByText(/reached a final state/i)).toBeInTheDocument()
+    expect(await screen.findByText(/đã ở trạng thái cuối/i)).toBeInTheDocument()
   })
 
   it('asks for a reason alongside the button that needs one', async () => {
     stubApi(baseRoutes(aWork({ status: 'in_progress' })))
     renderSurface(<WorkDetail />, at)
     // BR-W-04: blocking requires a cause, so the field is present exactly when blocking is offered.
-    expect(await screen.findByLabelText(/reason for blocking/i)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/lý do bị chặn/i)).toBeInTheDocument()
   })
 
   it('sends the version it read, so a stale change is refused', async () => {
@@ -104,7 +104,7 @@ describe('WorkDetail', () => {
     renderSurface(<WorkDetail />, at)
     await userEvent.click(await screen.findByRole('button', { name: 'in progress' }))
     // "Precondition Failed" tells a person nothing they can act on.
-    expect(await screen.findByRole('alert')).toHaveTextContent(/somebody else changed this/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/người khác đã thay đổi mục này/i)
   })
 
   it('changes owner in one call rather than ending and re-assigning', async () => {
@@ -119,8 +119,8 @@ describe('WorkDetail', () => {
     ])
     renderSurface(<WorkDetail />, at)
 
-    await userEvent.selectOptions(await screen.findByLabelText(/^owner$/i), OTTO)
-    await userEvent.click(screen.getByRole('button', { name: /set owner/i }))
+    await userEvent.selectOptions(await screen.findByLabelText(/^người phụ trách$/i), OTTO)
+    await userEvent.click(screen.getByRole('button', { name: /đặt người phụ trách/i }))
 
     // ADR-0032: end-then-assign is the two-step route around REASSIGN. The client must not offer it.
     await waitFor(() => expect(paths).toEqual([`/api/v1/work/${WORK_ID}/owner`]))
@@ -130,7 +130,7 @@ describe('WorkDetail', () => {
     stubApi(baseRoutes(aWork(), []))
     renderSurface(<WorkDetail />, at)
     // BR-W-15. Wording matters here: a warning would make a valid steady state look like a defect.
-    expect(await screen.findByText(/complete record, not a gap/i)).toBeInTheDocument()
+    expect(await screen.findByText(/bản ghi đầy đủ, không phải thiếu sót/i)).toBeInTheDocument()
   })
 
   it('keeps ended assignments visible as history', async () => {
@@ -142,7 +142,7 @@ describe('WorkDetail', () => {
     )
     renderSurface(<WorkDetail />, at)
     // BR-W-14: rows are never deleted, so "who owned this in March" stays answerable.
-    expect(await screen.findByText(/previous assignments/i)).toBeInTheDocument()
+    expect(await screen.findByText(/phân công trước đây/i)).toBeInTheDocument()
   })
 
   it('shows both directions of a dependency', async () => {

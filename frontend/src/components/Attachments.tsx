@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { useAttachmentContent } from '@/api/hooks'
 import type { EventAttachment } from '@/api/hooks'
 import { ApiProblem } from '@/api/problem'
+import { attachmentStatus } from '@/components/vocabulary'
 
 function size(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined) return ''
@@ -44,8 +45,8 @@ export function Attachments({
       onError: (error) => {
         setProblem(
           error instanceof ApiProblem && error.status === 409
-            ? 'That file was never finished uploading, so there is nothing to open yet.'
-            : 'The file could not be opened.',
+            ? 'Tệp này chưa tải lên xong, nên chưa có gì để mở.'
+            : 'Không mở được tệp.',
         )
       },
     })
@@ -53,7 +54,7 @@ export function Attachments({
 
   return (
     <section aria-labelledby="attachments-heading" data-testid="attachments">
-      <h3 id="attachments-heading">Files</h3>
+      <h3 id="attachments-heading">Tệp đính kèm</h3>
       <ul>
         {attachments.map((attachment) => (
           <li key={attachment.id}>
@@ -67,7 +68,7 @@ export function Attachments({
             <span className="field__hint">
               {attachment.media_type}
               {size(attachment.size_bytes) ? ` · ${size(attachment.size_bytes)}` : ''}
-              {attachment.status === 'available' ? '' : ` · ${attachment.status}`}
+              {attachment.status === 'available' ? '' : ` · ${attachmentStatus(attachment.status)}`}
             </span>
           </li>
         ))}

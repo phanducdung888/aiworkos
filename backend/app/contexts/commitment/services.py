@@ -187,6 +187,12 @@ class CommitmentService:
             )
             changes["fulfilling_work_id"] = command.fulfilling_work_id
         if command.project_id is not None:
+            work.assert_project_exists(
+                self._session,
+                org_id=self._org_id,
+                project_id=command.project_id,
+                field="project_id",
+            )
             changes["project_id"] = command.project_id
 
         updated = repository.update(
@@ -300,6 +306,13 @@ class CommitmentService:
                 org_id=self._org_id,
                 work_id=command.fulfilling_work_id,
                 field="fulfilling_work_id",
+            )
+        if command.project_id is not None:
+            work.assert_project_exists(
+                self._session,
+                org_id=self._org_id,
+                project_id=command.project_id,
+                field="project_id",
             )
         if command.origin_event_id is not None:
             signal.assert_event_exists(

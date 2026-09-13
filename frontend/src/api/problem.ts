@@ -53,11 +53,11 @@ export class ApiProblem extends Error {
    */
   get message_for_humans(): string {
     if (this.status === 412) {
-      return 'Somebody else changed this while you were editing. Reload to see their version.'
+      return 'Người khác đã thay đổi mục này trong lúc bạn đang sửa. Tải lại để xem bản của họ.'
     }
-    if (this.status === 403) return 'You do not have permission to do that.'
-    if (this.status === 404) return 'That is no longer available.'
-    if (this.status === 428) return 'This change could not be applied. Reload and try again.'
+    if (this.status === 403) return 'Bạn không có quyền thực hiện việc này.'
+    if (this.status === 404) return 'Mục này không còn nữa.'
+    if (this.status === 428) return 'Không áp dụng được thay đổi này. Tải lại rồi thử lại.'
     return this.detail
   }
 }

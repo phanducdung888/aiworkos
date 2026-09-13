@@ -53,10 +53,10 @@ describe('ChooseOrganization', () => {
     ])
     renderSurface(<ChooseOrganization />)
 
-    await userEvent.type(screen.getByLabelText(/organization identifier/i), ORG)
-    await userEvent.click(screen.getByRole('button', { name: /continue/i }))
+    await userEvent.type(screen.getByLabelText(/mã tổ chức/i), ORG)
+    await userEvent.click(screen.getByRole('button', { name: /tiếp tục/i }))
 
-    expect(await screen.findByRole('button', { name: /continue/i })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: /tiếp tục/i })).toBeEnabled()
     // The identifier being tried, not the one the harness configures globally — the whole point
     // is that it is not committed to anything until it is known to work.
     expect(sentOrganization).toBe(ORG)
@@ -74,10 +74,10 @@ describe('ChooseOrganization', () => {
     ])
     renderSurface(<ChooseOrganization />)
 
-    await userEvent.type(screen.getByLabelText(/organization identifier/i), ORG)
-    await userEvent.click(screen.getByRole('button', { name: /continue/i }))
+    await userEvent.type(screen.getByLabelText(/mã tổ chức/i), ORG)
+    await userEvent.click(screen.getByRole('button', { name: /tiếp tục/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/active member/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/thành viên đang hoạt động/i)
     expect(setOrganizationId).not.toHaveBeenCalled()
   })
 
@@ -92,17 +92,17 @@ describe('ChooseOrganization', () => {
     ])
     renderSurface(<ChooseOrganization />)
 
-    await userEvent.type(screen.getByLabelText(/organization identifier/i), ORG)
-    await userEvent.click(screen.getByRole('button', { name: /continue/i }))
+    await userEvent.type(screen.getByLabelText(/mã tổ chức/i), ORG)
+    await userEvent.click(screen.getByRole('button', { name: /tiếp tục/i }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/hold no role/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/chưa được giao vai trò/i)
     expect(setOrganizationId).not.toHaveBeenCalled()
   })
 
   it('offers a way out, so a wrong account is not a dead end', async () => {
     stubApi([])
     renderSurface(<ChooseOrganization />)
-    await userEvent.click(screen.getByRole('button', { name: /sign out/i }))
+    await userEvent.click(screen.getByRole('button', { name: /đăng xuất/i }))
     expect(signOut).toHaveBeenCalled()
   })
 })

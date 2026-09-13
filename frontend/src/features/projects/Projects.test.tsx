@@ -60,14 +60,14 @@ describe('ProjectList', () => {
     stubApi([{ match: 'GET /api/v1/projects', body: { items: [], next_cursor: null } }, teams])
     renderSurface(<ProjectList />)
     // BR-P-01. A form that omitted this would produce a rule violation the person could not act on.
-    expect(await screen.findByLabelText(/owning team/i)).toBeRequired()
+    expect(await screen.findByLabelText(/nhóm phụ trách/i)).toBeRequired()
   })
 
   it('offers only teams that exist', async () => {
     stubApi([{ match: 'GET /api/v1/projects', body: { items: [], next_cursor: null } }, teams])
     renderSurface(<ProjectList />)
-    const select = await screen.findByLabelText(/owning team/i)
-    expect(within_options(select)).toEqual(['Choose a team', 'Platform'])
+    const select = await screen.findByLabelText(/nhóm phụ trách/i)
+    expect(within_options(select)).toEqual(['Chọn một nhóm', 'Platform'])
   })
 
   it('creates a project and refreshes the list from the server', async () => {
@@ -86,9 +86,9 @@ describe('ProjectList', () => {
     ])
     renderSurface(<ProjectList />)
 
-    await userEvent.type(await screen.findByLabelText(/^name$/i), 'Migration')
-    await userEvent.selectOptions(screen.getByLabelText(/owning team/i), TEAM)
-    await userEvent.click(screen.getByRole('button', { name: /create project/i }))
+    await userEvent.type(await screen.findByLabelText(/^tên$/i), 'Migration')
+    await userEvent.selectOptions(screen.getByLabelText(/nhóm phụ trách/i), TEAM)
+    await userEvent.click(screen.getByRole('button', { name: /tạo dự án/i }))
 
     await waitFor(() => expect(sent).toEqual({ name: 'Migration', owning_team_id: TEAM }))
   })
@@ -100,9 +100,9 @@ describe('ProjectList', () => {
       { match: 'POST /api/v1/projects', status: 422, body: problem(422, { rule: 'BR-P-01' }) },
     ])
     renderSurface(<ProjectList />)
-    await userEvent.type(await screen.findByLabelText(/^name$/i), 'Homeless')
-    await userEvent.selectOptions(screen.getByLabelText(/owning team/i), TEAM)
-    await userEvent.click(screen.getByRole('button', { name: /create project/i }))
+    await userEvent.type(await screen.findByLabelText(/^tên$/i), 'Homeless')
+    await userEvent.selectOptions(screen.getByLabelText(/nhóm phụ trách/i), TEAM)
+    await userEvent.click(screen.getByRole('button', { name: /tạo dự án/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent('BR-P-01')
   })
 
@@ -110,7 +110,7 @@ describe('ProjectList', () => {
     stubApi([{ match: 'GET /api/v1/projects', body: { items: [], next_cursor: null } }, teams])
     renderSurface(<ProjectList />)
     // ADR-0029, phrased so an empty list does not read as something missing.
-    expect(await screen.findByText(/work does not need one/i)).toBeInTheDocument()
+    expect(await screen.findByText(/công việc không bắt buộc phải thuộc dự án/i)).toBeInTheDocument()
   })
 
   it('has no accessibility violations', async () => {
@@ -119,7 +119,7 @@ describe('ProjectList', () => {
       teams,
     ])
     const { container } = renderSurface(<ProjectList />)
-    await screen.findByLabelText(/owning team/i)
+    await screen.findByLabelText(/nhóm phụ trách/i)
     expect(await axe(container)).toHaveNoViolations()
   })
 })

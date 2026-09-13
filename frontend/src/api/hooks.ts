@@ -517,6 +517,8 @@ export function useQueueApproval(): UseMutationResult<unknown, Error, { approval
 
 export interface CommitmentFilters {
   status?: CommitmentStatus
+  /** The Work a promise fulfils — the read that lets a Work screen show its promises (CP27). */
+  fulfilling_work_id?: string
   committed_by_person_id?: string
   committed_to_person_id?: string
   due_before?: string
@@ -541,6 +543,35 @@ export function useOverdueCommitments(): UseQueryResult<Commitment[]> {
   return useQuery({
     queryKey: keys.overdue,
     queryFn: async () => unwrap(await api.GET('/api/v1/commitments/overdue/today', {})).items,
+  })
+}
+
+/**
+ * Say where a promise belongs: the Work it fulfils, the Project it serves (CP27).
+ *
+ * Separate from the status transitions above because it is a different kind of act. A transition
+ * is a claim about what happened to the promise; this is a claim about what it is part of, it is
+ * freely reversible, and it needs no renegotiation.
+ *
+ * `null` clears the link, which is why the body is sent explicitly rather than omitted — an absent
+ * field means "leave it alone" (BR-G-05) and there would otherwise be no way to unlink.
+ */
+export function useLinkCommitment(): UseMutationResult<
+  Commitment,
+  Error,
+  { commitment: Commitment; fulfilling_work_id?: string | null; project_id?: string | null }
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ commitment, ...links }) =>
+      unwrap(
+        await api.PATCH('/api/v1/commitments/{commitment_id}', {
+          params: { path: { commitment_id: commitment.id } },
+          headers: ifMatch(commitment.version),
+          body: links,
+        }),
+      ),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['commitments'] }),
   })
 }
 

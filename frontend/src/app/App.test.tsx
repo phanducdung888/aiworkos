@@ -77,7 +77,7 @@ describe('App', () => {
     // A management product's first screen is the question it exists to answer.
     stubApi(quiet)
     renderAt('/')
-    expect(await screen.findByRole('heading', { name: 'Attention', level: 1 })).toBeVisible()
+    expect(await screen.findByRole('heading', { name: 'Cần chú ý', level: 1 })).toBeVisible()
   })
 
   it('offers the whole loop in the navigation', async () => {
@@ -85,13 +85,13 @@ describe('App', () => {
     renderAt('/')
     await screen.findByTestId('me-name')
 
-    const nav = screen.getByRole('navigation', { name: 'Main' })
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng chính' })
     for (const label of [
-      'Attention',
-      'Work',
-      'Capture message',
-      'Commitments',
-      'Proposals',
+      'Cần chú ý',
+      'Công việc',
+      'Ghi nhận tin nhắn',
+      'Lời hứa',
+      'Đề xuất',
     ]) {
       expect(within(nav).getByRole('link', { name: label })).toBeVisible()
     }
@@ -101,14 +101,14 @@ describe('App', () => {
     // The defect this catches: a link whose route was renamed. `tsc` cannot see it, no component
     // test covers it, and the symptom is a blank page under a working header.
     for (const [path, heading] of [
-      ['/attention', 'Attention'],
-      ['/work', /work/i],
-      ['/work/new', /capture work/i],
-      ['/capture', /capture a message/i],
-      ['/commitments', 'Commitments'],
-      ['/proposals', 'Proposals'],
-      ['/projects', /projects/i],
-      ['/agent-policy', /agent policy/i],
+      ['/attention', 'Cần chú ý'],
+      ['/work', /công việc/i],
+      ['/work/new', /tạo công việc/i],
+      ['/capture', /ghi nhận tin nhắn/i],
+      ['/commitments', 'Lời hứa'],
+      ['/proposals', 'Đề xuất'],
+      ['/projects', /dự án/i],
+      ['/agent-policy', /quyền của AI/i],
     ] as const) {
       stubApi(quiet)
       const { unmount } = renderAt(path)
@@ -127,10 +127,10 @@ describe('App', () => {
     renderAt('/')
     await screen.findByTestId('me-name')
 
-    const nav = screen.getByRole('navigation', { name: 'Main' })
-    expect(within(nav).queryByRole('link', { name: 'Projects' })).toBeNull()
+    const nav = screen.getByRole('navigation', { name: 'Điều hướng chính' })
+    expect(within(nav).queryByRole('link', { name: 'Dự án' })).toBeNull()
     // Writing the agent policy is `org_admin` and nothing else (ADR-0047).
-    expect(within(nav).queryByRole('link', { name: 'Agent policy' })).toBeNull()
-    expect(within(nav).getByRole('link', { name: 'Commitments' })).toBeVisible()
+    expect(within(nav).queryByRole('link', { name: 'Quyền của AI' })).toBeNull()
+    expect(within(nav).getByRole('link', { name: 'Lời hứa' })).toBeVisible()
   })
 })

@@ -18,7 +18,7 @@ export function ProjectList() {
   const [name, setName] = useState('')
   const [teamId, setTeamId] = useState('')
 
-  if (projects.isPending) return <Loading label="projects" />
+  if (projects.isPending) return <Loading label="các dự án" />
   if (projects.isError)
     return <ErrorState error={projects.error} retry={() => void projects.refetch()} />
 
@@ -26,10 +26,10 @@ export function ProjectList() {
 
   return (
     <section aria-labelledby="projects-heading">
-      <h1 id="projects-heading">Projects</h1>
+      <h1 id="projects-heading">Dự án</h1>
 
       {items.length === 0 ? (
-        <Empty>No projects yet. Work does not need one.</Empty>
+        <Empty>Chưa có dự án nào. Công việc không bắt buộc phải thuộc dự án.</Empty>
       ) : (
         <ul>
           {items.map((project) => (
@@ -41,7 +41,7 @@ export function ProjectList() {
         </ul>
       )}
 
-      <h2>New project</h2>
+      <h2>Dự án mới</h2>
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -51,15 +51,15 @@ export function ProjectList() {
           )
         }}
       >
-        <Field label="Name">
+        <Field label="Tên">
           {(id) => (
             <input id={id} required value={name} onChange={(e) => setName(e.target.value)} />
           )}
         </Field>
-        <Field label="Owning team" hint="A project belongs to a team or a department (BR-P-01).">
+        <Field label="Nhóm phụ trách" hint="Một dự án thuộc về một nhóm hoặc một phòng ban (BR-P-01).">
           {(id) => (
             <select id={id} required value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-              <option value="">Choose a team</option>
+              <option value="">Chọn một nhóm</option>
               {(teams.data ?? []).map((team) => (
                 <option key={team.id} value={team.id}>
                   {team.name}
@@ -69,7 +69,7 @@ export function ProjectList() {
           )}
         </Field>
         <button type="submit" disabled={create.isPending || !name.trim() || !teamId}>
-          Create project
+          Tạo dự án
         </button>
       </form>
       {create.isError ? <ErrorState error={create.error} /> : null}
@@ -83,25 +83,25 @@ export function ProjectDetail() {
   const milestones = useMilestones(projectId)
   const project = (projects.data ?? []).find((candidate) => candidate.id === projectId)
 
-  if (projects.isPending) return <Loading label="the project" />
+  if (projects.isPending) return <Loading label="dự án" />
   if (projects.isError) return <ErrorState error={projects.error} />
-  if (!project) return <Empty>That project is no longer available.</Empty>
+  if (!project) return <Empty>Dự án này không còn nữa.</Empty>
 
   return (
     <article aria-labelledby="project-title">
       <h1 id="project-title">{project.name}</h1>
       <dl>
-        <dt>Status</dt>
+        <dt>Trạng thái</dt>
         <dd>{project.status}</dd>
-        <dt>Visibility</dt>
+        <dt>Phạm vi xem</dt>
         <dd data-testid="project-visibility">{project.visibility}</dd>
       </dl>
 
-      <h2>Milestones</h2>
-      {milestones.isPending ? <Loading label="milestones" /> : null}
+      <h2>Các mốc</h2>
+      {milestones.isPending ? <Loading label="các mốc" /> : null}
       {milestones.isError ? <ErrorState error={milestones.error} /> : null}
       {milestones.data && milestones.data.length === 0 ? (
-        <Empty>No milestones yet.</Empty>
+        <Empty>Chưa có mốc nào.</Empty>
       ) : (
         <ul>
           {(milestones.data ?? []).map((milestone) => (

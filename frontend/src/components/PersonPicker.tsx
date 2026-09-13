@@ -22,14 +22,14 @@ export function PersonPicker({
   exclude?: string[]
 }) {
   const people = usePeople()
-  if (people.isPending) return <Loading label="people" />
+  if (people.isPending) return <Loading label="danh sách người" />
   const options = (people.data ?? []).filter((person) => !exclude.includes(person.id))
 
   return (
     <Field label={label}>
       {(id) => (
         <select id={id} value={value} onChange={(event) => onChange(event.target.value)}>
-          <option value="">Nobody</option>
+          <option value="">Không ai</option>
           {options.map((person) => (
             <option key={person.id} value={person.id}>
               {person.display_name}

@@ -69,7 +69,7 @@ from app.contexts.work.queries import (
     list_projects,
     list_work,
 )
-from app.contexts.work.references import assert_work_exists
+from app.contexts.work.references import assert_project_exists, assert_work_exists
 from app.contexts.work.services import (
     AssignmentService,
     DependencyService,
@@ -93,6 +93,7 @@ __all__ = [
     "SimilarWork",
     "MIN_SIMILARITY",
     "assert_work_exists",
+    "assert_project_exists",
     "UNSET",
     "AssignWork",
     "AssignmentRole",
