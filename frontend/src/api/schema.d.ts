@@ -1975,6 +1975,8 @@ export interface components {
              * @default web
              */
             source_system?: string;
+            /** Thread Ref */
+            thread_ref?: string | null;
             /** Title */
             title?: string | null;
             type: components["schemas"]["EventType"];
@@ -2034,6 +2036,8 @@ export interface components {
             source_ref: string | null;
             /** Source System */
             source_system: string;
+            /** Thread Ref */
+            thread_ref: string | null;
             /** Title */
             title: string | null;
             /** Type */
@@ -2117,6 +2121,8 @@ export interface components {
             source_ref: string | null;
             /** Source System */
             source_system: string;
+            /** Thread Ref */
+            thread_ref: string | null;
             /** Title */
             title: string | null;
             /** Type */

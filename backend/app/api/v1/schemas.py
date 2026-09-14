@@ -712,6 +712,10 @@ class EventCapture(BaseModel):
     #: registered channel names its own key so that BR-E-02's dedup is scoped to that channel.
     source_system: CleanText = Field(default="web", min_length=1)
     source_ref: CleanText | None = None
+    #: BR-E-19. The conversation this message belongs to, as the channel reported it — a chat
+    #: conversation id, or an email thread reconstructed from `References`. A connector reports it;
+    #: nothing derives one from content.
+    thread_ref: CleanText | None = None
     title: CleanText | None = None
     body_text: CleanText | None = None
     channel: CleanText | None = None
@@ -784,6 +788,7 @@ class EventResource(BaseModel):
     origin: str
     source_system: str
     source_ref: str | None
+    thread_ref: str | None
     content_hash: str
     channel: str | None
     sender_external_id: str | None

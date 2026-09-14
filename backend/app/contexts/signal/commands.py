@@ -41,6 +41,8 @@ class CaptureEvent:
     title: str | None = None
     body_text: str | None = None
     source_ref: str | None = None
+    #: The conversation this message belongs to, as the channel reported it (BR-E-19).
+    thread_ref: str | None = None
     channel: str | None = None
     sender_external_id: str | None = None
     sensitivity: Sensitivity = Sensitivity.NORMAL

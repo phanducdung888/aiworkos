@@ -50,6 +50,7 @@ harmless, because the redelivery carries the same derived key.
 |---|---|
 | `source_system` | configuration, default `email.imap` |
 | `source_ref` | `Message-ID`, which RFC 5322 defines to be globally unique |
+| `thread_ref` | the conversation: first entry of `References`, else `In-Reply-To`, else the message's own `Message-ID` — never the subject line (BR-E-19) |
 | `occurred_at` | `Date`, in UTC; the server's INTERNALDATE if there is none |
 | `title` | `Subject` |
 | `body_text` | `text/plain`, or HTML stripped to its words |

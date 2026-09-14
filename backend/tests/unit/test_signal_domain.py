@@ -42,6 +42,7 @@ def capture(**over: object) -> None:
         "body_text": "something was said",
         "raw_payload_uri": None,
         "source_ref": None,
+        "thread_ref": None,
         "origin_domain_event_id": None,
     }
     kwargs.update(over)
@@ -290,3 +291,26 @@ class TestParticipants:
             validate_participant(
                 person_id=None, external_handle="+84900000001", match_confidence=90
             )
+
+
+class TestTheConversationAMessageBelongsTo:
+    """BR-E-19, ADR-0072.
+
+    The same argument `source_ref` gets, and it matters more here. A blank `source_ref` would defeat
+    the partial unique index that makes deduplication work; a blank `thread_ref` would join every
+    other blank one in the candidate resolver's index, which is the one place a meaningless value
+    does real damage — unrelated conversations would look like the same conversation, and ADR-0073
+    would then propose links between them.
+    """
+
+    def test_absent_is_fine(self) -> None:
+        capture(thread_ref=None)
+
+    def test_a_reference_is_fine(self) -> None:
+        capture(thread_ref="<thread-1@example.test>")
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\n\t "])
+    def test_a_blank_conversation_is_not_a_conversation(self, blank: str) -> None:
+        with pytest.raises(DomainRuleViolation) as raised:
+            capture(thread_ref=blank)
+        assert raised.value.rule == "BR-E-19"

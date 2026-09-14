@@ -45,6 +45,10 @@ class Event(Base):
     )
     source_system: Mapped[str] = mapped_column(Text, nullable=False)
     source_ref: Mapped[str | None] = mapped_column(Text)
+    #: The conversation, as the channel reported it (BR-E-19, ADR-0072). Frozen with the
+    #: rest of the row: `event_is_immutable()` freezes everything outside an explicit
+    #: mutable list, so this needed no change to the trigger.
+    thread_ref: Mapped[str | None] = mapped_column(Text)
     content_hash: Mapped[str] = mapped_column(Text, nullable=False)
     origin: Mapped[str] = mapped_column(Text, nullable=False)
     origin_domain_event_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))

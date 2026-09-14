@@ -34,7 +34,11 @@ from app.agent.providers.port import (
     FinishReason,
     ModelIdentity,
 )
-from app.agent.providers.structured import SCHEMA_INSTRUCTION, parse_spans
+from app.agent.providers.structured import (
+    SCHEMA_INSTRUCTION,
+    options_instruction,
+    parse_spans,
+)
 
 API_URL = "https://api.openai.com/v1/chat/completions"
 
@@ -87,7 +91,13 @@ class OpenAIProvider:
             # word "JSON", which this response format requires be present in the prompt.
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": f"{request.instruction}\n\n{SCHEMA_INSTRUCTION}"},
+                {
+                    "role": "system",
+                    "content": (
+                        f"{request.instruction}\n\n{SCHEMA_INSTRUCTION}"
+                        f"{options_instruction(request.options)}"
+                    ),
+                },
                 # The Event body is data, never instruction (BR-AI-10). It is the user message and
                 # the system prompt above is the only source of task definition; anything inside
                 # the body that looks like a command is content the model is told to treat as text.

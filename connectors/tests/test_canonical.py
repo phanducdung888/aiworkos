@@ -347,3 +347,102 @@ class TestAttachments:
         message = parse_message(a_message())
         assert message.attachments == ()
         assert "revised quote" in message.body_text
+
+
+class TestTheConversation:
+    """ADR-0072, BR-E-19.
+
+    `thread_ref` is what lets WorkOS say "this message and that work item came from the same
+    conversation" without comparing any text. So the only acceptable source for it is what the
+    headers state — everything here is about refusing to be clever.
+    """
+
+    def test_a_message_that_replies_to_nothing_is_a_thread_of_one(self) -> None:
+        """Its own identifier. Not `None`: a first message *is* a conversation, and the reply that
+        arrives tomorrow has to land in the same one."""
+        message = parse_message(a_message())
+        assert message.thread_ref == "abc123@example.test"
+        assert message.thread_ref == message.source_ref
+
+    def test_the_root_of_references_wins(self) -> None:
+        """RFC 5322 §3.6.4 orders `References` oldest first, so the first entry is the message that
+        started the thread — stable for every message in it, however deep the reply chain goes."""
+        message = parse_message(
+            a_message(
+                headers=(
+                    "From: Mai Tran <Mai@Example.test>\r\n"
+                    "Subject: Re: Revised quote\r\n"
+                    "Message-ID: <reply9@example.test>\r\n"
+                    "References: <root1@example.test> <middle5@example.test>\r\n"
+                    "Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n"
+                )
+            )
+        )
+        assert message.thread_ref == "root1@example.test"
+
+    def test_in_reply_to_is_the_fallback(self) -> None:
+        """A client that sends only `In-Reply-To` names the parent rather than the root. That makes
+        a shorter thread, not a wrong one, which is the right way to be incomplete here."""
+        message = parse_message(
+            a_message(
+                headers=(
+                    "From: Mai Tran <Mai@Example.test>\r\n"
+                    "Subject: Re: Revised quote\r\n"
+                    "Message-ID: <reply9@example.test>\r\n"
+                    "In-Reply-To: <root1@example.test>\r\n"
+                    "Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n"
+                )
+            )
+        )
+        assert message.thread_ref == "root1@example.test"
+
+    def test_the_subject_is_never_the_thread(self) -> None:
+        """Two unrelated messages with the same subject must not become one conversation. This is
+        the failure BR-E-19 names, and it is the one that would produce wrong *links* rather than
+        merely wrong grouping."""
+        first = parse_message(
+            a_message(
+                headers=(
+                    "From: a@example.test\r\nSubject: Re: update\r\n"
+                    "Message-ID: <one@example.test>\r\n"
+                    "Date: Sat, 12 Sep 2026 09:00:00 +0000\r\n"
+                )
+            )
+        )
+        second = parse_message(
+            a_message(
+                headers=(
+                    "From: b@example.test\r\nSubject: Re: update\r\n"
+                    "Message-ID: <two@example.test>\r\n"
+                    "Date: Sat, 12 Sep 2026 10:00:00 +0000\r\n"
+                )
+            )
+        )
+        assert first.thread_ref != second.thread_ref
+
+    def test_it_travels_in_the_event_body(self) -> None:
+        """The contract is seven fields and this is the eighth; a field the API never receives is a
+        field that does not exist."""
+        assert parse_message(a_message()).as_event()["thread_ref"] == "abc123@example.test"
+
+    def test_a_root_and_its_reply_share_a_thread(self) -> None:
+        """The property the whole feature rests on, asserted end to end rather than per-header.
+
+        The root names its thread with its own `Message-ID`; the reply names it from `References`.
+        Those are two different headers normalised by two different code paths, and the first
+        version of this shipped with one stripping `<>` and the other not — so a message and its
+        own replies landed in different conversations and nothing downstream could have noticed.
+        """
+        root = parse_message(a_message())
+        reply = parse_message(
+            a_message(
+                headers=(
+                    "From: khoa@example.test\r\nSubject: Re: Revised quote\r\n"
+                    "Message-ID: <reply9@example.test>\r\n"
+                    "References: <abc123@example.test>\r\n"
+                    "Date: Sat, 12 Sep 2026 11:00:00 +0000\r\n"
+                )
+            )
+        )
+        assert root.thread_ref == reply.thread_ref
+        assert root.source_ref != reply.source_ref, "two messages, one conversation"

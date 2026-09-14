@@ -208,6 +208,7 @@ def _snapshot(event: Event) -> dict[str, Any]:
         "origin": event.origin,
         "source_system": event.source_system,
         "source_ref": event.source_ref,
+        "thread_ref": event.thread_ref,
         "content_hash": event.content_hash,
         "sensitivity": event.sensitivity,
         "occurred_at": event.occurred_at.isoformat(),
@@ -250,6 +251,7 @@ class CaptureService(_SignalService):
             body_text=command.body_text,
             raw_payload_uri=None,
             source_ref=command.source_ref,
+            thread_ref=command.thread_ref,
             origin_domain_event_id=command.origin_domain_event_id,
         )
         # Resolution runs *before* validation so the rules apply to what is actually persisted,
@@ -304,6 +306,7 @@ class CaptureService(_SignalService):
             org_id=self._org_id,
             source_system=command.source_system,
             source_ref=command.source_ref,
+            thread_ref=command.thread_ref,
             content_hash=content_hash,
             origin=command.origin.value,
             origin_domain_event_id=command.origin_domain_event_id,

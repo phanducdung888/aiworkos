@@ -39,7 +39,14 @@ from app.contexts.signal.evidence import (
     TextLocator,
 )
 from app.contexts.signal.models import Event, EventAttachment, EventParticipant, Evidence
-from app.contexts.signal.queries import EventFilter, EventPage, list_events
+from app.contexts.signal.queries import (
+    SAME_THREAD,
+    THIS_EVENT,
+    EventFilter,
+    EventPage,
+    events_in_thread,
+    list_events,
+)
 from app.contexts.signal.queries import get_event as read_event
 from app.contexts.signal.references import assert_event_exists, assert_evidence_exists
 from app.contexts.signal.repository import (
@@ -100,6 +107,9 @@ __all__ = [
     "effective_attachment_status",
     "UPLOAD_WINDOW",
     "list_events",
+    "events_in_thread",
+    "THIS_EVENT",
+    "SAME_THREAD",
     "may_extract",
     "participants_for",
     "read_event",

@@ -172,3 +172,50 @@ def list_events(
             items=rows[:limit], next_cursor=encode_cursor(last.occurred_at, last.id)
         )
     return EventPage(items=rows, next_cursor=None)
+
+
+#: Why an Event is related to the one being read. Two reasons, ordered: the stronger first.
+THIS_EVENT = "this_event"
+SAME_THREAD = "same_thread"
+
+
+def events_in_thread(
+    session: Session, principal: Principal, *, event_id: uuid.UUID
+) -> tuple[tuple[uuid.UUID, str], ...]:
+    """This Event and the rest of its conversation, each with why it is in the list.
+
+    The Event itself is always first and always present — a message is trivially part of its own
+    conversation, and callers that special-cased it kept getting the ordering wrong.
+
+    Reads through `readable_events`, so a sibling the caller may not read contributes nothing. A
+    conversation is an efficient way to learn that a restricted message exists, and the defence is
+    to never select the row rather than to drop it afterwards.
+
+    Ordering is fixed — this Event, then siblings by id — because what is built on top of it is a
+    candidate set the intent validator refuses against, and a set that varied between runs would
+    make that refusal unreproducible.
+    """
+    anchor = session.execute(
+        select(Event.source_system, Event.thread_ref).where(
+            Event.id == event_id, Event.org_id == principal.org_id
+        )
+    ).one_or_none()
+    if anchor is None:
+        return ()
+    if anchor.thread_ref is None:
+        return ((event_id, THIS_EVENT),)
+
+    readable = readable_events(principal).with_only_columns(Event.id).subquery()
+    siblings = session.scalars(
+        select(Event.id)
+        .where(
+            Event.org_id == principal.org_id,
+            Event.source_system == anchor.source_system,
+            Event.thread_ref == anchor.thread_ref,
+            Event.deleted_at.is_(None),
+            Event.id != event_id,
+            Event.id.in_(select(readable.c.id)),
+        )
+        .order_by(Event.id)
+    ).all()
+    return ((event_id, THIS_EVENT), *((sibling, SAME_THREAD) for sibling in siblings))

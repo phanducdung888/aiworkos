@@ -24,6 +24,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.contexts.intelligence.linking import LinkCandidates
+from app.platform.authz import Principal, Role
 from tests.integration.conftest import WorkOrg, execute_approval
 
 pytestmark = pytest.mark.integration
@@ -153,28 +155,37 @@ def test_approved_work_carries_no_owner_and_no_project(
     assert assignments["items"] == [], "the AI path created an assignment"
 
 
-def test_the_agent_cannot_ask_for_a_project_even_if_it_tries(
+def test_the_agent_cannot_ask_for_a_project_it_was_not_offered(
     api: TestClient,
     as_admin: dict[str, str],
     roles: None,
     agent_enabled: None,
     work_org: WorkOrg,
 ) -> None:
-    """The allow-list, not the prompt, is what makes this true (ADR-0052).
+    """The allow-list, not the prompt, is what makes this true (ADR-0052, ADR-0073).
 
-    `create_work` accepts `project_id` at the Tool Gateway — a human-approved Proposal may carry
-    one. What an *agent* may put in an intent is a different and smaller set, and this is the
-    difference asserted rather than assumed.
+    Until CP29 this asserted that `project_id` was not an argument an agent could supply at all.
+    That is no longer the mechanism and the guarantee is unchanged: the key is permitted, and every
+    *value* is checked against a candidate set derived deterministically from the evidence graph.
+    An agent with no candidates — which is what this organization has — can still name nothing.
+
+    The narrower assertions below are the ones CP15 and CP27 left behind, and they still hold: a
+    milestone, a parent and a date are not things an agent may put in an intent at all, because
+    nothing deterministic resolves them and the only way to fill one would be to guess.
     """
-    from app.contexts.intelligence.intents import _ALLOWED_ARGUMENTS
+    from app.contexts.intelligence.intents import _ALLOWED_ARGUMENTS, _LINK_ARGUMENTS
     from app.platform.agentkit.contract import IntentKind
 
     permitted = _ALLOWED_ARGUMENTS[IntentKind.CREATE_WORK]
-    assert "project_id" not in permitted
     assert "milestone_id" not in permitted
     assert "parent_work_id" not in permitted
     assert "due_date" not in permitted, "CP15 removed this; nothing populated it"
-    assert permitted == frozenset({"title", "description"})
+    assert permitted == frozenset({"title", "description", "project_id"})
+
+    # And the half that replaced the absence: a permitted key is not a free field.
+    assert "project_id" in _LINK_ARGUMENTS, (
+        "project_id is accepted as an argument and unchecked as a value"
+    )
 
 
 # --------------------------------------------------------------------------- provenance
@@ -263,3 +274,109 @@ def test_the_source_column_says_a_person_made_it_and_that_is_deliberate(
         "/api/v1/proposals", params={"resulting_entity_id": created["id"]}, headers=as_admin
     ).json()
     assert found["items"], "…and the chain is where the AI's involvement is actually recorded"
+
+
+# ------------------------------------------------------- links from the evidence graph
+
+
+def capture_in_thread(
+    api: TestClient, headers: dict[str, str], thread: str, body: str | None = None
+) -> dict:
+    response = api.post(
+        "/api/v1/events",
+        json={
+            "type": "EXTERNAL_MESSAGE",
+            "occurred_at": NOW.isoformat(),
+            "body_text": body if body is not None else a_request(),
+            "source_system": "openclaw.whatsapp",
+            "source_ref": f"m-{uuid.uuid4().hex[:10]}",
+            "thread_ref": thread,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def resolve(
+    factory: sessionmaker[Session], org: WorkOrg, event: dict
+) -> LinkCandidates:
+    """The candidate set, read the way the worker reads it.
+
+    Scoped explicitly because RLS is keyed on `app.current_org_id` and a session that sets nothing
+    sees nothing — which would make every assertion below pass for the wrong reason.
+    """
+    from app.contexts.intelligence.linking import candidates_for_event
+
+    principal = Principal(
+        person_id=org.admin, org_id=org.org_id, roles=frozenset({Role.ORG_ADMIN})
+    )
+    with factory() as session:
+        session.execute(
+            text("SELECT set_config('app.current_org_id', :org, true)"),
+            {"org": str(org.org_id)},
+        )
+        return candidates_for_event(session, principal, event_id=uuid.UUID(event["id"]))
+
+
+def test_a_conversation_that_produced_work_becomes_a_candidate_for_its_next_message(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
+    app_session_factory: sessionmaker[Session],
+) -> None:
+    """ADR-0073, end to end, on the path that matters.
+
+    Message one is analysed, proposes work, a person approves it, and the Evidence written in that
+    approved transaction attaches the message to the new Work item. Message two arrives in the same
+    conversation — and *that* is what makes the first message's work a candidate for the second.
+
+    Asserted at the resolver rather than through the model: what the model does with a candidate is
+    the model's business and varies by provider, but whether the candidate exists at all is
+    deterministic and is the half this system guarantees.
+    """
+    from app.contexts.signal.queries import SAME_THREAD
+
+    thread = f"t-{uuid.uuid4().hex[:10]}"
+    first = capture_in_thread(api, as_admin, thread)
+    created = approve_and_run(
+        api, as_admin, only_proposal(api, as_admin, analyse(api, as_admin, first)),
+        worker_session_factory,
+    )
+
+    second = capture_in_thread(api, as_admin, thread)
+    candidates = resolve(app_session_factory, work_org, second)
+
+    assert [str(candidate.id) for candidate in candidates.work] == [created["id"]]
+    assert candidates.work[0].reason == SAME_THREAD
+    assert candidates.work[0].title == created["title"]
+
+
+def test_a_different_conversation_is_not_a_candidate(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    work_org: WorkOrg,
+    worker_session_factory: sessionmaker[Session],
+    app_session_factory: sessionmaker[Session],
+) -> None:
+    """The control, and the assertion that would fail if `thread_ref` were ignored.
+
+    Without it the resolver would have to fall back on something — recency, similarity, the whole
+    organization — and every one of those makes unrelated messages into candidates. This is the test
+    that says it did not.
+    """
+    first = capture_in_thread(api, as_admin, f"t-{uuid.uuid4().hex[:10]}")
+    approve_and_run(
+        api, as_admin, only_proposal(api, as_admin, analyse(api, as_admin, first)),
+        worker_session_factory,
+    )
+
+    elsewhere = capture_in_thread(api, as_admin, f"t-{uuid.uuid4().hex[:10]}")
+    candidates = resolve(app_session_factory, work_org, elsewhere)
+
+    assert candidates.is_empty, "a message from another conversation became a candidate"

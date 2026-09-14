@@ -44,6 +44,13 @@ from app.contexts.intelligence.interactions import (
     record_tool_call,
     start_interaction,
 )
+from app.contexts.intelligence.linking import (
+    OWNS_CANDIDATE_WORK,
+    LinkCandidates,
+    ProjectCandidate,
+    WorkCandidate,
+    candidates_for_event,
+)
 from app.contexts.intelligence.models import (
     AIInteraction,
     ApprovalRecord,
@@ -116,6 +123,11 @@ __all__ = [
     "StartInteraction",
     "FORBIDDEN_KEYS",
     "AIInteraction",
+    "candidates_for_event",
+    "LinkCandidates",
+    "WorkCandidate",
+    "ProjectCandidate",
+    "OWNS_CANDIDATE_WORK",
     "REGISTRY",
     "REGISTRY_VERSION",
     "Action",

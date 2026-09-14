@@ -22,7 +22,7 @@ from app.agent.providers.errors import (
     ProviderContractViolation,
     ProviderInvalidResponse,
 )
-from app.agent.providers.port import ExtractedSpan
+from app.agent.providers.port import ExtractedSpan, LinkOption
 from app.platform.agentkit.confidence import (
     UNKNOWN_CONFIDENCE,
     ConfidenceAssessment,
@@ -47,6 +47,29 @@ SCHEMA_INSTRUCTION = (
     "Never a date you worked out yourself. "
     "Return an empty list rather than guessing."
 )
+
+
+def options_instruction(options: tuple[LinkOption, ...]) -> str:
+    """The candidate list, rendered for the model, or nothing at all.
+
+    Nothing when the list is empty — an empty "choose from: (none)" reads to a model as an
+    invitation to produce something, and the correct behaviour with no candidates is for the field
+    never to be mentioned.
+
+    The identifiers are opaque and the model may only echo one back. It cannot widen this list, and
+    an identifier it invents is refused upstream rather than acted on (ADR-0073), so the worst a
+    confused answer produces is a refusal recorded against the run.
+    """
+    if not options:
+        return ""
+    lines = "\n".join(f"- {option.id}: {option.label} ({option.reason})" for option in options)
+    return (
+        '\n\nEach span may also carry "belongs_to": one id copied exactly from the list below, '
+        "when this span is about that existing work item. Use null when it is about something "
+        "else or you are unsure — null is the expected answer and is never wrong. "
+        "Never an id that is not in this list, and never one you compose yourself.\n"
+        f"{lines}"
+    )
 
 _NORMALIZER = ConfidenceNormalizer()
 
@@ -171,7 +194,14 @@ def _attributes(raw: dict[str, Any]) -> dict[str, Any]:
     deadline and an unreadable one are the same outcome downstream, and dropping it here means the
     validator's input is always either a quote or nothing.
     """
+    attributes: dict[str, Any] = {}
     phrase = raw.get("due_phrase")
     if isinstance(phrase, str) and phrase.strip():
-        return {"due_phrase": phrase.strip()}
-    return {}
+        attributes["due_phrase"] = phrase.strip()
+    # Carried, not resolved. Whether this identifier is one the agent was actually offered is a
+    # question only the validator may answer, and answering it here would put the guarantee inside
+    # the component it constrains (ADR-0073).
+    belongs_to = raw.get("belongs_to")
+    if isinstance(belongs_to, str) and belongs_to.strip():
+        attributes["belongs_to"] = belongs_to.strip()
+    return attributes

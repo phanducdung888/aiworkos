@@ -38,6 +38,7 @@ from app.agent.providers.port import (
     CompletionRequest,
     CompletionResult,
     ExtractedSpan,
+    LinkOption,
     LLMProvider,
 )
 from app.platform.actor import Actor, ActorType
@@ -87,6 +88,55 @@ _SPAN_INTENTS: dict[str, IntentKind] = {
 }
 
 
+#: Why a Work item was offered, said in words a reviewer reads rather than in a reason code.
+_LINK_REASONS: dict[str, str] = {
+    "this_event": "vì chính tin nhắn này đã từng tạo ra công việc đó",
+    "same_thread": "vì một tin nhắn khác trong cùng cuộc hội thoại đã tạo ra công việc đó",
+}
+
+
+def _rationale(link: _ChosenLink | None) -> str:
+    """What the reviewer is told about this intent.
+
+    A link without a stated reason is worse than no link: it asks somebody to approve a
+    classification whose basis they cannot see, which is the shape of decision people stop reading.
+    The reason is deterministic — it came from a join, not from the model — so it can be said
+    plainly rather than hedged (ADR-0073).
+    """
+    base = (
+        "Extracted from captured text. Owner, date and project are left empty unless the source "
+        "stated them (BR-AI-17)."
+    )
+    if link is None:
+        return base
+    return f"{base} Đề xuất gắn vào công việc sẵn có {_LINK_REASONS.get(link.reason, '')}.".strip()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _ChosenLink:
+    """A Work item the model picked, and the Project that follows from it."""
+
+    id: uuid.UUID
+    project_id: uuid.UUID | None
+    reason: str
+
+
+def _options(candidates: intelligence.LinkCandidates | None) -> tuple[LinkOption, ...]:
+    """The candidate Work items, in the shape a provider takes.
+
+    Only Work. Projects are never shown to the model and never chosen by it: a Project is derived
+    from the Work item the model picked, which is a join rather than a judgement, and is what keeps
+    BR-AI-35 untouched by this feature. Asking a model to choose a programme from a list is exactly
+    the inference that rule forbids.
+    """
+    if candidates is None:
+        return ()
+    return tuple(
+        LinkOption(id=str(candidate.id), label=candidate.title, reason=candidate.reason)
+        for candidate in candidates.work
+    )
+
+
 class RuntimeServices(Protocol):
     """What the runtime is handed, and the only things it can reach.
 
@@ -104,6 +154,8 @@ class RuntimeServices(Protocol):
     def read_event(self, event_id: uuid.UUID) -> signal.Event | None: ...
 
     def find_similar_work(self, title: str) -> list[work.SimilarWork]: ...
+
+    def link_candidates(self, event_id: uuid.UUID) -> intelligence.LinkCandidates: ...
 
     def resolved_participants(
         self, event_id: uuid.UUID
@@ -210,7 +262,11 @@ class AgentRuntime:
         return self._intents_from(spans=result.spans, participants=participants)
 
     def analyze_with_result(
-        self, text: str, *, participants: tuple[PersonReference, ...] = ()
+        self,
+        text: str,
+        *,
+        participants: tuple[PersonReference, ...] = (),
+        candidates: intelligence.LinkCandidates | None = None,
     ) -> tuple[AgentAnalysis, CompletionResult]:
         """`analyze`, plus what the provider reported about itself.
 
@@ -228,11 +284,14 @@ class AgentRuntime:
                 text=text,
                 model=self._model,
                 max_spans=MAX_PROPOSALS,
+                options=_options(candidates),
             )
         )
         self._assert_spans_fit_text(text, result)
         return (
-            self._intents_from(spans=result.spans, participants=participants),
+            self._intents_from(
+                spans=result.spans, participants=participants, candidates=candidates
+            ),
             result,
         )
 
@@ -296,6 +355,11 @@ class AgentRuntime:
             analysis, result = self.analyze_with_result(
                 event.body_text or "",
                 participants=services.resolved_participants(event.id),
+                # What this conversation has already been attached to (ADR-0073). Shown to the
+                # model as a list it may pick from; the same question is asked again, independently,
+                # by the validator — because what the agent was *shown* is advice and what it is
+                # *checked against* is the rule.
+                candidates=services.link_candidates(event.id),
             )
             submission = services.submit_analysis(
                 actor,
@@ -381,6 +445,7 @@ class AgentRuntime:
         *,
         spans: tuple[ExtractedSpan, ...],
         participants: tuple[PersonReference, ...],
+        candidates: intelligence.LinkCandidates | None = None,
     ) -> AgentAnalysis:
         """Turn spans into intents. Decides nothing; asks for everything.
 
@@ -406,6 +471,7 @@ class AgentRuntime:
                 inexpressible += 1
                 continue
 
+            link = self._chosen_link(span, candidates)
             people = self._people_for(kind, participants)
             if kind is IntentKind.CREATE_COMMITMENT and not people:
                 # Nobody the Event resolved said this, so there is no defensible committer.
@@ -423,15 +489,12 @@ class AgentRuntime:
                 ToolIntent(
                     kind=kind,
                     summary=span.summary,
-                    rationale=(
-                        "Extracted from captured text. Owner, date and project are left empty "
-                        "unless the source stated them (BR-AI-17)."
-                    ),
+                    rationale=_rationale(link),
                     evidence=EvidenceSpan(
                         char_start=span.char_start, char_end=span.char_end
                     ),
                     confidence=span.confidence,
-                    arguments=self._arguments_for(kind, span),
+                    arguments=self._arguments_for(kind, span, link),
                     # Only participants the Event already resolved. The agent cannot name anybody
                     # else, which is how BR-AI-34 becomes structural rather than aspirational.
                     people=people if kind is IntentKind.CREATE_COMMITMENT else (),
@@ -444,7 +507,12 @@ class AgentRuntime:
             inexpressible=inexpressible,
         )
 
-    def _arguments_for(self, kind: IntentKind, span: ExtractedSpan) -> dict[str, Any]:
+    def _arguments_for(
+        self,
+        kind: IntentKind,
+        span: ExtractedSpan,
+        link: _ChosenLink | None = None,
+    ) -> dict[str, Any]:
         """BR-AI-17: preserve uncertainty rather than resolve it.
 
         Nothing is invented to make an intent look complete, and no identifier appears here at all
@@ -457,12 +525,53 @@ class AgentRuntime:
         supplying a date — which the validator's allow-list no longer permits it to do.
         """
         if kind is not IntentKind.CREATE_COMMITMENT:
-            return {"title": span.summary}
-        arguments: dict[str, Any] = {"statement": span.summary}
+            arguments = {"title": span.summary}
+            # A new Work item in a conversation that already produced one belongs where that one
+            # does. The Project is read off the candidate, never chosen: the model named a Work
+            # item and a join named the Project (BR-AI-35).
+            if link is not None and link.project_id is not None:
+                arguments["project_id"] = str(link.project_id)
+            return arguments
+        arguments = {"statement": span.summary}
         phrase = span.attributes.get("due_phrase")
         if isinstance(phrase, str) and phrase.strip():
             arguments["due_phrase"] = phrase.strip()
+        if link is not None:
+            arguments["fulfilling_work_id"] = str(link.id)
+            if link.project_id is not None:
+                arguments["project_id"] = str(link.project_id)
         return arguments
+
+    def _chosen_link(
+        self, span: ExtractedSpan, candidates: intelligence.LinkCandidates | None
+    ) -> _ChosenLink | None:
+        """The candidate the model named, or nothing.
+
+        Matched against the list rather than trusted, so a model that answers with an identifier it
+        composed produces no link at all here. The validator refuses such an identifier too — this
+        is not that check duplicated, it is the earlier and quieter half: a hallucinated id should
+        not become an intent that then has to be refused and counted, because that would report an
+        authority violation where there was only a bad answer.
+        """
+        if candidates is None:
+            return None
+        chosen = span.attributes.get("belongs_to")
+        if not isinstance(chosen, str):
+            return None
+        try:
+            identifier = uuid.UUID(chosen.strip())
+        except ValueError:
+            return None
+        if not candidates.allows_work(identifier):
+            return None
+        project = next(
+            (c.id for c in candidates.projects if c.via_work_id == identifier), None
+        )
+        return _ChosenLink(
+            id=identifier,
+            project_id=project,
+            reason=candidates.reason_for_work(identifier) or "",
+        )
 
     def _people_for(
         self, kind: IntentKind, participants: tuple[PersonReference, ...]

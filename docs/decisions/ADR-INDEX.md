@@ -86,6 +86,8 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0069 | Ingestion triggers analysis, on borrowed authority | accepted (CP26) | ADR-0034, ADR-0044, ADR-0047 |
 | 0070 | The deadline reader speaks the mailbox's language | accepted (CP26) | ADR-0055, ADR-0065 |
 | 0071 | A promise says where it belongs; a person says so | accepted (CP27) | ADR-0042, BR-C-08 |
+| 0072 | A connector reports the conversation, not only the message | accepted (CP29) | ADR-0058, ADR-0061, M-8 |
+| 0073 | A link is proposed from the approval chain, never from prose | accepted (CP29) | ADR-0071, ADR-0052, BR-AI-35 |
 
 ---
 
@@ -2239,3 +2241,121 @@ BR-C-08, and would make every extracted commitment unapprovable until somebody g
 inferring the Work by title similarity (CP14 removed exactly that reasoning from the commitment
 path, because a promise is not a Work item and searching one corpus for the other is a category
 error that reads as working).
+
+
+### ADR-0072 — A connector reports the conversation, not only the message
+
+**Status:** accepted (CP29) · **Related:** ADR-0058, ADR-0061, ADR-0073 · **Resolves:** M-8
+
+**Context.** The ingestion contract carries seven fields, and `source_ref` identifies *one message*.
+Nothing says which messages belong together. For email that was a tolerable gap — a thread is
+reconstructed from `References` and `In-Reply-To`, badly, and nobody needed it. For a chat channel
+it is not a gap but the central fact: a Zalo or WhatsApp conversation *is* a thread with a stable
+identifier, and a message outside its conversation has lost most of its meaning.
+
+M-8 asked whether the contract should carry a channel thread identifier and has been open since
+Phase 0.
+
+**Decision.** `thread_ref` joins the contract, optional, opaque, and scoped by `source_system` the
+same way `source_ref` is. A connector reports what the channel told it and never invents one: email
+derives it from the first entry of `References` (falling back to `In-Reply-To`, then to the
+message's own `Message-ID`, which makes a thread of one); a chat connector reports the conversation
+id the platform gives it.
+
+**Consequences.** It is not merely metadata. It is the deterministic key ADR-0073 builds the
+candidate set from — "another message in this same conversation is already evidence for that work
+item" is a join, where "this message sounds like that work item" is a guess. Two Events sharing a
+`thread_ref` is a fact the channel asserted, not an inference WorkOS made.
+
+Rejected: reconstructing threads by subject line (a reply that changes the subject leaves the
+thread, and two unrelated messages titled "Re: update" join it); a `conversation` entity (a
+conversation is not a thing WorkOS owns — it belongs to the channel, and modelling it would mean
+keeping it in step with a system we do not control).
+
+
+### ADR-0073 — A link is proposed from the approval chain, never from prose
+
+**Status:** accepted (CP29) · **Amends:** ADR-0071 · **Related:** ADR-0052, ADR-0072, BR-AI-17,
+BR-AI-35
+
+**Context.** ADR-0071 decided that a person sets `fulfilling_work_id` and `project_id`, and closed
+by naming the condition for revisiting it: "the evidence for doing it automatically does not exist
+yet, and CP27 deliberately produced the data that would let somebody argue for it later."
+
+CP29 has that data. In the live organization: 26 of 32 Work items belong to no Project, 9 of 14
+Commitments fulfil no Work, 20 of 32 Work items have nobody responsible. Every link that does exist
+was made by hand on the screens CP27 added. The Product Owner's reading is that the product feels
+manual, and the numbers agree.
+
+The reason nothing fills them is narrower than "the AI was told not to". The runtime is never shown
+a Project or a Work item. `RuntimeServices` exposes `find_similar_work(title)` and
+`resolved_participants(event_id)` and nothing else, so the model could not name an identifier if it
+wanted one. The registry has accepted these arguments since CP27 and nothing upstream has ever been
+able to produce one.
+
+Two earlier decisions refused the obvious fix, and both were right. CP14 removed title-similarity
+reasoning from the commitment path, and ADR-0071 rejected it again: a promise is not a Work item,
+and searching one corpus for the other is a category error that reads as working.
+
+**Decision.**
+
+1. **Candidates come from the approval chain.** Three rules, each a join and each carrying a reason
+   code: this Event's analysis produced a Proposal a person approved, which executed into a Work
+   item; another Event sharing its `thread_ref` (ADR-0072) did; and a candidate Work item's Project
+   is a candidate Project. Deterministic, reproducible and explainable — detection, in the sense
+   rule 5 means it.
+
+   **Through `ApprovalRecord`, not through `Evidence`, and that is a correction found by testing
+   it.** The obvious join is "Evidence from this Event targets that Work". It returns nothing:
+   `_create_evidence` writes `target_id=uuid.uuid4()` at analysis time because the entity does not
+   exist until the Proposal is approved, and Evidence is immutable (BR-E-06) so nothing rebinds it
+   afterwards. Provenance has always been walked through the approval instead (ADR-0056). The first
+   version of this resolver joined on Evidence, passed every unit test, and produced an empty
+   candidate set the moment an end-to-end test ran — which is the argument for having written that
+   test. The approval is also the better claim: it is a person deciding, where Evidence is the
+   system citing.
+
+   A consequence worth recording separately: `evidence.target_id` is a placeholder for every
+   AI-originated Proposal in this system. It is not load-bearing today and nothing reads it, but it
+   is data that looks like a reference and is not one.
+
+2. **The runtime chooses a Work item from that set, or chooses nothing — and never chooses a
+   Project.** Only Work candidates are shown to the model. The Project follows from the Work item it
+   picked, by the third rule above, which is a join rather than a judgement. Asking a model to
+   choose a programme from a list is precisely the inference BR-AI-35 forbids, and the way to keep
+   that rule intact is to never put the question to it.
+
+3. **The guarantee lives in the validator, not in the prompt.** An intent naming an identifier
+   outside the candidate set is refused and counted as refused, like every other intent the agent
+   may not have (ADR-0052). A prompt is advice; a validator is a rule, and the difference is what
+   an operator can rely on.
+
+4. **No candidate means the field stays empty, and the reason is recorded.** BR-AI-17 is unchanged:
+   unknown stays unknown with a stated reason, and a Proposal that preserves uncertainty is
+   correct rather than incomplete. Product Owner decision, CP29.
+
+5. **Nothing here raises the autonomy ceiling.** It is still a Proposal and still needs an
+   approval. What changes is that the Proposal arrives complete: approving becomes one action
+   instead of reading the proposal, finding the Work, finding the Project and editing the
+   arguments.
+
+6. **The link carries its own Evidence** — the reason code and the Event that produced it — so
+   "why is this promise filed under that project?" is answerable after the fact (rule 4).
+
+**Why this is not what CP14 and CP27 rejected.** Those rejected inferring a Work item *from prose*,
+by *title similarity*. This proposes a Work item the system already knows is the subject of this
+conversation, because somebody previously approved attaching this thread's Event to it. The claim
+is "this message belongs to the conversation that produced that work item", and its evidence is a
+row a person approved — not a string score. BR-AI-35 is untouched: no Project is inferred, defaulted
+or created; a Project becomes a candidate only by already owning a candidate Work item.
+
+**Consequences.** The candidate set is empty for a new organization, and stays empty until somebody
+approves the first link by hand. That is the correct shape — the system learns the graph from
+approvals rather than asserting one — but it means the automation is invisible on day one and
+compounds afterwards. Worth stating plainly so nobody reads an empty candidate set as a defect.
+
+Rejected: showing the model any Project at all, candidate or otherwise (it would pick the plausible
+one, which is BR-AI-35 with extra steps); a confidence score on the link (there is nothing to score — a
+candidate either has a reason or is not a candidate); writing the link without approval when
+exactly one candidate exists (persistence triggers policy, rule 13, and "exactly one" is a property
+of how little we know, not of how sure we are).

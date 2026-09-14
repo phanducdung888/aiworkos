@@ -141,6 +141,7 @@ def capture_event(
             title=body.title,
             body_text=body.body_text,
             source_ref=body.source_ref,
+            thread_ref=body.thread_ref,
             channel=body.channel,
             sender_external_id=body.sender_external_id,
             sensitivity=body.sensitivity,

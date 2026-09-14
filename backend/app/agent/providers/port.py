@@ -101,6 +101,27 @@ class CompletionRequest:
     #: provider's memory as truth. Unused by every adapter today, and present so that a provider
     #: needing it does not force the port to change.
     conversation_id: str | None = None
+    #: Work items this conversation is already evidence for (ADR-0073). Empty for a text with no
+    #: history, which is the ordinary case and is why it defaults rather than being required.
+    options: tuple[LinkOption, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class LinkOption:
+    """Something the orchestration says this text may already be about.
+
+    A label and an opaque identifier, and nothing a provider could act on by itself. The list is
+    produced deterministically upstream (ADR-0073) and the model's only power over it is to pick a
+    member or pick none — it cannot widen the list, and an identifier it invents is refused by the
+    validator rather than being sent anywhere.
+
+    `reason` is here because the model chooses better when it can see why something is on the list,
+    and because the same string is what a reviewer is shown afterwards.
+    """
+
+    id: str
+    label: str
+    reason: str
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

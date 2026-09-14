@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import app.contexts.commitment.public as commitment
 from app.contexts.intelligence import gateway
+from app.contexts.intelligence.linking import LinkCandidates
 from app.platform.agentkit.confidence import ConfidencePolicy
 from app.platform.agentkit.contract import AgentAnalysis, IntentKind, ToolIntent
 from app.platform.authz import Action, ResourceType
@@ -71,10 +72,21 @@ _RESOLUTION: dict[IntentKind, tuple[str, str, Action, ResourceType]] = {
 #: Event's own `occurred_at`, so the same message always yields the same date and no model ever
 #: performs the arithmetic.
 _ALLOWED_ARGUMENTS: dict[IntentKind, frozenset[str]] = {
-    IntentKind.CREATE_WORK: frozenset({"title", "description"}),
-    IntentKind.CREATE_COMMITMENT: frozenset({"statement", "due_phrase"}),
+    IntentKind.CREATE_WORK: frozenset({"title", "description", "project_id"}),
+    IntentKind.CREATE_COMMITMENT: frozenset(
+        {"statement", "due_phrase", "fulfilling_work_id", "project_id"}
+    ),
     IntentKind.ASSIGN_WORK: frozenset({"role"}),
 }
+
+#: Arguments that name something that already exists, and the candidate set each is checked against
+#: (BR-AI-39, ADR-0073).
+#:
+#: Being listed here is what makes an argument *checkable*, which is the opposite of what being
+#: listed in `_ALLOWED_ARGUMENTS` alone would mean. An identifier the agent supplies is refused
+#: unless the deterministic resolver already put it in front of the agent — so the guarantee is a
+#: rule the validator applies, not advice the prompt gives.
+_LINK_ARGUMENTS: frozenset[str] = frozenset({"fulfilling_work_id", "project_id"})
 
 #: Kinds that cannot be proposed without naming a person, and which person role satisfies that.
 #:
@@ -169,12 +181,16 @@ class IntentValidator:
         participants: tuple[ResolvedParticipant, ...],
         confidence_policy: ConfidencePolicy,
         source: SourceEvent,
+        candidates: LinkCandidates | None = None,
     ) -> None:
         self._principal = principal
         self._participants = {p.participant_id: p for p in participants}
         self._confidence = confidence_policy
         self._source = source
         self._body_length = len(source.body_text)
+        # Defaults to empty rather than to None, so a caller that does not resolve candidates gets
+        # the safe behaviour — every link refused — instead of the check being skipped.
+        self._candidates = candidates or LinkCandidates()
 
     def validate(self, analysis: AgentAnalysis) -> ValidationOutcome:
         accepted: list[ValidatedIntent] = []
@@ -266,12 +282,44 @@ class IntentValidator:
                 raise IntentRefused("BR-AI-17", f"{key} must be a scalar")
 
         arguments: dict[str, Any] = dict(intent.arguments)
+        for key in _LINK_ARGUMENTS & arguments.keys():
+            arguments[key] = str(self._resolve_link(key, arguments[key]))
         if intent.kind is IntentKind.CREATE_COMMITMENT:
             arguments.update(self._read_deadline(intent, arguments.pop("due_phrase", None)))
         required = _REQUIRES_PERSON.get(intent.kind)
         if required is not None:
             arguments[required] = str(self._resolve_person(intent))
         return arguments
+
+    def _resolve_link(self, key: str, value: object) -> uuid.UUID:
+        """BR-AI-39. The only Work or Project an agent may name is one the resolver offered it.
+
+        Not "one that exists in this organization" — existing is not evidence that *this* message
+        concerns *that* work item, and an agent that could name any identifier would be doing by
+        assertion what CP14 and ADR-0071 both refused to let it do by similarity.
+
+        The refusal is deliberate rather than a silent drop. An agent naming something outside its
+        candidate set has asked for a thing it may not have, which is the same class of event as
+        naming an unregistered tool, and `refused` is the counter that says so. Dropping the
+        argument instead would produce a Proposal that looks like the agent chose not to link,
+        which is a different and less useful observation.
+        """
+        try:
+            identifier = uuid.UUID(str(value))
+        except ValueError as error:
+            raise IntentRefused("BR-AI-39", f"{key} is not an identifier") from error
+
+        allowed = (
+            self._candidates.allows_work(identifier)
+            if key == "fulfilling_work_id"
+            else self._candidates.allows_project(identifier)
+        )
+        if not allowed:
+            raise IntentRefused(
+                "BR-AI-39",
+                f"{key} names something this conversation is not already evidence for",
+            )
+        return identifier
 
     def _read_deadline(self, intent: ToolIntent, phrase: object) -> dict[str, Any]:
         """Turn the agent's quotation into a date, or into no date at all (ADR-0055).

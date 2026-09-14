@@ -26,6 +26,7 @@ from connectors.imap.client import (
 MESSAGE = CanonicalMessage(
     source_system="email.imap",
     source_ref="abc123@example.test",
+    thread_ref="abc123@example.test",
     occurred_at=dt.datetime(2026, 9, 12, 9, 0, tzinfo=dt.UTC),
     title="Revised quote",
     body_text="I will send the revised quote by Friday.",

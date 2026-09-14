@@ -21,8 +21,10 @@ The filter is in the `WHERE` clause so the page is full of rows the caller may a
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -462,4 +464,57 @@ def list_assignments(
             .order_by(WorkAssignment.assigned_at, WorkAssignment.id)
             .execution_options(populate_existing=True)
         ).scalars()
+    )
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class WorkReference:
+    """A Work item named from outside, with the Project it belongs to.
+
+    Enough for a reviewer to recognise it and for a Proposal to carry the link; not the description,
+    for the same reason `SimilarWork` does not carry one — being named as a candidate is not a grant
+    of access to everything the row holds.
+    """
+
+    id: uuid.UUID
+    title: str
+    status: str
+    project_id: uuid.UUID | None
+    project_name: str | None
+
+
+def work_references(
+    session: Session,
+    principal: Principal,
+    reach: ActorReach,
+    ids: Sequence[uuid.UUID],
+) -> tuple[WorkReference, ...]:
+    """Resolve Work identifiers to references, through the caller's own visibility.
+
+    Ids that do not exist, or that this principal may not read, are simply absent from the result.
+    That is the behaviour the candidate resolver needs: an identifier that survives this call is one
+    the caller could have found by browsing, so naming it in a Proposal reveals nothing new.
+
+    The Project comes back with it because a Work item's Project is the third candidate rule in
+    BR-AI-39, and fetching it separately would mean a second visibility question with a different
+    answer — a Work item is readable and its Project might not be, and the honest response to that
+    is to say which Project by id and title only if the join through readable work found it.
+    """
+    if not ids:
+        return ()
+    rows = session.execute(
+        select(Work.id, Work.title, Work.status, Work.project_id, Project.name)
+        .select_from(Work)
+        .outerjoin(Project, (Project.id == Work.project_id) & (Project.org_id == Work.org_id))
+        .where(
+            Work.id.in_(list(ids)),
+            Work.id.in_(readable_work(principal, reach).with_only_columns(Work.id)),
+        )
+        .order_by(Work.id)
+    ).all()
+    return tuple(
+        WorkReference(
+            id=row[0], title=row[1], status=row[2], project_id=row[3], project_name=row[4]
+        )
+        for row in rows
     )

@@ -59,6 +59,7 @@ from app.contexts.work.queries import (
     ProjectPage,
     WorkFilter,
     WorkPage,
+    WorkReference,
     get_dependency,
     get_milestone,
     get_project,
@@ -68,6 +69,7 @@ from app.contexts.work.queries import (
     list_milestones,
     list_projects,
     list_work,
+    work_references,
 )
 from app.contexts.work.references import assert_project_exists, assert_work_exists
 from app.contexts.work.services import (
@@ -91,6 +93,8 @@ __all__ = [
     "ActorReach",
     "find_similar_work",
     "SimilarWork",
+    "work_references",
+    "WorkReference",
     "MIN_SIMILARITY",
     "assert_work_exists",
     "assert_project_exists",

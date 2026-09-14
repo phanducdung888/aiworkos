@@ -19,6 +19,7 @@ const EVIDENCE = '88888888-8888-4888-8888-888888888888'
 const APPROVAL = '99999999-9999-4999-8999-999999999999'
 const COMMITMENT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const MEMBER = '44444444-4444-4444-8444-444444444444'
+const WORK = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 
 const EXCERPT = 'I will send the revised quote on Friday'
 
@@ -221,6 +222,44 @@ describe('ProposalDetail', () => {
     expect(action).toHaveTextContent(MEMBER)
     expect(action).toHaveTextContent('origin_event_id')
     expect(screen.getByText(/c0ffee/)).toBeVisible()
+  })
+
+  it('names the work a proposed link points at, without hiding the identifier', async () => {
+    // ADR-0073. A reviewer approving a link needs to know which work item it is; a UUID tells them
+    // nothing. The identifier stays because it is what `action_hash` covers — approving one thing
+    // and being shown another is the failure this screen exists to prevent.
+    stubApi([
+      detail({
+        action: {
+          tool: 'create_commitment',
+          tool_version: 'v1',
+          arguments: {
+            statement: EXCERPT,
+            committed_by_person_id: MEMBER,
+            fulfilling_work_id: WORK,
+          },
+        },
+      }),
+      evidence,
+      sourceEvent,
+      {
+        match: `GET /api/v1/work/${WORK}`,
+        body: {
+          id: WORK,
+          org_id: '11111111-1111-4111-8111-111111111111',
+          title: 'Soạn lại báo giá',
+          status: 'in_progress',
+          type: 'task',
+          priority: 'normal',
+          visibility: 'organization',
+          version: 1,
+        },
+      },
+    ])
+    renderDetail()
+
+    expect(await screen.findByTestId('linked-work')).toHaveTextContent('Soạn lại báo giá')
+    expect(screen.getByTestId('action')).toHaveTextContent(WORK)
   })
 
   it('quotes the evidence verbatim rather than describing it', async () => {

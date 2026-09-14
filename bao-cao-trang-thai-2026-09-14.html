@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<style>body{margin:0}img{max-width:100%}</style>
+<title>WorkOS sau 28 mốc</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground:   #F1F4F2;
+    --surface:  #FCFDFC;
+    --sunken:   #E7ECE9;
+    --ink:      #14201D;
+    --muted:    #5A6B66;
+    --faint:    #84948F;
+    --rule:     #D4DCD8;
+    --accent:   #0E6A60;
+    --accent-soft: #D9EBE7;
+    --danger:   #A23A2C;
+    --warn:     #8E6410;
+    --good:     #2E6B3E;
+
+    --f-display: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #0F1614;
+      --surface: #171F1D;
+      --sunken:  #1D2725;
+      --ink:     #E4ECE9;
+      --muted:   #94A39E;
+      --faint:   #6E7D79;
+      --rule:    #29342F;
+      --accent:  #4CBFAE;
+      --accent-soft: #16302C;
+      --danger:  #D9796A;
+      --warn:    #CFA044;
+      --good:    #6FB37F;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:  #0F1614;
+    --surface: #171F1D;
+    --sunken:  #1D2725;
+    --ink:     #E4ECE9;
+    --muted:   #94A39E;
+    --faint:   #6E7D79;
+    --rule:    #29342F;
+    --accent:  #4CBFAE;
+    --accent-soft: #16302C;
+    --danger:  #D9796A;
+    --warn:    #CFA044;
+    --good:    #6FB37F;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 940px;
+    margin: 0 auto;
+    padding-inline: 22px;
+    padding-block: 0 88px;
+  }
+
+  /* ---------------------------------------------------------------- masthead */
+
+  .masthead {
+    border-bottom: 2px solid var(--ink);
+    padding-block: 52px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .stamp {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+  }
+
+  .masthead h1 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(2.1rem, 5.4vw, 3.05rem);
+    line-height: 1.08;
+    letter-spacing: -0.018em;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: 1.06rem;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  /* ---------------------------------------------------------------- sections */
+
+  section { padding-block: 40px 0; }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.62rem;
+    line-height: 1.2;
+    letter-spacing: -0.012em;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--f-body);
+    font-weight: 600;
+    font-size: 1.02rem;
+    margin: 0 0 6px;
+  }
+
+  p { max-width: 70ch; margin: 0 0 14px; }
+  p:last-child { margin-bottom: 0; }
+
+  a { color: var(--accent); }
+
+  code, .mono {
+    font-family: var(--f-mono);
+    font-size: 0.875em;
+  }
+
+  code {
+    background: var(--sunken);
+    padding: 0.1em 0.34em;
+    border-radius: 3px;
+  }
+
+  strong { font-weight: 600; }
+
+  /* ---------------------------------------------------------------- verdict */
+
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--accent);
+    padding: 24px 26px;
+    margin-top: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .verdict p { max-width: 68ch; }
+
+  .verdict .lead {
+    font-family: var(--f-display);
+    font-size: 1.18rem;
+    line-height: 1.45;
+  }
+
+  /* ---------------------------------------------------------------- figures */
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-top: 8px;
+  }
+
+  .fig {
+    background: var(--surface);
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .fig__n {
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.5rem;
+    font-weight: 500;
+    line-height: 1.1;
+  }
+
+  .fig__k {
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+
+  /* ---------------------------------------------------------------- chain */
+
+  .chain {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .chain__step {
+    flex: 1 1 118px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .chain__step .fig__n { font-size: 1.3rem; }
+
+  .chain__arrow {
+    align-self: center;
+    color: var(--faint);
+    font-family: var(--f-mono);
+    font-size: 0.95rem;
+  }
+
+  /* ---------------------------------------------------------------- tables */
+
+  .scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.93rem;
+    min-width: 480px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 14px 10px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+
+  th {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  .state {
+    font-family: var(--f-mono);
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .state--good { color: var(--good); }
+  .state--warn { color: var(--warn); }
+  .state--none { color: var(--faint); }
+
+  /* ---------------------------------------------------------------- invariants */
+
+  .rules {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 20px;
+    border-left: 2px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .rules li { max-width: 72ch; }
+
+  .rules .enforce {
+    display: block;
+    font-family: var(--f-mono);
+    font-size: 0.79rem;
+    color: var(--muted);
+    margin-top: 3px;
+    line-height: 1.5;
+  }
+
+  /* ---------------------------------------------------------------- gaps */
+
+  .gaps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .gap {
+    display: grid;
+    grid-template-columns: 4px 1fr;
+    gap: 0 16px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+  }
+
+  .gap__stripe { background: var(--faint); }
+  .gap--high .gap__stripe { background: var(--danger); }
+  .gap--mid  .gap__stripe { background: var(--warn); }
+
+  .gap__body { padding: 14px 16px 15px 0; }
+  .gap__body p { margin: 4px 0 0; font-size: 0.93rem; color: var(--muted); max-width: 68ch; }
+
+  .gap__tag {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* ---------------------------------------------------------------- roadmap */
+
+  .steps {
+    list-style: none;
+    counter-reset: step;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 0 20px;
+    align-items: start;
+  }
+
+  .step__no {
+    font-family: var(--f-mono);
+    font-size: 0.83rem;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 5px 0;
+    text-align: center;
+    margin-top: 2px;
+  }
+
+  .step h3 {
+    font-family: var(--f-display);
+    font-size: 1.22rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .step ul {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    font-size: 0.95rem;
+  }
+
+  .step li { margin-bottom: 7px; max-width: 66ch; }
+
+  .why {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--sunken);
+    font-size: 0.9rem;
+    color: var(--muted);
+    max-width: 70ch;
+  }
+
+  .why b { color: var(--ink); font-weight: 600; }
+
+  /* ---------------------------------------------------------------- closing */
+
+  .hold {
+    border: 1px dashed var(--rule);
+    padding: 20px 22px;
+    background: var(--surface);
+  }
+
+  footer {
+    margin-top: 56px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+  }
+
+  @media (max-width: 560px) {
+    .step { grid-template-columns: 1fr; gap: 8px; }
+    .step__no { width: 64px; }
+    .chain__arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="stamp">
+      <span>Tổng kết trạng thái</span>
+      <span>14 · 09 · 2026</span>
+      <span>Mốc hiện tại v0.28</span>
+    </div>
+    <h1>WorkOS sau 28 mốc</h1>
+    <p class="standfirst">
+      Đã xây được gì, mạch thiết kế nào đang giữ hệ thống đứng thẳng, chỗ nào còn hở,
+      và ba mốc tiếp theo đi đúng bản đồ đã vẽ từ Phase 0.
+    </p>
+  </header>
+
+  <div class="verdict">
+    <p class="lead">
+      Sản phẩm đã vượt ngưỡng khó nhất: vòng lặp trung tâm đã đóng trên dữ liệu thật.
+      63 email thật đi vào, AI đọc, đề xuất, một con người duyệt, hệ thống thực thi.
+    </p>
+    <p>
+      Vì vậy khuyến nghị của tôi là <strong>chưa rẽ sang tính năng thương mại</strong>.
+      Bản đồ gốc ở Phase 0 đã viết sẵn bước kế tiếp — Phase 4: giám sát và rủi ro, với cửa ra
+      “hệ thống nêu một rủi ro mà con người chưa nhận ra”. Đó là lời hứa trung tâm của sản phẩm
+      và là thứ duy nhất chưa được chứng minh. Bán một thứ chưa chứng minh mới chính là chỗ lệch hướng.
+    </p>
+    <p>
+      Trước đó có một mốc dọn dẹp bắt buộc: pilot đã phơi ra một lỗ <strong>mất dữ liệu âm thầm</strong>
+      ở connector, và cuốn sổ giữ mạch của dự án (<code>progress.md</code>) đã ngừng được ghi
+      từ Checkpoint 5 — trễ 23 mốc.
+    </p>
+  </div>
+
+  <section>
+    <p class="eyebrow">Bằng chứng vận hành</p>
+    <h2>Hệ thống đang chạy thật, không phải chạy thử</h2>
+    <p>
+      Số liệu đọc trực tiếp từ cơ sở dữ liệu của stack pilot đang chạy, không phải từ seed.
+    </p>
+
+    <div class="chain">
+      <div class="chain__step">
+        <span class="fig__n">63</span>
+        <span class="fig__k">email thật vào hệ thống</span>
+      </div>
+      <span class="chain__arrow">→</span>
+      <div class="chain__step">
+        <span class="fig__n">41</span>
+        <span class="fig__k">lượt AI phân tích</span>
+      </div>
+      <span class="chain__arrow">→</span>
+      <div class="chain__step">
+        <span class="fig__n">18</span>
+        <span class="fig__k">đề xuất sinh ra</span>
+      </div>
+      <span class="chain__arrow">→</span>
+      <div class="chain__step">
+        <span class="fig__n">15</span>
+        <span class="fig__k">người duyệt chấp nhận</span>
+      </div>
+      <span class="chain__arrow">→</span>
+      <div class="chain__step">
+        <span class="fig__n">14</span>
+        <span class="fig__k">lời hứa được ghi nhận</span>
+      </div>
+    </div>
+
+    <p style="margin-top:18px">
+      Một đề xuất bị từ chối, hai đang chờ — nghĩa là con người thật sự đang xét chứ không bấm duyệt hàng loạt.
+      Không có job nào thất bại.
+    </p>
+
+    <div class="figures" style="margin-top:22px">
+      <div class="fig"><span class="fig__n">32</span><span class="fig__k">công việc</span></div>
+      <div class="fig"><span class="fig__n">6</span><span class="fig__k">dự án</span></div>
+      <div class="fig"><span class="fig__n">18</span><span class="fig__k">bằng chứng</span></div>
+      <div class="fig"><span class="fig__n">30</span><span class="fig__k">tệp đính kèm</span></div>
+      <div class="fig"><span class="fig__n">0</span><span class="fig__k">job thất bại</span></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Quy mô</p>
+    <h2>Những gì đã được xây</h2>
+
+    <div class="figures">
+      <div class="fig"><span class="fig__n">28</span><span class="fig__k">mốc, 26 tag, 33 commit</span></div>
+      <div class="fig"><span class="fig__n">71</span><span class="fig__k">ADR đã ghi</span></div>
+      <div class="fig"><span class="fig__n">15</span><span class="fig__k">migration</span></div>
+      <div class="fig"><span class="fig__n">1.493</span><span class="fig__k">bài kiểm thử xanh</span></div>
+      <div class="fig"><span class="fig__n">53.470</span><span class="fig__k">dòng mã sản phẩm</span></div>
+      <div class="fig"><span class="fig__n">26.957</span><span class="fig__k">dòng mã kiểm thử</span></div>
+    </div>
+
+    <p style="margin-top:20px">
+      Backend 23.769 dòng · frontend 27.891 · connector 1.355 · ops 455.
+      Kiểm thử: backend 1.271, frontend 123, connector 99 — tất cả xanh, cùng với
+      <code>ruff</code>, <code>mypy --strict</code> và import-linter.
+    </p>
+
+    <div class="scroll" style="margin-top:26px">
+      <table>
+        <thead>
+          <tr><th style="width:16%">Giai đoạn</th><th style="width:30%">Nội dung</th><th style="width:14%">Trạng thái</th><th>Bằng chứng</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase 0</td><td>Kiến trúc &amp; định nghĩa sản phẩm</td>
+            <td class="state state--good">hoàn tất</td>
+            <td>10 tài liệu nền, Decision Pack v1.0, Resolution Pack v1.1</td>
+          </tr>
+          <tr>
+            <td>Phase 1</td><td>Work Core, không AI</td>
+            <td class="state state--good">hoàn tất</td>
+            <td>Dự án, công việc, phân công, phụ thuộc; RLS FORCE; API v1; giao diện</td>
+          </tr>
+          <tr>
+            <td>Phase 2</td><td>Thu tín hiệu &amp; bằng chứng</td>
+            <td class="state state--good">hoàn tất</td>
+            <td>Event, Evidence, tệp đính kèm qua presigned URL, connector IMAP</td>
+          </tr>
+          <tr>
+            <td>Phase 3</td><td>Tool Gateway &amp; trích xuất</td>
+            <td class="state state--good">cửa ra đã đạt</td>
+            <td>15 đề xuất từ hoạt động thật được người thật chấp nhận — đúng định nghĩa cửa ra viết ở Phase 0</td>
+          </tr>
+          <tr>
+            <td>Phase 4</td><td>Giám sát, rủi ro, cam kết</td>
+            <td class="state state--warn">chưa bắt đầu</td>
+            <td>Context <code>governance</code> (Risk, Decision) có trong sơ đồ CLAUDE.md §4, chưa tồn tại trong mã</td>
+          </tr>
+          <tr>
+            <td>Phase 5</td><td>Trí tuệ điều hành</td>
+            <td class="state state--none">chưa bắt đầu</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>Phase 6</td><td>Connector &amp; hiệu chỉnh tự trị</td>
+            <td class="state state--none">chưa bắt đầu</td>
+            <td>Một connector (IMAP) đã chạy thật; tự trị vẫn cố định ở mức 1–2</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Chống lệch hướng</p>
+    <h2>Mạch thiết kế đang giữ hệ thống đứng thẳng</h2>
+    <p>
+      Đây là phần quan trọng nhất để đánh giá mọi đề xuất tương lai. Mỗi ràng buộc dưới đây
+      không phải lời hứa trong tài liệu — nó có một cơ chế đang chạy bắt buộc nó đúng.
+      Bất kỳ bước đi nào tới đây, hãy soi qua bảng này trước: <em>đề xuất này phá cơ chế nào?</em>
+    </p>
+
+    <ul class="rules">
+      <li>
+        <strong>AI không bao giờ chạm cơ sở dữ liệu.</strong> Mọi thay đổi đi qua Tool Gateway,
+        gọi đúng những application service mà API gọi.
+        <span class="enforce">Cưỡng chế 3 lớp: tách mạng trong compose (có test đọc chính file compose),
+        credential CSDL không tồn tại trong container agent, và hợp đồng import-linter.</span>
+      </li>
+      <li>
+        <strong>Hệ thống vẫn dùng được khi tắt AI.</strong> Mọi thực thể AI tạo được thì người cũng
+        tạo và sửa được bằng tay, qua giao diện và API công khai.
+        <span class="enforce">Work Core là hệ thống ghi nhận độc lập; tầng trí tuệ không sở hữu trạng thái nào.</span>
+      </li>
+      <li>
+        <strong>Quyền của AI không vượt quyền người uỷ quyền.</strong> Quyền hiệu dụng là giao của
+        vai trò agent và quyền của principal được uỷ quyền. Không có đường “AI admin”.
+        <span class="enforce">ADR-0010, ADR-0069 (phân tích tự động mượn thẩm quyền của người đã bật năng lực).</span>
+      </li>
+      <li>
+        <strong>Mọi ghi từ AI đều mang bằng chứng.</strong> Không có xuất xứ thì không được ghi.
+        <span class="enforce">18 Evidence gắn với 41 AIInteraction; màn hình Xuất xứ đi ngược được từ
+        lời hứa về tới email gốc.</span>
+      </li>
+      <li>
+        <strong>Phát hiện là tất định, diễn giải là AI.</strong> Quá hạn, bị chặn, trượt tiến độ,
+        vô chủ — là SQL và luật, tái lập được. AI tóm tắt và giả thuyết bên trên.
+        <span class="enforce">Đây chính là ràng buộc chi phối toàn bộ thiết kế Phase 4 sắp tới.</span>
+      </li>
+      <li>
+        <strong>Nội dung thu vào là dữ liệu, không phải mệnh lệnh.</strong> Email và tài liệu là
+        đầu vào không tin cậy; chúng không được lái việc chọn công cụ hay mở rộng phạm vi.
+        <span class="enforce">Registry công cụ đóng (ADR-0042); hash hành động chính tắc buộc
+        thực thi khớp đúng cái đã được duyệt (ADR-0041).</span>
+      </li>
+      <li>
+        <strong>Tự trị chỉ mức 1–2.</strong> Quan sát &amp; đề xuất, rồi thực thi sau khi có
+        phê duyệt tường minh được ghi bất biến.
+        <span class="enforce">Một bài kiểm thử quét toàn bộ backend cấm sự tồn tại của các chuỗi
+        <code>level_3</code>, <code>auto_apply</code> — trần là trần cứng, không phải cấu hình.</span>
+      </li>
+      <li>
+        <strong>Đa tổ chức từ ngày đầu.</strong> Mọi bảng có <code>org_id</code>, có RLS FORCE,
+        và phạm vi tổ chức không được coi là uỷ quyền.
+        <span class="enforce">ADR-0064 và cổng <code>may_reach()</code> — bài học từ CP25, nơi một
+        bài kiểm thử cũ “xanh” chỉ vì bảng rỗng.</span>
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <p class="eyebrow">Khoảng trống</p>
+    <h2>Chỗ còn hở, xếp theo mức đe doạ</h2>
+
+    <ul class="gaps">
+      <li class="gap gap--high">
+        <span class="gap__stripe"></span>
+        <div class="gap__body">
+          <span class="gap__tag">Mất dữ liệu · âm thầm</span>
+          <h3>Connector chỉ nhìn thư chưa đọc</h3>
+          <p>
+            Tiêu chí chọn thư là <code>SEARCH UNSEEN</code> và không có gì khác. Nếu anh mở email
+            trên điện thoại trước khi connector quét, thư đó biến mất khỏi WorkOS vĩnh viễn —
+            không log, không cảnh báo, không dấu vết. Cờ <code>\Seen</code> là trạng thái chung của
+            hộp thư, không phải trạng thái của connector. Cần theo dõi UID.
+          </p>
+        </div>
+      </li>
+      <li class="gap gap--high">
+        <span class="gap__stripe"></span>
+        <div class="gap__body">
+          <span class="gap__tag">Quan sát · không thấy được</span>
+          <h3>Không có màn hình “tin nhắn đã nhận”</h3>
+          <p>
+            64 Event tồn tại trong cơ sở dữ liệu, API <code>/events</code> đã có, nhưng giao diện
+            không có chỗ nào xem chúng. Hệ quả trực tiếp: lỗ mất dữ liệu bên trên <em>không thể
+            phát hiện bằng mắt</em>. Anh không có cách nào biết một email đã vào hay chưa ngoài việc
+            chờ nó hiện ra thành đề xuất.
+          </p>
+        </div>
+      </li>
+      <li class="gap gap--high">
+        <span class="gap__stripe"></span>
+        <div class="gap__body">
+          <span class="gap__tag">Sổ giữ mạch · trễ 23 mốc</span>
+          <h3><code>progress.md</code> dừng ở Checkpoint 5</h3>
+          <p>
+            CLAUDE.md §3 chỉ định nó là nguồn sự thật duy nhất cho “cái gì đã xây, cái gì tiếp theo”.
+            Lần ghi cuối là 12·09·2026. Nó vẫn ghi “Phase 0 — Architecture”, vẫn liệt kê
+            W-14 “chưa có service web trong Compose” (đã đóng hôm nay) và vẫn để N-2 “ngôn ngữ trích xuất”
+            là câu hỏi mở chặn Phase 3 — trong khi ADR-0070 đã trả lời bằng mã. Đây đúng là rủi ro lệch
+            hướng mà anh đang lo, và nó không nằm ở mã. ADR-INDEX thì ngược lại: hiện hành đủ tới 0071.
+          </p>
+        </div>
+      </li>
+      <li class="gap gap--mid">
+        <span class="gap__stripe"></span>
+        <div class="gap__body">
+          <span class="gap__tag">Kỹ thuật</span>
+          <h3>Không có CI</h3>
+          <p>
+            Thư mục <code>.github</code> không tồn tại. <code>make check</code> có và xanh, nhưng không
+            gì bắt buộc nó chạy trước khi commit vào nhánh chính. Toàn bộ kỷ luật hiện dựa vào thói quen.
+          </p>
+        </div>
+      </li>
+      <li class="gap gap--mid">
+        <span class="gap__stripe"></span>
+        <div class="gap__body">
+          <span class="gap__tag">Vận hành</span>
+          <h3>Không có runbook, sao lưu, hay hạn mức chi phí mô hình</h3>
+          <p>
+            Không có tài liệu vận hành, không có sao lưu Postgres và MinIO, không có trần chi tiêu
+            cho lời gọi mô hình. Với một người dùng thì chấp nhận được; với người dùng thứ hai thì không.
+          </p>
+        </div>
+      </li>
+      <li class="gap">
+        <span class="gap__stripe"></span>
+        <div class="gap__body">
+          <span class="gap__tag">Đã biết · chưa tái hiện</span>
+          <h3>Flake trong kiểm thử thực thi</h3>
+          <p>
+            Giữ nguyên trạng thái OPEN / NOT REPRODUCED sau 12 lượt chạy nhắm đích và nhiều lượt chạy
+            toàn bộ. Cái đã ghim được là một bài kiểm thử khẳng định không có phê duyệt chưa thực thi
+            nào hiển thị “đã tạo một lời hứa”.
+          </p>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <p class="eyebrow">Khuyến nghị · một chuỗi, không phải một danh sách</p>
+    <h2>Ba mốc tiếp theo</h2>
+    <p>
+      Thứ tự ở đây có ý nghĩa. CP29 dọn nợ trước khi mở phạm vi, vì đó là luật của chính dự án;
+      CP30 và CP31 là hai nửa của một lời hứa — phát hiện, rồi cho người ta biết.
+    </p>
+
+    <ol class="steps">
+      <li class="step">
+        <span class="step__no">CP 29</span>
+        <div>
+          <h3>Đóng những gì pilot đã phơi ra</h3>
+          <p>Không mở tính năng mới. Đây là hoàn tất Phase 3 cho tử tế.</p>
+          <ul>
+            <li>
+              <strong>Connector theo UID, không chỉ theo cờ đã đọc.</strong> Ghi nhớ
+              <code>UIDVALIDITY</code> và UID cao nhất đã giao; chọn thư theo khoảng UID hợp với
+              <code>UNSEEN</code>. Kèm bài kiểm thử hồi quy trên GreenMail: một thư bị người khác
+              đánh dấu đã đọc vẫn phải được giao.
+            </li>
+            <li>
+              <strong>Màn hình “Tin nhắn đã nhận”.</strong> Danh sách Event, đã phân tích hay chưa,
+              sinh ra mấy đề xuất, tệp đính kèm nào. API đã có sẵn — đây là chặng cuối của giao diện,
+              và là thứ làm cho lỗi ở trên nhìn thấy được.
+            </li>
+            <li>
+              <strong>Khôi phục cuốn sổ.</strong> Cập nhật <code>progress.md</code> tới CP29,
+              đóng W-14, và đưa N-2 ra quyết định chính thức thay vì để mã trả lời hộ.
+            </li>
+          </ul>
+          <div class="why">
+            <b>Vì sao đúng mạch:</b> quy tắc số 8 của dự án cấm giải quyết mơ hồ bằng mã, và luật pilot
+            từ CP24 nói defect thì sửa rồi viết kiểm thử hồi quy, không che. Cả hai đang bị vi phạm
+            ở đúng ba mục trên.
+          </div>
+        </div>
+      </li>
+
+      <li class="step">
+        <span class="step__no">CP 30</span>
+        <div>
+          <h3>Phase 4 — hệ thống bắt đầu tự nhìn ra rủi ro</h3>
+          <p>
+            Đây là bước kế tiếp đã được viết sẵn từ Phase 0, với cửa ra:
+            <em>“hệ thống nêu một rủi ro mà con người chưa nhận ra”.</em>
+          </p>
+          <ul>
+            <li>
+              <strong>Context <code>governance</code></strong> — Risk và Decision, đã có trong
+              domain-model và trong sơ đồ thư mục CLAUDE.md §4, chưa từng được xây.
+            </li>
+            <li>
+              <strong>Monitor tất định chạy trong worker đã có.</strong> Quá hạn, sắp lỡ hẹn, vô chủ,
+              bị chặn, im lặng quá lâu — thuần SQL và luật, tái lập được và giải thích được.
+            </li>
+            <li>
+              <strong>AI diễn giải bên trên các sự kiện đó</strong>, đi qua Proposal và Evidence
+              như mọi ghi nhận khác.
+            </li>
+          </ul>
+          <div class="why">
+            <b>Vì sao đúng mạch:</b> quy tắc số 5 — phát hiện tất định, diễn giải bằng AI — được viết
+            từ ngày đầu nhưng chưa có gì đứng trên nó. Hạ tầng cần thiết đã xong hết: hàng đợi job,
+            xuất xứ, đề xuất và phê duyệt. Đây là lần đầu tiên chúng được dùng cho việc mà sản phẩm
+            hứa, chứ không chỉ cho việc ghi lại điều con người đã nói.
+          </div>
+        </div>
+      </li>
+
+      <li class="step">
+        <span class="step__no">CP 31</span>
+        <div>
+          <h3>Cho người ta biết</h3>
+          <ul>
+            <li>
+              <strong>Context <code>notification</code></strong> — ai được báo, qua đường nào, khi nào,
+              và làm sao để không biến nó thành thứ người ta tắt đi sau ba ngày.
+            </li>
+            <li>
+              Đây cũng là điểm N-1 (nhắn tin ra ngoài có nằm trong MVP không) buộc phải có câu trả lời.
+            </li>
+          </ul>
+          <div class="why">
+            <b>Vì sao đúng mạch:</b> một monitor phát hiện ra điều không ai nhìn thấy thì bằng không
+            phát hiện gì. <code>notification</code> nằm trong sơ đồ thư mục gốc và chưa được xây —
+            nó là nửa còn lại của CP30, không phải một tính năng rời.
+          </div>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <p class="eyebrow">Chạy song song, không thay thế</p>
+    <h2>Đường ray kỹ thuật</h2>
+    <p>
+      Bốn việc dưới đây không thuộc mốc nào và cũng không nên chờ mốc nào. Chúng nhỏ, và mỗi việc
+      đóng một rủi ro mà hiện tại đang được che bằng “chỉ có một người dùng”.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th style="width:26%">Việc</th><th style="width:22%">Ước lượng</th><th>Đóng rủi ro gì</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>CI chạy <code>make check</code></td><td class="state">nửa ngày</td>
+            <td>Kỷ luật hiện dựa vào thói quen; 1.493 bài kiểm thử không có giá trị nếu không ai bắt buộc chạy</td>
+          </tr>
+          <tr>
+            <td>Sao lưu Postgres + MinIO</td><td class="state">nửa ngày</td>
+            <td>64 Event và 30 tệp đính kèm hiện chỉ tồn tại trong một volume Docker trên một máy</td>
+          </tr>
+          <tr>
+            <td>Runbook vận hành</td><td class="state">một ngày</td>
+            <td>Không ai ngoài tôi và anh biết khởi động lại, xem log, hay xử lý thư kẹt thế nào</td>
+          </tr>
+          <tr>
+            <td>Hạn mức chi phí mô hình</td><td class="state">một ngày</td>
+            <td>Phân tích tự động (ADR-0069) gọi mô hình theo mỗi email tới; hiện không có trần nào</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Cần anh quyết</p>
+    <h2>Những câu hỏi chỉ Product Owner trả lời được</h2>
+    <p>
+      Dự án cố tình không tự quyết những điều này (quy tắc số 8). Chúng đang nằm trong sổ câu hỏi mở,
+      và một số đã bắt đầu chặn việc thật.
+    </p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th style="width:10%">Mã</th><th style="width:40%">Câu hỏi</th><th style="width:16%">Đang chặn</th><th>Ghi chú</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">N-2</td><td>Trích xuất phải đạt chất lượng MVP với những ngôn ngữ nào?</td>
+            <td class="state state--warn">CP29</td>
+            <td>Mã đã trả lời rồi (Việt + Anh, ADR-0070). Cần ghi chính thức, nếu không tài liệu và mã sẽ nói hai điều khác nhau.</td>
+          </tr>
+          <tr>
+            <td class="mono">PQ-4</td><td>Tư thế pháp lý khi quan sát hoạt động làm việc của nhân viên</td>
+            <td class="state state--warn">người dùng thứ 2</td>
+            <td>Hiện anh đọc hộp thư của chính anh nên chưa phát sinh. Nó phát sinh đúng vào ngày có người thứ hai.</td>
+          </tr>
+          <tr>
+            <td class="mono">N-1</td><td>AI có được chủ động nhắn ra ngoài để hỏi lại không?</td>
+            <td class="state state--warn">CP31</td>
+            <td>Quyết định này định hình toàn bộ context notification.</td>
+          </tr>
+          <tr>
+            <td class="mono">N-4</td><td>Bình luận nội bộ có được đưa vào trích xuất không?</td>
+            <td class="state state--none">chưa chặn</td>
+            <td>Hiện API thu nhận từ chối hẳn, đúng cách đọc nghiêm ngặt. Có mã đang đứng trên nó.</td>
+          </tr>
+          <tr>
+            <td class="mono">S-5</td><td>Quy trình xử lý yêu cầu của chủ thể dữ liệu (DSR)</td>
+            <td class="state state--none">pilot</td>
+            <td>Cần trước khi có khách hàng đầu tiên ngoài nội bộ.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Cân nhắc ngược</p>
+    <h2>Điều tôi khuyên chưa làm lúc này</h2>
+    <div class="hold">
+      <p>
+        <strong>Tự đăng ký, thanh toán, đa tổ chức tự phục vụ.</strong> Lược đồ đã sẵn sàng cho đa tổ chức
+        từ migration đầu tiên, nên về kỹ thuật không có gì cản. Nhưng mở bán trước khi Phase 4 xong nghĩa là
+        bán một hệ thống quản lý công việc thông thường có thêm AI đọc email — chứ không phải thứ mà
+        product-constitution mô tả. Sự khác biệt nằm ở chỗ hệ thống có tự nhìn ra được điều con người
+        bỏ sót hay không, và đó đúng là phần chưa xây.
+      </p>
+      <p style="margin-top:12px">
+        Sau CP31 thì câu hỏi thương mại trở nên đáng bàn, vì lúc đó đã có thứ để chứng minh.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    Số liệu đọc từ repo và cơ sở dữ liệu pilot lúc 14·09·2026 · mốc v0.28-interface-design ·
+    commit gần nhất a04a858
+  </footer>
+
+</div>
+
+</body>
+</html>

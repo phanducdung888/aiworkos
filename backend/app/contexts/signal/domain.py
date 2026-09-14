@@ -172,6 +172,7 @@ def validate_capture(
     body_text: str | None,
     raw_payload_uri: str | None,
     source_ref: str | None,
+    thread_ref: str | None,
     origin_domain_event_id: uuid.UUID | None,
 ) -> None:
     """Everything that must hold before an Event is written, in the order a reader would ask it."""
@@ -207,6 +208,12 @@ def validate_capture(
     # makes BR-E-02 work by making every such row distinct.
     if source_ref is not None and not source_ref.strip():
         raise DomainRuleViolation("BR-E-02", "source_ref must be a non-empty reference or absent")
+
+    # BR-E-19. Same argument, different field. A blank thread identifier would join every other
+    # blank one in the candidate resolver's index, which is the one place a meaningless value does
+    # real damage: it would make unrelated conversations look like the same conversation.
+    if thread_ref is not None and not thread_ref.strip():
+        raise DomainRuleViolation("BR-E-19", "thread_ref must be a non-empty reference or absent")
 
 
 def assert_capturable(event_type: EventType) -> None:

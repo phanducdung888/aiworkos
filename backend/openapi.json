@@ -1959,6 +1959,17 @@
             "title": "Source System",
             "type": "string"
           },
+          "thread_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Ref"
+          },
           "title": {
             "anyOf": [
               {
@@ -2114,6 +2125,17 @@
             "title": "Source System",
             "type": "string"
           },
+          "thread_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Ref"
+          },
           "title": {
             "anyOf": [
               {
@@ -2141,6 +2163,7 @@
           "origin",
           "source_system",
           "source_ref",
+          "thread_ref",
           "content_hash",
           "channel",
           "sender_external_id",
@@ -2367,6 +2390,17 @@
             "title": "Source System",
             "type": "string"
           },
+          "thread_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Ref"
+          },
           "title": {
             "anyOf": [
               {
@@ -2394,6 +2428,7 @@
           "origin",
           "source_system",
           "source_ref",
+          "thread_ref",
           "content_hash",
           "channel",
           "sender_external_id",

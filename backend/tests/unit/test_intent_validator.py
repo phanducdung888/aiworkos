@@ -21,6 +21,11 @@ from app.contexts.intelligence.intents import (
     ResolvedParticipant,
     SourceEvent,
 )
+from app.contexts.intelligence.linking import (
+    LinkCandidates,
+    ProjectCandidate,
+    WorkCandidate,
+)
 from app.platform.agentkit import (
     AgentAnalysis,
     ConfidenceBand,
@@ -86,6 +91,7 @@ def a_validator(
     body: str = BODY,
     occurred_at: dt.datetime = OCCURRED_AT,
     timezone: str = "UTC",
+    candidates: LinkCandidates | None = None,
 ) -> IntentValidator:
     return IntentValidator(
         principal or a_principal(),
@@ -100,6 +106,7 @@ def a_validator(
         ),
         confidence_policy=ConfidencePolicy(minimum_band=minimum),
         source=SourceEvent(body_text=body, occurred_at=occurred_at, timezone=timezone),
+        candidates=candidates,
     )
 
 
@@ -524,3 +531,93 @@ class TestDeadlines:
         result = outcome(a_validator(), an_intent(arguments=dated))
         assert result.accepted == ()
         assert "BR-AI-17" in result.refused[0][1]
+
+
+# --------------------------------------------------------- where a link may come from
+
+
+WORK_CANDIDATE = uuid.uuid4()
+PROJECT_CANDIDATE = uuid.uuid4()
+
+
+def with_candidates() -> LinkCandidates:
+    return LinkCandidates(
+        work=(
+            WorkCandidate(
+                id=WORK_CANDIDATE,
+                title="Revise the quote",
+                status="in_progress",
+                reason="same_thread_is_evidence",
+            ),
+        ),
+        projects=(
+            ProjectCandidate(
+                id=PROJECT_CANDIDATE,
+                title="Q4 renewals",
+                reason="owns_candidate_work",
+                via_work_id=WORK_CANDIDATE,
+            ),
+        ),
+    )
+
+
+class TestALinkComesFromTheEvidenceGraph:
+    """BR-AI-39, ADR-0073.
+
+    The rule this file exists to protect is that an agent may only name things somebody already
+    approved. CP29 widened *which* arguments an agent may supply and narrowed *what values* they may
+    hold, and the second half is what makes the first half safe — so it is asserted here, at the
+    validator, rather than trusted to the prompt that asks for it.
+    """
+
+    def test_a_candidate_may_be_named(self) -> None:
+        result = outcome(
+            a_validator(candidates=with_candidates()),
+            an_intent(
+                arguments={
+                    "title": "Send the revised quote",
+                    "project_id": str(PROJECT_CANDIDATE),
+                }
+            ),
+        )
+        assert result.refused == ()
+        assert result.accepted[0].arguments["project_id"] == str(PROJECT_CANDIDATE)
+
+    def test_anything_else_is_refused_by_name(self) -> None:
+        """Not dropped. An agent naming something outside its set has asked for what it may not
+        have, which is the same class of event as naming an unregistered tool — and a silently
+        dropped argument would read afterwards as the agent choosing not to link."""
+        result = outcome(
+            a_validator(candidates=with_candidates()),
+            an_intent(
+                arguments={"title": "Send the revised quote", "project_id": str(uuid.uuid4())}
+            ),
+        )
+        assert result.accepted == ()
+        assert "BR-AI-39" in result.refused[0][1]
+
+    def test_an_empty_candidate_set_refuses_every_link(self) -> None:
+        """The default, and the one that must not be the permissive case. A caller that forgets to
+        resolve candidates gets every link refused rather than every link allowed."""
+        result = outcome(
+            a_validator(),
+            an_intent(
+                arguments={"title": "Send the revised quote", "project_id": str(PROJECT_CANDIDATE)}
+            ),
+        )
+        assert result.accepted == ()
+        assert "BR-AI-39" in result.refused[0][1]
+
+    def test_something_that_is_not_an_identifier_is_refused(self) -> None:
+        result = outcome(
+            a_validator(candidates=with_candidates()),
+            an_intent(arguments={"title": "Send the revised quote", "project_id": "Q4 renewals"}),
+        )
+        assert result.accepted == ()
+        assert "BR-AI-39" in result.refused[0][1]
+
+    def test_an_intent_naming_nothing_is_untouched(self) -> None:
+        """A Proposal with no link is the ordinary outcome and must stay cheap (BR-AI-17)."""
+        result = outcome(a_validator(candidates=with_candidates()), an_intent())
+        assert result.refused == ()
+        assert "project_id" not in result.accepted[0].arguments

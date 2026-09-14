@@ -27,6 +27,7 @@ import {
   useProposal,
   useProposals,
   useQueueApproval,
+  useProjects,
   useWorkItem,
 } from '@/api/hooks'
 import { Attachments } from '@/components/Attachments'
@@ -187,8 +188,17 @@ function Review({ proposal }: { proposal: ProposalDetailResource }) {
           </dd>
           {Object.entries(args).map(([key, value]) => (
             <div key={key}>
-              <dt>{key}</dt>
-              <dd>{typeof value === 'string' ? value : JSON.stringify(value)}</dd>
+              <dt>
+                {ARGUMENT_LABELS[key] ?? key}
+                {/* The canonical name stays, beside the readable one rather than replaced by it.
+                    This list is what `action_hash` covers, and a reviewer comparing it against the
+                    tool contract needs the field names the contract uses. */}
+                {ARGUMENT_LABELS[key] ? <span className="field__hint"> {key}</span> : null}
+              </dt>
+              <dd>
+                {typeof value === 'string' ? value : JSON.stringify(value)}
+                {typeof value === 'string' ? <Named argument={key} id={value} /> : null}
+              </dd>
             </div>
           ))}
         </dl>
@@ -326,6 +336,60 @@ function Outcome({ proposalId }: { proposalId: string }) {
       />
     </section>
   )
+}
+
+/** Arguments a reviewer should not have to read as field names. */
+const ARGUMENT_LABELS: Record<string, string> = {
+  statement: 'Lời hứa',
+  title: 'Tiêu đề',
+  description: 'Mô tả',
+  due_date: 'Hạn',
+  due_precision: 'Độ chính xác của hạn',
+  committed_by_person_id: 'Người hứa',
+  committed_to_person_id: 'Hứa với',
+  fulfilling_work_id: 'Thực hiện cho công việc',
+  project_id: 'Thuộc dự án',
+}
+
+/**
+ * The name behind an identifier, beside the identifier rather than instead of it.
+ *
+ * The raw value stays on the page because it is what `action_hash` covers and what the worker will
+ * run (ADR-0041); replacing it with a friendly name would mean approving one thing and being shown
+ * another. This adds the half a person actually needs — a UUID tells a reviewer nothing about
+ * whether the link is right.
+ *
+ * Fails quietly. A name that will not load is a worse reason to break an approval screen than any
+ * name is a reason to have one.
+ */
+function Named({ argument, id }: { argument: string; id: string }) {
+  const work = useWorkItem(argument === 'fulfilling_work_id' ? id : '')
+  const projects = useProjects()
+
+  if (argument === 'fulfilling_work_id' && work.data) {
+    return (
+      <>
+        {' — '}
+        <Link to={`/work/${work.data.id}`} data-testid="linked-work">
+          {work.data.title}
+        </Link>
+      </>
+    )
+  }
+  if (argument === 'project_id') {
+    const project = projects.data?.find((candidate) => candidate.id === id)
+    if (project) {
+      return (
+        <>
+          {' — '}
+          <Link to={`/projects/${project.id}`} data-testid="linked-project">
+            {project.name}
+          </Link>
+        </>
+      )
+    }
+  }
+  return null
 }
 
 /**

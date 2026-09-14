@@ -1,11 +1,18 @@
 # Progress — AI WorkOS
 
-Last updated: 2026-09-11 · Current phase: **Phase 0 — Architecture**
+Last updated: 2026-09-14 · Current phase: **Phase 4 — Monitoring, risks, commitments**
 
-### `PHASE 1 READY — DOCUMENTATION BASELINE COMPLETE`
+### `PILOT RUNNING ON REAL MAIL — PHASE 3 EXIT MET`
 
-Decision Pack v1.0 and Resolution Pack v1.1 are applied. No material blockers remain for Phase 1.
-Implementation has not started and must not start until this baseline is signed off.
+A real mailbox has been delivering into a real stack since CP24. As of CP29: 63 external messages
+captured, 41 AI interactions, 18 Proposals of which 15 were accepted by a person and 1 rejected.
+That is the Phase 3 exit gate as it was written in Phase 0 — "proposals from real activity, accepted
+by real users" — met with evidence rather than by assertion.
+
+**This file stopped being updated at Checkpoint 5 and was 23 checkpoints stale until CP29.** The
+ADR index stayed current throughout, so no decision was lost; what was lost was the picture of what
+exists. Recorded here rather than quietly fixed, because §7.8 of the working agreement asks for this
+file to move in the same change as the work, and for twenty-three checkpoints it did not.
 
 This file is the single source of truth for what is built, what is next, and what is blocked. Update
 it in the same change as the work it describes.
@@ -19,8 +26,8 @@ it in the same change as the work it describes.
 | 0 | Architecture & product definition | ✅ complete; packs v1.0 and v1.1 applied | **met** |
 | 1 | Work Core (no AI) | ✅ complete — checkpoints 1–5.1 | A team can manage real work in it with AI off |
 | 2 | Signal capture & evidence | ✅ complete — checkpoints 6–7 | Events ingested, evidence attachable by hand, corpus collecting |
-| 3 | Tool Gateway & extraction | 🟡 in progress — checkpoints 8–18; pilot use not yet attempted | Proposals from real activity, accepted by real users |
-| 4 | Monitoring, risks, commitments | ⬜ not started | System raises a risk a human had not noticed |
+| 3 | Tool Gateway & extraction | ✅ complete — checkpoints 8–29 | **met** · 15 proposals from real mail accepted by a real person |
+| 4 | Monitoring, risks, commitments | 🟡 next | System raises a risk a human had not noticed |
 | 5 | Executive intelligence | ⬜ not started | A lead stops writing status reports by hand |
 | 6 | Connectors & autonomy tuning | ⬜ not started | Capture is passive; autonomy promoted on evidence |
 
@@ -528,8 +535,8 @@ Owner and due date to be filled at Phase 0 sign-off.
 
 | id | Question | Source | Blocks | Priority |
 |---|---|---|---|---|
-| N-2 | Target languages for MVP-quality extraction | product-constitution §10 | prompts, eval corpus, Phase 3 | **high** |
-| W-14 | **No `web` or `proxy` service in Compose.** Phase 1 scope lists both. The frontend runs from `npm run dev` and the E2E harness starts it, so nothing is blocked today, but there is no container image for it and no reverse proxy terminating one origin in front of both. | progress.md Phase 1 scope, docker-compose.yml | before the pilot | medium, new |
+| N-2 | Target languages for MVP-quality extraction | product-constitution §10 | ratification only | **high — code has run ahead of the decision.** ADR-0070 (CP26) made the deadline reader bilingual and CP27 translated the interface, so Vietnamese and English are what the system actually does. Rule 8 says that is a decision to ratify, not a fact to leave implicit |
+| ~~W-14~~ | ~~No `web` or `proxy` service in Compose~~ | — | — | **closed 2026-09-14** · `web` is a static build behind nginx which also forwards `/api`, so the browser sees one origin; `migrate` and `seed` became services in the same change, and `docker compose up` is now the whole of starting the system |
 | W-15 | **Five of the nine curated journeys are unwritten.** Journeys 2, 3, 5, 6 and 7 need Events, Proposals, Commitments or Risks, which is Phase 2 and later. Journey 8 (AI disabled) is satisfied by construction — there is no AI to switch off — and is recorded rather than coded. | testing-strategy §L6 | Phase 2+ | low, new |
 | W-9 | **`idempotency_key` has no retention job.** Records are kept for the 24 hours a client retry needs and nothing deletes them afterwards, so the table grows with every keyed POST. The application role is granted SELECT and INSERT only, deliberately — a stored response is the answer that was given — so the sweeper runs as a different role. | migration 0007 | Phase 2 | medium, new |
 | W-10 | **Two concurrent requests sharing one Idempotency-Key.** The unique constraint catches the second at insert, after its mutation has run in the same transaction, so that transaction rolls back and the caller gets 409 with `Retry-After: 1`; the retry then replays the first response. Correct but pessimistic — it wastes the work already done. A reservation row inserted before the handler would serialise them properly, at the cost of a second round trip on the common path. | `platform/http/idempotency.py` | Phase 2 | low, new |
@@ -547,10 +554,36 @@ Owner and due date to be filled at Phase 0 sign-off.
 | PQ-6 | Q&A in v1 | product-constitution §10 | Phase 5 | low |
 | A-2 | Commitment as a separate aggregate | architecture §12.2 | Phase 4 | low, revisit after Phase 3 evals |
 | A-14 | Internal-Event volume and loop risk | architecture §12.2 | Phase 2 | medium, mitigated by BR-E-11 |
-| M-8, M-9 | Channel thread id, phone identity typing | domain-model §13 | Phase 3–3b | low |
+| M-9 | Phone identity typing | domain-model §13 | Phase 3b | low |
+| ~~M-8~~ | ~~Channel thread id~~ | — | — | **closed CP29** · ADR-0072, BR-E-19: `thread_ref` joins the ingestion contract |
 | S-5 | DSR procedure | security-model §9 | pilot | medium |
 | S-8 | Notifying non-user participants of a captured group | security-model §9 | Phase 3b | tied to PQ-4 |
 | T-1, T-5, T-6 | CI topology, channel adapter testing, native-speaker labelling | testing-strategy §9 | Phase 1–3 | low–medium |
+
+## Checkpoint log, 6 onwards
+
+Written at CP29, from the tag list and the ADR index, after twenty-three checkpoints during which
+this section was not maintained. Terse by necessity — the ADRs carry the reasoning, and inventing
+richer detail from a tag name afterwards would be worse than being brief.
+
+| Checkpoint | Tag | What it delivered |
+|---|---|---|
+| 6 | `v0.6-capture` | Event and the capture API |
+| 7 | `v0.7-proposal` | Evidence, Commitment, Proposal, the Tool Gateway |
+| 8 | `v0.8-agent` | AgentRuntime, AIInteraction, queued execution |
+| 9 | `v0.9-hardening` | Capability policy, job isolation, one execution path |
+| 10–13 | `v0.10`–`v0.13` | Provider contract and execution window; agent runtime strategy; the Anthropic and OpenAI adapters |
+| 14–16 | `v0.14`–`v0.16` | The Commitment vertical made reachable; deadlines read from quotes; provenance walkable; Work brought to the same standard |
+| 17–18 | `v0.17`, `v0.18` | The Attention view; MVP integration |
+| 19a–19b | `v0.19a`, `v0.19b` | An editable agent policy surface; the ingestion contract, closing the OpenClaw spike on evidence (ADR-0059) |
+| 20–23 | `v0.20`–`v0.23` | The IMAP connector; running it and fixing what that broke; the attachment substrate; attachment delivery |
+| 24 | `v0.24-real-mailbox-pilot` | First real mailbox against a real stack. Found that the stack had never been started end to end |
+| 25 | `v0.25-po-alpha-readiness` | Made the product usable by a person in a browser. Sign-in had dead-ended with zero API calls |
+| 26 | `v0.26-automatic-analysis` | Ingestion triggers analysis (ADR-0069); Vietnamese deadlines (ADR-0070) |
+| 27 | `v0.27-links-and-vietnamese` | A promise can name the work it fulfils (ADR-0071); the interface speaks Vietnamese |
+| 28 | `v0.28-interface-design` | A design system, where a note had said there wasn't one |
+| — | (2026-09-14) | Every service in Compose: `web`, `migrate` and `seed`. Closes W-14 |
+| 29 | in progress | Links proposed from the evidence graph (ADR-0073); `thread_ref` on the ingestion contract (ADR-0072, closes M-8) |
 
 ## Phase 1 checkpoint log
 

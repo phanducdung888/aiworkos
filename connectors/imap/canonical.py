@@ -119,6 +119,8 @@ class CanonicalMessage:
 
     source_system: str
     source_ref: str
+    #: The conversation this message belongs to (ADR-0072). `None` when the headers do not say.
+    thread_ref: str | None
     occurred_at: dt.datetime
     title: str | None
     body_text: str
@@ -146,6 +148,7 @@ class CanonicalMessage:
             "type": "EXTERNAL_MESSAGE",
             "source_system": self.source_system,
             "source_ref": self.source_ref,
+            "thread_ref": self.thread_ref,
             "occurred_at": self.occurred_at.isoformat(),
             "title": self.title,
             "body_text": self.body_text,
@@ -183,6 +186,7 @@ def parse_message(
     return CanonicalMessage(
         source_system=source_system,
         source_ref=_reference(parsed, raw),
+        thread_ref=_thread(parsed, raw),
         occurred_at=_occurred_at(parsed, received_at),
         title=_header(parsed, "Subject"),
         body_text=body,
@@ -191,6 +195,34 @@ def parse_message(
         attachments=carried,
         oversized_attachments=oversized,
     )
+
+
+def _thread(parsed: email.message.Message, raw: bytes) -> str:
+    """Which conversation this message belongs to, from the headers and nowhere else.
+
+    RFC 5322 §3.6.4: a reply carries `References`, oldest first, so the first entry is the message
+    that started the thread and is stable for every message in it. `In-Reply-To` is the fallback for
+    a client that sends only that — it names the parent rather than the root, which makes a
+    two-message thread rather than a wrong one. A message that is nobody's reply is a thread of one,
+    identified by itself.
+
+    Deliberately not the subject line (BR-E-19). A reply that changes the subject would leave its
+    thread, and two unrelated messages titled "Re: update" would join one — and the resolver
+    downstream treats a shared thread as evidence, so a wrong thread is a wrong link rather than
+    merely a wrong grouping.
+    """
+    for header in ("References", "In-Reply-To"):
+        value = _header(parsed, header)
+        if not value:
+            continue
+        identifiers = value.split()
+        if identifiers:
+            # Stripped exactly as `_reference` strips `Message-ID`, and that is load-bearing rather
+            # than tidiness: a thread's root message identifies its own thread by its `Message-ID`,
+            # and every reply identifies it from `References`. If one form kept the angle brackets
+            # and the other did not, a message and its own replies would never share a thread.
+            return identifiers[0].strip().strip("<>")
+    return _reference(parsed, raw)
 
 
 def idempotency_key(source_system: str, source_ref: str, body: str) -> str:

@@ -203,6 +203,18 @@ class RuntimeServices:
             committed_by_person_id=committed_by_person_id,
         )
 
+    def link_candidates(self, event_id: uuid.UUID) -> intelligence.LinkCandidates:
+        """What this Event's conversation is already evidence for (ADR-0073).
+
+        Read through the delegating person's own visibility, like every other read the agent makes
+        on their behalf: a candidate list is an efficient way to learn that work exists which the
+        delegate cannot see, and the defence is to never select those rows rather than to filter
+        them afterwards.
+        """
+        return intelligence.candidates_for_event(
+            self._session, self._principal, event_id=event_id
+        )
+
     def resolved_participants(self, event_id: uuid.UUID) -> tuple[PersonReference, ...]:
         """The people this Event already resolved, as references the agent may point at.
 
@@ -242,6 +254,15 @@ class RuntimeServices:
                 body_text=event.body_text or "",
                 occurred_at=event.occurred_at,
                 timezone=self._organization_timezone(),
+            ),
+            # Resolved here rather than inside the validator, and for the same reason the
+            # participants are: the validator decides, and the session belongs to this layer.
+            # Resolved a second time rather than reusing what `link_candidates` handed the agent —
+            # the set the agent was shown is advice, and the set it is checked against is the rule
+            # (ADR-0073). Reusing one value for both would make the guarantee depend on the agent
+            # having been shown the truth.
+            candidates=intelligence.candidates_for_event(
+                self._session, self._principal, event_id=event.id
             ),
         )
         outcome = validator.validate(analysis)
