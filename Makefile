@@ -10,7 +10,7 @@ DEV_DB := workos
 TEST_DB_URL := postgresql+psycopg://workos_owner:workos_owner@127.0.0.1:5432/workos_test
 TEST_APP_URL := postgresql+psycopg://workos_app:workos_app@127.0.0.1:5432/workos_test
 
-.PHONY: help start up down logs install openapi migrate downgrade analyse test test-unit test-fast connector-test connector-types connector-smoke store-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
+.PHONY: help start up down logs install openapi migrate downgrade analyse backfill-status test test-unit test-fast connector-test connector-types connector-smoke store-smoke mail lint types imports check dev-db test-db seed web-install web-check web-test e2e
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -107,6 +107,12 @@ analyse:  ## Ask the AI to read delivered messages nobody has analysed yet. ARGS
 	# nothing yet decides on the organization's behalf which delivered messages are worth a model
 	# call. Until that is a policy, it is an operator. See ops/dev/analyse.py.
 	.venv/bin/python ops/dev/analyse.py $(ARGS)
+
+backfill-status:  ## Say, on Events already analysed, that they were analysed. ARGS=--apply to write.
+	# Runs as the cluster superuser, and has to — for the same reason `seed` does. Every table has
+	# FORCE ROW LEVEL SECURITY and workos_owner is NOBYPASSRLS, so a migration sees no tenant row
+	# at all and cannot even list the organizations to loop over. See the script's docstring.
+	PYTHONPATH=$(BACKEND) .venv/bin/python ops/dev/backfill_processing_status.py $(ARGS)
 
 web-install:  ## Install frontend dependencies
 	cd $(FRONTEND) && npm ci

@@ -554,6 +554,7 @@ Owner and due date to be filled at Phase 0 sign-off.
 | PQ-6 | Q&A in v1 | product-constitution §10 | Phase 5 | low |
 | A-2 | Commitment as a separate aggregate | architecture §12.2 | Phase 4 | low, revisit after Phase 3 evals |
 | A-14 | Internal-Event volume and loop risk | architecture §12.2 | Phase 2 | medium, mitigated by BR-E-11 |
+| W-16 | **No Alembic migration can backfill tenant data, and one is written as though it could.** `workos_owner` owns every table, every table has FORCE ROW LEVEL SECURITY, and the role is deliberately NOBYPASSRLS — so a migration runs with `app_current_org()` NULL and sees no tenant row, and cannot list `organization` to loop over it either. Migration 0007's BR-W-19 backfill has this shape. Its statement is correct and tested (the test executes it inside a session that *has* an organization); what is untested is whether Alembic's own session sees a row. Nothing was ever wrong — 0007 shipped before any deployment held data — but the guarantee it reads as making is not one it can deliver. CP30 found this by writing the same mistake and watching it report success while changing nothing. | migrations/0007, ops/dev/backfill_processing_status.py | any future data backfill | **medium, new** |
 | M-9 | Phone identity typing | domain-model §13 | Phase 3b | low |
 | ~~M-8~~ | ~~Channel thread id~~ | — | — | **closed CP29** · ADR-0072, BR-E-19: `thread_ref` joins the ingestion contract |
 | S-5 | DSR procedure | security-model §9 | pilot | medium |

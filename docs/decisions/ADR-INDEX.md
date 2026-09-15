@@ -2401,6 +2401,14 @@ than an absent one: it answers confidently and wrongly.
 analyses an Event in future has to set it. That is a burden worth naming: the reason this field went
 twenty-three checkpoints without a writer is that nothing broke when it did not.
 
+Existing Events keep whatever they say until something repairs them, and repairing them turned out
+not to be a migration's job. Written as migration 0016 first, it reported success and changed
+nothing: `workos_owner` owns every table, FORCE ROW LEVEL SECURITY is on, and that role is
+deliberately NOBYPASSRLS — so a migration sees no tenant row and cannot even list `organization` to
+loop over. The repair is `ops/dev/backfill_processing_status.py`, run as the cluster superuser for
+exactly the reason `ops/dev/seed.py` is. The general finding is recorded as W-16, because migration
+0007 already contains a backfill of the same shape.
+
 Rejected: deriving the status from `ai_interaction` rows instead of storing it (a second source of
 truth for a question the column was added to answer, and one that cannot distinguish "never
 attempted" from "attempted and the record was rolled back"); an admin-only feed that bypasses
