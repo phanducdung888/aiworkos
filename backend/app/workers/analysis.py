@@ -46,7 +46,12 @@ from app.platform.actor import Actor
 from app.platform.agentkit.confidence import ConfidencePolicy
 from app.platform.agentkit.contract import AgentAnalysis, IntentKind, PersonReference
 from app.platform.authz import Action, Principal, ResourceType, authorize
-from app.platform.authz.agent import AgentCapability, AgentIdentity, AgentPrincipal
+from app.platform.authz.agent import (
+    AgentAuthorityError,
+    AgentCapability,
+    AgentIdentity,
+    AgentPrincipal,
+)
 from app.platform.authz.model import ResourceRef
 from app.platform.config import Settings, get_settings
 from app.platform.errors import EntityNotFound, UpstreamProviderError
@@ -521,10 +526,40 @@ def analyse(
         # `failed` is committed with the caller's transaction. Letting it raise would roll that
         # back and lose the record of a run that genuinely happened — a provider outage would be
         # invisible rather than merely unsuccessful (ADR-0049).
+        #
+        # BR-E-20: and the Event says so too. `ai_interaction` records that a run failed; the Event
+        # is where somebody looks to ask "was this message ever read?", and until CP30 it answered
+        # `received` whatever had happened to it.
+        signal.mark_processed(
+            session,
+            org_id=principal.org_id,
+            event_id=event_id,
+            status=signal.ProcessingStatus.FAILED.value,
+            error=f"{type(error).__name__}: {error}"[:500],
+        )
         raise UpstreamProviderError(
             f"{type(error).__name__}: {error}", retryable=error.retryable
         ) from error
+    except AgentAuthorityError:
+        # Not eligible: internal origin (BR-E-11) or restricted (BR-E-08). A real answer about this
+        # Event, and a different one from "the model found nothing".
+        signal.mark_processed(
+            session,
+            org_id=principal.org_id,
+            event_id=event_id,
+            status=signal.ProcessingStatus.SKIPPED.value,
+            error=None,
+        )
+        raise
 
+    # Extracted, whether or not it produced anything: finding nothing in a message is a result.
+    signal.mark_processed(
+        session,
+        org_id=principal.org_id,
+        event_id=event_id,
+        status=signal.ProcessingStatus.EXTRACTED.value,
+        error=None,
+    )
     return AnalysisOutcome(
         interaction_id=result.interaction_id,
         evidence_ids=tuple(result.evidence_ids),

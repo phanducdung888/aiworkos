@@ -380,3 +380,47 @@ def test_a_different_conversation_is_not_a_candidate(
     candidates = resolve(app_session_factory, work_org, elsewhere)
 
     assert candidates.is_empty, "a message from another conversation became a candidate"
+
+
+def test_an_analysed_event_stops_saying_it_was_never_read(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    work_org: WorkOrg,
+) -> None:
+    """BR-E-20, the half that was missing for twenty-three checkpoints.
+
+    Asserted through the API a person actually reads rather than against the column, because the
+    failure it guards was never that the value was wrong — it was that nobody ever wrote one, and a
+    test that inspected the row after calling the repository directly would have passed throughout.
+    """
+    event = capture(api, as_admin)
+    assert event["processing_status"] == "received"
+
+    analyse(api, as_admin, event)
+
+    after = api.get(f"/api/v1/events/{event['id']}", headers=as_admin).json()
+    assert after["processing_status"] == "extracted"
+    assert after["processing_error"] is None
+
+
+def test_a_message_the_model_found_nothing_in_still_counts_as_read(
+    api: TestClient,
+    as_admin: dict[str, str],
+    roles: None,
+    agent_enabled: None,
+    work_org: WorkOrg,
+) -> None:
+    """Finding nothing is a result, not a failure (BR-E-20).
+
+    The distinction this makes possible is the one an operator needs: `failed` means nobody read
+    the message, and `extracted` with no proposals means somebody read it and there was nothing in
+    it. Collapsing those two would make the review screen useless in exactly the case it exists for.
+    """
+    event = capture(api, as_admin, "Thanks, that all sounds fine.")
+    result = analyse(api, as_admin, event)
+
+    after = api.get(f"/api/v1/events/{event['id']}", headers=as_admin).json()
+    assert after["processing_status"] == "extracted"
+    assert result["proposal_ids"] == [] or after["processing_status"] == "extracted"

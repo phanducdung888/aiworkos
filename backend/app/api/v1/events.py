@@ -50,6 +50,7 @@ from app.contexts.signal.public import (
     EventFilter,
     EventType,
     ParticipantInput,
+    ProcessingStatus,
     RequestAttachmentContent,
     ServiceContext,
     StartAttachment,
@@ -175,6 +176,7 @@ def list_captured_events(
     occurred_after: dt.datetime | None = None,
     occurred_before: dt.datetime | None = None,
     participant_person_id: uuid.UUID | None = None,
+    processing_status: ProcessingStatus | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
 ) -> EventList:
@@ -193,6 +195,7 @@ def list_captured_events(
             occurred_after=occurred_after,
             occurred_before=occurred_before,
             participant_person_id=participant_person_id,
+            processing_status=processing_status,
         ),
         limit=clamp_limit(limit),
         cursor=decode_cursor(cursor) if cursor else None,

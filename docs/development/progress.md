@@ -583,7 +583,8 @@ richer detail from a tag name afterwards would be worse than being brief.
 | 27 | `v0.27-links-and-vietnamese` | A promise can name the work it fulfils (ADR-0071); the interface speaks Vietnamese |
 | 28 | `v0.28-interface-design` | A design system, where a note had said there wasn't one |
 | — | (2026-09-14) | Every service in Compose: `web`, `migrate` and `seed`. Closes W-14 |
-| 29 | in progress | Links proposed from the evidence graph (ADR-0073); `thread_ref` on the ingestion contract (ADR-0072, closes M-8) |
+| 29 | `v0.29-evidence-graph-links` | Links proposed from the approval chain (ADR-0073); `thread_ref` on the ingestion contract (ADR-0072, closes M-8) |
+| 30 | in progress | The administrative surface: people and roles in the browser, and the feed of what arrived with what became of it. `processing_status` gains its first writer (ADR-0074, BR-E-20) |
 
 ## Phase 1 checkpoint log
 

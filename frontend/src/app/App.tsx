@@ -13,6 +13,8 @@ import { ErrorState, Loading } from '@/components/States'
 import { AgentPolicy } from '@/features/policy/AgentPolicy'
 import { Attention } from '@/features/attention/Attention'
 import { Capture } from '@/features/capture/Capture'
+import { MessageDetail, MessageList } from '@/features/messages/Messages'
+import { People } from '@/features/people/People'
 import { CommitmentDetail, CommitmentList } from '@/features/commitments/Commitments'
 import { ProposalDetail, ProposalList } from '@/features/proposals/Proposals'
 import { CreateWork } from '@/features/work/CreateWork'
@@ -81,11 +83,14 @@ export function App() {
             <NavLink to="/work/new">Tạo công việc</NavLink>
             <NavLink to="/capture">Ghi nhận tin nhắn</NavLink>
           </span>
-          {canManagePolicy ? (
-            <span className="nav__group">
-              <NavLink to="/agent-policy">Quyền của AI</NavLink>
-            </span>
-          ) : null}
+          {/* Administration. Last, and mostly gated: it is the part of the product a person visits
+              rarely and deliberately. "Tin nhắn đã nhận" is the exception — anyone may review what
+              the system received, because the list already narrows to what they may read. */}
+          <span className="nav__group">
+            <NavLink to="/messages">Tin nhắn đã nhận</NavLink>
+            {canManagePolicy ? <NavLink to="/people">Người dùng</NavLink> : null}
+            {canManagePolicy ? <NavLink to="/agent-policy">Quyền của AI</NavLink> : null}
+          </span>
         </nav>
         <p className="shell__who">
           <span data-testid="me-name">{me.data.display_name}</span>
@@ -103,6 +108,9 @@ export function App() {
           <Route path="/work/:workId" element={<WorkDetail />} />
           <Route path="/attention" element={<Attention />} />
           <Route path="/capture" element={<Capture />} />
+          <Route path="/messages" element={<MessageList />} />
+          <Route path="/messages/:eventId" element={<MessageDetail />} />
+          <Route path="/people" element={<People />} />
           <Route path="/proposals" element={<ProposalList />} />
           <Route path="/proposals/:proposalId" element={<ProposalDetail />} />
           <Route path="/commitments" element={<CommitmentList />} />

@@ -2024,6 +2024,8 @@ export interface components {
             participant_count: number;
             /** Participants */
             participants?: components["schemas"]["EventParticipantResource"][];
+            /** Processing Error */
+            processing_error?: string | null;
             /** Processing Status */
             processing_status: string;
             /** Revision Of Event Id */
@@ -2109,6 +2111,8 @@ export interface components {
             origin: string;
             /** Participant Count */
             participant_count: number;
+            /** Processing Error */
+            processing_error?: string | null;
             /** Processing Status */
             processing_status: string;
             /** Revision Of Event Id */
@@ -2638,6 +2642,11 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * ProcessingStatus
+         * @enum {string}
+         */
+        ProcessingStatus: "received" | "normalised" | "extracted" | "failed" | "skipped";
         /** ProjectCreate */
         ProjectCreate: {
             /** Department Id */
@@ -8344,6 +8353,7 @@ export interface operations {
                 occurred_after?: string | null;
                 occurred_before?: string | null;
                 participant_person_id?: string | null;
+                processing_status?: components["schemas"]["ProcessingStatus"] | null;
                 limit?: number;
                 cursor?: string | null;
             };

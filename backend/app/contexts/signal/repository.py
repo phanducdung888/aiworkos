@@ -308,3 +308,29 @@ def evidence_for_target(
         )
         .order_by(Evidence.created_at)
     ).all()
+
+
+def mark_processed(
+    session: Session,
+    *,
+    org_id: uuid.UUID,
+    event_id: uuid.UUID,
+    status: str,
+    error: str | None,
+) -> None:
+    """BR-E-20. Record what extraction did with this Event.
+
+    An UPDATE rather than a load-and-mutate: the caller is a worker that has already read the Event
+    through the agent's own visibility, and re-fetching it here would be a second read with a
+    different answer. `processing_status` and `processing_error` are in the mutable set (BR-E-17) so
+    the immutability trigger permits exactly these two columns and refuses anything else — which is
+    the guarantee that makes writing from here safe.
+
+    `version` is deliberately not bumped. It guards the optimistic concurrency of what a *person*
+    changes, and extraction is not a change to what was observed.
+    """
+    session.execute(
+        update(Event)
+        .where(Event.org_id == org_id, Event.id == event_id)
+        .values(processing_status=status, processing_error=error)
+    )

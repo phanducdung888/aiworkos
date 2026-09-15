@@ -53,6 +53,7 @@ from app.contexts.signal.repository import (
     attachments_for,
     evidence_for_target,
     get_evidence,
+    mark_processed,
     participants_for,
 )
 from app.contexts.signal.services import (
@@ -108,6 +109,7 @@ __all__ = [
     "UPLOAD_WINDOW",
     "list_events",
     "events_in_thread",
+    "mark_processed",
     "THIS_EVENT",
     "SAME_THREAD",
     "may_extract",

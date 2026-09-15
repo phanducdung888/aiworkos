@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import Select, and_, exists, or_, select
 from sqlalchemy.orm import Session
 
-from app.contexts.signal.domain import EventType, Sensitivity
+from app.contexts.signal.domain import EventType, ProcessingStatus, Sensitivity
 from app.contexts.signal.models import Event, EventParticipant
 from app.platform.authz import Action, Grant, Principal, ResourceType, Role, grants_for
 from app.platform.http.pagination import Cursor, encode_cursor
@@ -38,6 +38,9 @@ class EventFilter:
     occurred_after: dt.datetime | None = None
     occurred_before: dt.datetime | None = None
     participant_person_id: uuid.UUID | None = None
+    #: BR-E-20. The one filter an operator reviewing ingestion actually needs: "show me what was
+    #: never read". Everything else narrows what arrived; this narrows what happened to it.
+    processing_status: ProcessingStatus | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -152,6 +155,10 @@ def list_events(
         statement = statement.where(Event.occurred_at <= narrowed.occurred_before)
     if narrowed.participant_person_id is not None:
         statement = statement.where(_participates(narrowed.participant_person_id))
+    if narrowed.processing_status is not None:
+        statement = statement.where(
+            Event.processing_status == narrowed.processing_status.value
+        )
 
     if cursor is not None:
         statement = statement.where(

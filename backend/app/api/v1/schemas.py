@@ -799,6 +799,10 @@ class EventResource(BaseModel):
     sensitivity: str
     participant_count: int
     processing_status: str
+    #: Why the last analysis could not complete, when it could not (BR-E-20). Absent
+    #: otherwise. Published because a status of `failed` with no reason sends an operator
+    #: to the container logs, which is where this information used to live exclusively.
+    processing_error: str | None = None
     #: BR-E-02. Set when this Event corrects one that arrived under the same external reference;
     #: the original is never touched.
     revision_of_event_id: uuid.UUID | None

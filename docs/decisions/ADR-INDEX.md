@@ -88,6 +88,7 @@ fuller treatment, promote it to its own file `docs/decisions/ADR-nnnn-slug.md` u
 | 0071 | A promise says where it belongs; a person says so | accepted (CP27) | ADR-0042, BR-C-08 |
 | 0072 | A connector reports the conversation, not only the message | accepted (CP29) | ADR-0058, ADR-0061, M-8 |
 | 0073 | A link is proposed from the approval chain, never from prose | accepted (CP29) | ADR-0071, ADR-0052, BR-AI-35 |
+| 0074 | A review surface shows what the reader may read, and says so | accepted (CP30) | ADR-0008, BR-E-08, BR-E-20 |
 
 ---
 
@@ -2359,3 +2360,50 @@ one, which is BR-AI-35 with extra steps); a confidence score on the link (there 
 candidate either has a reason or is not a candidate); writing the link without approval when
 exactly one candidate exists (persistence triggers policy, rule 13, and "exactly one" is a property
 of how little we know, not of how sure we are).
+
+
+### ADR-0074 — A review surface shows what the reader may read, and says so
+
+**Status:** accepted (CP30) · **Related:** ADR-0008, BR-E-08, BR-E-20
+
+**Context.** The Product Owner asked for an administrative surface: configure people, assign roles,
+and list every message the system received with what happened to it. Two of those three already
+existed as API and had no browser surface — the Identity write API has been complete since
+Checkpoint 5.1 and nothing ever called it, so adding a colleague meant a seed script.
+
+The third exposed something worse. `processing_status` is on `event`, is in the mutable set that
+the immutability trigger permits (BR-E-17), is published by the API, and **nothing had ever written
+it**. Every one of the 68 Events in the live organization read `received` while the organization had
+in fact analysed all of them. A field that is specified, permitted and never maintained is worse
+than an absent one: it answers confidently and wrongly.
+
+**Decision.**
+
+1. **Extraction maintains `processing_status`** (BR-E-20): `extracted` when an analysis completed,
+   `failed` with `processing_error` when it could not, `skipped` when the Event was never eligible
+   (BR-E-11, BR-E-08). Finding nothing is `extracted` — a result, not a failure — because collapsing
+   "nobody read it" into "nothing was found" makes the review screen useless in the one case it
+   exists for.
+
+2. **The message feed narrows in SQL, through `readable_events`, and the screen says so.** An
+   administrator is not thereby entitled to a conversation somebody marked restricted. The
+   alternative — fetch everything and hide rows in the browser — is worse than it looks: the row
+   count itself reports how much was hidden.
+
+   So the screen carries a sentence saying the list is what *you* may read. A review tool that
+   silently omits rows teaches its reader to trust a number that is not the one they think it is.
+
+3. **Role administration renders from `/me`, and decides nothing.** The server re-decides every
+   request (contract §14); the gate here picks what to draw. A reader without `org_admin` sees the
+   people and their roles and no controls, which is a real and useful view rather than a locked door.
+
+**Consequences.** `processing_status` is now load-bearing, which it was not before, so anything that
+analyses an Event in future has to set it. That is a burden worth naming: the reason this field went
+twenty-three checkpoints without a writer is that nothing broke when it did not.
+
+Rejected: deriving the status from `ai_interaction` rows instead of storing it (a second source of
+truth for a question the column was added to answer, and one that cannot distinguish "never
+attempted" from "attempted and the record was rolled back"); an admin-only feed that bypasses
+`readable_events` under an auditor-like grant (BR-E-08 names the auditor role for exactly this, and
+an administrator is not an auditor — conflating them would widen who can read a restricted
+conversation as a side effect of building a screen).

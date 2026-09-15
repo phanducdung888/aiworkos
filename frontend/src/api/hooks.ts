@@ -24,6 +24,13 @@ export type Team = Schemas['TeamResource']
 export type Me = Schemas['CurrentPrincipal']
 export type EventDetail = Schemas['EventDetail']
 export type EventCapture = Schemas['EventCapture']
+export type EventSummary = Schemas['EventResource']
+export type ProcessingStatus = Schemas['ProcessingStatus']
+export type EventType = Schemas['EventType']
+export type RoleAssignment = Schemas['RoleAssignmentResource']
+export type Role = Schemas['Role']
+export type RoleScope = Schemas['ScopeType']
+export type PersonStatus = Schemas['PersonStatus']
 export type ParticipantInput = Schemas['ParticipantInputModel']
 export type ParticipantRole = Schemas['ParticipantRole']
 export type Analysis = Schemas['AnalysisResource']
@@ -73,6 +80,15 @@ export const keys = {
   producedBy: (entityId: string) => ['proposals', 'produced', entityId] as const,
   interaction: (id: string) => ['ai-interactions', id] as const,
   agentPolicy: ['agent-policy'] as const,
+  events: (filters: EventFilters) => ['events', 'list', filters] as const,
+  proposalsFor: (eventId: string) => ['proposals', 'for-event', eventId] as const,
+  roles: (personId: string) => ['people', personId, 'roles'] as const,
+}
+
+export interface EventFilters {
+  processing_status?: ProcessingStatus
+  type?: EventType
+  source_system?: string
 }
 
 export interface WorkFilters {
@@ -677,5 +693,123 @@ export function useSetAgentPolicy(): UseMutationResult<
         }),
       ),
     onSuccess: () => void client.invalidateQueries({ queryKey: keys.agentPolicy }),
+  })
+}
+
+
+// --------------------------------------------------------------------------- administration
+
+/**
+ * The feed of what arrived, and what happened to each of them.
+ *
+ * Filtered by the server through `readable_events`, never here: an administrator is not thereby
+ * entitled to read a restricted conversation (BR-E-08), and the list they see is the list they
+ * could have reached one message at a time. A screen that fetched everything and hid some of it
+ * would be a screen whose row count leaks what it hides.
+ */
+export function useEvents(filters: EventFilters = {}): UseQueryResult<EventSummary[]> {
+  return useQuery({
+    queryKey: keys.events(filters),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/events', { params: { query: { ...filters, limit: 100 } } }),
+      ).items,
+    staleTime: 15 * 1000,
+  })
+}
+
+/** What one message produced. Empty is a real answer, not a missing one. */
+export function useProposalsForEvent(eventId: string): UseQueryResult<Proposal[]> {
+  return useQuery({
+    queryKey: keys.proposalsFor(eventId),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/proposals', {
+          params: { query: { source_event_id: eventId, limit: 50 } },
+        }),
+      ).items,
+    enabled: Boolean(eventId),
+  })
+}
+
+export function useRoles(personId: string): UseQueryResult<RoleAssignment[]> {
+  return useQuery({
+    queryKey: keys.roles(personId),
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/v1/people/{person_id}/roles', {
+          params: { path: { person_id: personId } },
+        }),
+      ).items,
+    enabled: Boolean(personId),
+  })
+}
+
+export function useCreatePerson(): UseMutationResult<Person, Error, Schemas['PersonCreate']> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async (body) => unwrap(await api.POST('/api/v1/people', { body })),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['people'] })
+    },
+  })
+}
+
+export function useSetPersonStatus(): UseMutationResult<
+  Person,
+  Error,
+  { personId: string; target: PersonStatus }
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ personId, target }) =>
+      unwrap(
+        await api.POST('/api/v1/people/{person_id}/status', {
+          params: { path: { person_id: personId } },
+          body: { target },
+        }),
+      ),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['people'] })
+    },
+  })
+}
+
+export function useGrantRole(): UseMutationResult<
+  RoleAssignment,
+  Error,
+  { personId: string; role: Role; scopeType?: RoleScope; scopeId?: string }
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ personId, role, scopeType, scopeId }) =>
+      unwrap(
+        await api.POST('/api/v1/people/{person_id}/roles', {
+          params: { path: { person_id: personId } },
+          body: { role, scope_type: scopeType, scope_id: scopeId },
+        }),
+      ),
+    onSuccess: (_result, { personId }) => {
+      void client.invalidateQueries({ queryKey: keys.roles(personId) })
+    },
+  })
+}
+
+export function useRevokeRole(): UseMutationResult<
+  RoleAssignment,
+  Error,
+  { personId: string; assignmentId: string }
+> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ assignmentId }) =>
+      unwrap(
+        await api.DELETE('/api/v1/roles/{assignment_id}', {
+          params: { path: { assignment_id: assignmentId } },
+        }),
+      ),
+    onSuccess: (_result, { personId }) => {
+      void client.invalidateQueries({ queryKey: keys.roles(personId) })
+    },
   })
 }

@@ -62,6 +62,14 @@ const ATTACHMENT_STATUS: Record<string, string> = {
   purged: 'đã xoá',
 }
 
+const PROCESSING_STATUS: Record<string, string> = {
+  received: 'chưa phân tích',
+  normalised: 'đã chuẩn hoá',
+  extracted: 'đã phân tích',
+  failed: 'không đọc được',
+  skipped: 'bỏ qua',
+}
+
 function lookup(table: Record<string, string>, value: string | null | undefined): string {
   if (!value) return ''
   return table[value] ?? value
@@ -85,3 +93,6 @@ const TARGET_TYPE: Record<string, string> = {
 }
 
 export const targetType = (v: string | null | undefined): string => lookup(TARGET_TYPE, v)
+
+export const processingStatus = (v: string | null | undefined): string =>
+  lookup(PROCESSING_STATUS, v)

@@ -12,10 +12,11 @@ import {
   attachmentStatus,
   commitmentStatus,
   executionStatus,
+  processingStatus,
   workStatus,
 } from '@/components/vocabulary'
 
-type Kind = 'commitment' | 'work' | 'execution' | 'attachment'
+type Kind = 'commitment' | 'work' | 'execution' | 'attachment' | 'processing'
 
 /** Trạng thái nào đáng để mắt dừng lại, theo từng loại. */
 const TONE: Record<Kind, Record<string, 'danger' | 'warn' | 'good'>> = {
@@ -43,6 +44,13 @@ const TONE: Record<Kind, Record<string, 'danger' | 'warn' | 'good'>> = {
     pending: 'warn',
     available: 'good',
   },
+  // `received` is amber rather than neutral on purpose: a message nothing has read is a message
+  // waiting for someone, and the whole point of the review screen is to make that visible.
+  processing: {
+    failed: 'danger',
+    received: 'warn',
+    extracted: 'good',
+  },
 }
 
 const LABEL: Record<Kind, (value: string) => string> = {
@@ -50,6 +58,7 @@ const LABEL: Record<Kind, (value: string) => string> = {
   work: workStatus,
   execution: executionStatus,
   attachment: attachmentStatus,
+  processing: processingStatus,
 }
 
 export function Badge({ kind, value }: { kind: Kind; value: string | null | undefined }) {

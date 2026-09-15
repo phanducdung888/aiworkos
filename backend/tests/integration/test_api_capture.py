@@ -484,3 +484,55 @@ def test_another_organizations_event_looks_like_nothing_at_all(
     assert api.get(f"/api/v1/events/{other_event}", headers=as_member).status_code == 404
     listed = api.get("/api/v1/events", headers=as_member).json()["items"]
     assert all(row["id"] != str(other_event) for row in listed)
+
+
+# ------------------------------------------------------- what extraction did with it
+
+
+def _a_message(api: TestClient, headers: dict[str, str], body: str) -> dict:
+    response = api.post(
+        "/api/v1/events",
+        json={
+            "type": "EXTERNAL_MESSAGE",
+            "occurred_at": dt.datetime.now(dt.UTC).isoformat(),
+            "body_text": body,
+            "source_system": "email.imap",
+            "source_ref": f"m-{uuid.uuid4().hex[:10]}",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_a_captured_event_reports_that_nothing_has_read_it_yet(
+    api: TestClient, as_member: dict[str, str], roles: None, work_org: WorkOrg
+) -> None:
+    """BR-E-20, the control.
+
+    `received` is the truth at capture and was the *only* answer this field ever gave until CP30 —
+    the column is in the mutable set (BR-E-17) and nothing wrote it, so an organization that had
+    analysed every message still saw `received` on all of them.
+    """
+    assert _a_message(api, as_member, "I will send the quote.")["processing_status"] == "received"
+
+
+def test_the_feed_can_be_narrowed_to_what_a_status_says(
+    api: TestClient, as_member: dict[str, str], roles: None, work_org: WorkOrg
+) -> None:
+    """The filter an operator reviewing ingestion needs, asserted as one that *excludes*.
+
+    A query parameter the server accepts and ignores returns the right rows for the wrong reason,
+    and would pass any test that only checked the expected rows were present.
+    """
+    _a_message(api, as_member, "Something happened.")
+
+    received = api.get(
+        "/api/v1/events", params={"processing_status": "received"}, headers=as_member
+    ).json()
+    failed = api.get(
+        "/api/v1/events", params={"processing_status": "failed"}, headers=as_member
+    ).json()
+
+    assert len(received["items"]) >= 1
+    assert failed["items"] == [], "the filter was accepted and ignored"

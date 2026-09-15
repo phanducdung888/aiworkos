@@ -2079,6 +2079,17 @@
             "title": "Participants",
             "type": "array"
           },
+          "processing_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing Error"
+          },
           "processing_status": {
             "title": "Processing Status",
             "type": "string"
@@ -2343,6 +2354,17 @@
           "participant_count": {
             "title": "Participant Count",
             "type": "integer"
+          },
+          "processing_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processing Error"
           },
           "processing_status": {
             "title": "Processing Status",
@@ -3752,6 +3774,17 @@
         ],
         "title": "Problem",
         "type": "object"
+      },
+      "ProcessingStatus": {
+        "enum": [
+          "received",
+          "normalised",
+          "extracted",
+          "failed",
+          "skipped"
+        ],
+        "title": "ProcessingStatus",
+        "type": "string"
       },
       "ProjectCreate": {
         "additionalProperties": false,
@@ -16131,6 +16164,22 @@
                 }
               ],
               "title": "Participant Person Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "processing_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProcessingStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Processing Status"
             }
           },
           {
